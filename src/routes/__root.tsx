@@ -81,9 +81,13 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       { name: "description", content: "Grave sua tela e áudio direto do navegador e baixe em MP4. Sem instalação, 100% no seu dispositivo." },
       { name: "theme-color", content: "#e84c3d" },
       { property: "og:title", content: "Gravaai — Gravador de tela no navegador" },
-      { property: "og:description", content: "Grave tela + microfone e baixe em MP4, direto no navegador." },
+      { property: "og:description", content: "Grave sua tela e áudio direto do navegador e baixe em MP4. Sem instalação, 100% no seu dispositivo." },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
+      { name: "twitter:title", content: "Gravaai — Gravador de tela no navegador" },
+      { name: "twitter:description", content: "Grave sua tela e áudio direto do navegador e baixe em MP4. Sem instalação, 100% no seu dispositivo." },
+      { property: "og:image", content: "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/e31bf403-ddbe-4a4d-9e46-b6a184d4f7ce/id-preview-8f1eceb2--f3216de6-4a8d-44a0-bc42-c0523706b409.lovable.app-1783433850110.png" },
+      { name: "twitter:image", content: "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/e31bf403-ddbe-4a4d-9e46-b6a184d4f7ce/id-preview-8f1eceb2--f3216de6-4a8d-44a0-bc42-c0523706b409.lovable.app-1783433850110.png" },
     ],
     links: [
       {
