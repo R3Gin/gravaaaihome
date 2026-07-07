@@ -1,0 +1,165 @@
+@import "tailwindcss" source(none);
+@source "../src";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+/*
+ * Design system definition.
+ *
+ * The @theme inline block maps CSS custom properties to Tailwind utility
+ * classes (e.g. --color-primary -> bg-primary, text-primary).
+ *
+ * The :root and .dark blocks define the actual color values using oklch.
+ * All colors MUST use oklch format.
+ *
+ * To add a new semantic color:
+ * 1. Add the variable to :root (light value) and .dark (dark value)
+ * 2. Register it in @theme inline as --color-<name>: var(--<name>)
+ */
+
+@theme inline {
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --radius-2xl: calc(var(--radius) + 8px);
+  --radius-3xl: calc(var(--radius) + 12px);
+  --radius-4xl: calc(var(--radius) + 16px);
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-ring-offset-background: var(--background);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-brand: var(--brand);
+  --color-brand-hover: var(--brand-hover);
+  --color-success: var(--success);
+  --color-info: var(--info);
+  --font-display: "Syne", ui-sans-serif, system-ui, sans-serif;
+  --font-sans: "DM Sans", ui-sans-serif, system-ui, sans-serif;
+}
+
+:root {
+  --radius: 0.875rem;
+  /* dark-first tokens */
+  --background: oklch(0.145 0 0);        /* #0a0a0a */
+  --surface: oklch(0.189 0 0);           /* #141414 */
+  --surface-2: oklch(0.235 0 0);         /* #1e1e1e */
+  --foreground: oklch(0.955 0 0);        /* #f0f0f0 */
+  --muted-foreground: oklch(0.62 0 0);   /* #888 */
+  --brand: oklch(0.646 0.196 27);        /* #e84c3d */
+  --brand-hover: oklch(0.69 0.196 27);   /* #f05a4a */
+  --success: oklch(0.72 0.18 145);       /* #22c55e */
+  --info: oklch(0.65 0.19 255);          /* #3b82f6 */
+
+  --card: var(--surface);
+  --card-foreground: var(--foreground);
+  --popover: var(--surface);
+  --popover-foreground: var(--foreground);
+  --primary: var(--brand);
+  --primary-foreground: oklch(1 0 0);
+  --secondary: var(--surface-2);
+  --secondary-foreground: var(--foreground);
+  --muted: var(--surface-2);
+  --accent: var(--surface-2);
+  --accent-foreground: var(--foreground);
+  --destructive: var(--brand);
+  --destructive-foreground: oklch(1 0 0);
+  --border: rgba(255, 255, 255, 0.08);
+  --input: rgba(255, 255, 255, 0.12);
+  --ring: var(--brand);
+}
+
+@layer base {
+  * {
+    border-color: var(--color-border);
+  }
+
+  body {
+    background-color: var(--color-background);
+    color: var(--color-foreground);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  h1, h2, h3, .font-display {
+    font-family: var(--font-display);
+    letter-spacing: -0.02em;
+  }
+}
+
+@keyframes rec-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+
+@utility rec-dot {
+  animation: rec-pulse 1.2s ease-in-out infinite;
+}
+
+@utility glow-brand {
+  box-shadow: 0 0 0 2px var(--brand), 0 0 40px -8px var(--brand);
+}
+
+/*
+ * Tokens FIXOS do painel flutuante de gravação (Document PiP).
+ * Não alterar sem pedido explícito — o design deste componente é
+ * intencionalmente independente do tema global do app.
+ */
+:root {
+  --recording-panel-bg: #111111;
+  --recording-panel-bg-top: #1c1c1c;
+  --recording-panel-border: rgba(255, 255, 255, 0.08);
+
+  --recording-btn-neutral-bg: #2a2a2a;
+  --recording-btn-neutral-bg-hover: #333333;
+  --recording-btn-neutral-border: rgba(255, 255, 255, 0.10);
+  --recording-btn-neutral-border-hover: rgba(255, 255, 255, 0.15);
+
+  --recording-btn-danger-from: #ef4444;
+  --recording-btn-danger-to: #dc2626;
+  --recording-btn-danger-from-hover: #f87171;
+  --recording-btn-danger-to-hover: #ef4444;
+  --recording-btn-danger-glow: rgba(239, 68, 68, 0.5);
+
+  --recording-toggle-muted-bg: rgba(239, 68, 68, 0.10);
+  --recording-toggle-muted-bg-hover: rgba(239, 68, 68, 0.15);
+  --recording-toggle-muted-border: rgba(239, 68, 68, 0.20);
+  --recording-toggle-muted-text: rgba(252, 165, 165, 0.80);
+  --recording-toggle-muted-text-hover: rgb(254, 202, 202);
+
+  --recording-rec-dot: #ef4444;
+  --recording-rec-dot-glow: rgba(239, 68, 68, 0.8);
+  --recording-pause-dot: #facc15;
+  --recording-pause-dot-glow: rgba(250, 204, 21, 0.6);
+}
