@@ -19,7 +19,32 @@ export interface BubblePos {
   size: number;
 }
 
-export type CameraBgEffect = "none" | "blur" | "image";
+export type CameraBgEffect = "none" | "blur" | "image" | "color" | "transparent";
+
+export type CameraShape = "circle" | "rounded" | "square";
+
+export interface CameraStyle {
+  shape: CameraShape;
+  borderEnabled: boolean;
+  borderColor: string;
+  borderWidth: number;
+  bgColor: string;
+}
+
+export const DEFAULT_CAMERA_STYLE: CameraStyle = {
+  shape: "circle",
+  borderEnabled: false,
+  borderColor: "#ef4444",
+  borderWidth: 4,
+  bgColor: "#111827",
+};
+
+/** Raio (px) da bolha para um dado formato/tamanho. */
+export function shapeRadius(shape: CameraShape, size: number): number {
+  if (shape === "circle") return size / 2;
+  if (shape === "rounded") return Math.max(4, size * 0.18);
+  return 0;
+}
 
 export interface CameraPipController {
   active: boolean;
@@ -36,6 +61,10 @@ export interface CameraPipController {
   setEffect: (e: CameraBgEffect) => void;
   bgImageUrl: string | null;
   setBgImageUrl: (url: string | null) => void;
+  style: CameraStyle;
+  setStyle: React.Dispatch<React.SetStateAction<CameraStyle>>;
+  /** Volta formato, borda, tamanho, fundo e posição ao padrão. */
+  resetSettings: () => void;
   /** Canvas processado (com efeito). Só populado quando effect !== 'none'. */
   effectCanvasRef: RefObject<HTMLCanvasElement | null>;
 }
@@ -48,13 +77,15 @@ export interface UseCameraPipOptions {
 export function useCameraPip(opts: UseCameraPipOptions = {}): CameraPipController {
   const [active, setActive] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [bubble, setBubble] = useState<BubblePos>({
+  const defaultBubble = useRef<BubblePos>({
     x: opts.initial?.x ?? 24,
     y: opts.initial?.y ?? 24,
     size: opts.initial?.size ?? 180,
-  });
+  }).current;
+  const [bubble, setBubble] = useState<BubblePos>(defaultBubble);
   const [effect, setEffect] = useState<CameraBgEffect>("none");
   const [bgImageUrl, setBgImageUrl] = useState<string | null>(null);
+  const [style, setStyle] = useState<CameraStyle>(DEFAULT_CAMERA_STYLE);
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
