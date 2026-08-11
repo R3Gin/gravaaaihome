@@ -74,6 +74,7 @@ function ClipBox({ clip, track }: { clip: Clip; track: Track }) {
       ref={setNodeRef}
       {...attributes}
       {...listeners}
+      data-clip-id={clip.id}
       onPointerDown={(e) => {
         if (tool === "blade") {
           e.stopPropagation();
