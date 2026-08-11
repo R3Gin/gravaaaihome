@@ -1034,28 +1034,236 @@ export function VideoEditor() {
     commit();
     setClips([newClip(0, duration)]);
     setTexts([]);
+    setShapes([]);
+    setSilences([]);
     setSel({ start: 0, end: duration });
     setSelection(null);
   };
 
+  /* ---------------- blur / spotlight ---------------- */
+
+  const addShape = (kind: "blur" | "spotlight") => {
+    commit();
+    const start = Math.min(time, Math.max(0, total - 1));
+    const layer: ShapeLayer = {
+      id: uid(),
+      kind,
+      start,
+      end: Math.min(total, start + 3),
+      x: 0.3,
+      y: 0.3,
+      w: kind === "blur" ? 0.3 : 0.28,
+      h: kind === "blur" ? 0.2 : 0.28,
+      strength: kind === "blur" ? 18 : 0.55,
+      color: "#ef4444",
+    };
+    setShapes((cur) => [...cur, layer]);
+    setSelection({ kind: "shape", id: layer.id });
+    setPanel(null);
+  };
+
+  const updateSelectedShape = (patch: Partial<ShapeLayer>, record = true) => {
+    if (!selectedShape) return;
+    if (record) commit();
+    setShapes((cur) => cur.map((s) => (s.id === selectedShape.id ? { ...s, ...patch } : s)));
+  };
+
+  /* ---------------- cortador de silêncio ---------------- */
+
+  const runSilenceDetection = async (value = sensitivity) => {
+    const blob = sourceBlobRef.current;
+    if (!blob) return;
+    setSilenceBusy(true);
+    try {
+      const segs = await detectSilences(blob, value);
+      setSilences(
+        segs.map((s) => ({ ...s, id: uid(), status: "pending" as const })),
+      );
+      setSilenceOpen(true);
+    } catch {
+      setError("Não foi possível analisar o áudio deste vídeo.");
+    } finally {
+      setSilenceBusy(false);
+    }
+  };
+
+  /** Remove da timeline o intervalo indicado (mesma lógica de "remover seleção"). */
+  const cutRange = (list: Clip[], start: number, end: number): Clip[] => {
+    const out: Clip[] = [];
+    for (const c of list) {
+      const cs = c.start;
+      const ce = clipEnd(c);
+      const speed = c.speed || 1;
+      if (end <= cs || start >= ce) {
+        out.push(c);
+        continue;
+      }
+      if (start > cs) out.push({ ...c, srcEnd: c.srcStart + (start - cs) * speed });
+      if (end < ce)
+        out.push({
+          ...c,
+          id: uid(),
+          srcStart: c.srcStart + (end - cs) * speed,
+          start: end,
+          zoomKeys: [],
+        });
+    }
+    return out.filter((c) => clipDuration(c) > MIN_CLIP);
+  };
+
+  const removeSilences = (marks: SilenceMark[]) => {
+    const targets = marks.filter((m) => m.status === "pending").sort((a, b) => b.start - a.start);
+    if (targets.length === 0) return;
+    commit();
+    setClips((cur) => {
+      let next = cur;
+      for (const m of targets) next = cutRange(next, m.start, m.end);
+      return next.sort((a, b) => a.start - b.start);
+    });
+    setSilences((cur) => cur.filter((m) => !targets.some((t) => t.id === m.id)));
+    setSelection(null);
+    window.setTimeout(rippleClose, 0);
+  };
+
+  /* ---------------- legendas automáticas ---------------- */
+
+  const generateCaptions = async () => {
+    const blob = sourceBlobRef.current;
+    if (!blob) return;
+    setCaptionsBusy(true);
+    try {
+      const blocks = await detectSpeechBlocks(blob);
+      if (blocks.length === 0) {
+        setError("Nenhuma fala detectada no áudio.");
+        return;
+      }
+      commit();
+      const layers: TextLayer[] = blocks.map((b, i) => ({
+        id: uid(),
+        lane: "text",
+        text: `Legenda ${i + 1}`,
+        start: b.start,
+        end: b.end,
+        x: 0.5,
+        y: captionStyle.y,
+        size: captionStyle.size,
+        color: captionStyle.color,
+        align: "center",
+        animIn: "none",
+        animOut: "none",
+        bg: captionStyle.bg,
+        font: captionStyle.font,
+        caption: true,
+      }));
+      setTexts((cur) => [...cur.filter((t) => !t.caption), ...layers]);
+      setSelection({ kind: "text", id: layers[0].id });
+    } catch {
+      setError("Não foi possível gerar as legendas.");
+    } finally {
+      setCaptionsBusy(false);
+    }
+  };
+
+  const applyCaptionStyle = (patch: Partial<typeof captionStyle>) => {
+    const next = { ...captionStyle, ...patch };
+    setCaptionStyle(next);
+    setTexts((cur) =>
+      cur.map((t) =>
+        t.caption
+          ? { ...t, font: next.font, size: next.size, color: next.color, bg: next.bg, y: next.y }
+          : t,
+      ),
+    );
+  };
+
   /* ---------------- overlay no player ---------------- */
 
-  const onStagePointerDown = (e: ReactPointerEvent<HTMLDivElement>) => {
-    if (!selectedText) return;
-    textDragRef.current = true;
-    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-    moveTextTo(e);
-  };
-  const moveTextTo = (e: ReactPointerEvent<HTMLDivElement>) => {
-    if (!selectedText) return;
+  const stagePoint = (e: ReactPointerEvent<HTMLDivElement>) => {
     const rect = e.currentTarget.getBoundingClientRect();
-    updateSelectedText(
-      {
-        x: Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width)),
-        y: Math.min(1, Math.max(0, (e.clientY - rect.top) / rect.height)),
-      },
-      false,
-    );
+    return {
+      x: Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width)),
+      y: Math.min(1, Math.max(0, (e.clientY - rect.top) / rect.height)),
+    };
+  };
+
+  const onStagePointerDown = (e: ReactPointerEvent<HTMLDivElement>) => {
+    const p = stagePoint(e);
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    if (selectedShape) {
+      commit();
+      stageDragRef.current = {
+        kind: "shape-move",
+        id: selectedShape.id,
+        dx: p.x - selectedShape.x,
+        dy: p.y - selectedShape.y,
+      };
+      return;
+    }
+    if (selectedText) {
+      commit();
+      stageDragRef.current = { kind: "text" };
+      updateSelectedText({ x: p.x, y: p.y }, false);
+      return;
+    }
+    stageDragRef.current = {
+      kind: "frame",
+      x: e.clientX,
+      y: e.clientY,
+      ox: contentOffset.x,
+      oy: contentOffset.y,
+    };
+  };
+
+  const onStagePointerMove = (e: ReactPointerEvent<HTMLDivElement>) => {
+    const drag = stageDragRef.current;
+    if (!drag) return;
+    const p = stagePoint(e);
+    if (drag.kind === "text") {
+      updateSelectedText({ x: p.x, y: p.y }, false);
+    } else if (drag.kind === "shape-move") {
+      setShapes((cur) =>
+        cur.map((s) =>
+          s.id === drag.id
+            ? {
+                ...s,
+                x: Math.min(1 - s.w, Math.max(0, p.x - drag.dx)),
+                y: Math.min(1 - s.h, Math.max(0, p.y - drag.dy)),
+              }
+            : s,
+        ),
+      );
+    } else if (drag.kind === "shape-resize") {
+      setShapes((cur) =>
+        cur.map((s) =>
+          s.id === drag.id
+            ? {
+                ...s,
+                w: Math.min(1 - s.x, Math.max(0.05, p.x - s.x)),
+                h: Math.min(1 - s.y, Math.max(0.05, p.y - s.y)),
+              }
+            : s,
+        ),
+      );
+    } else if (drag.kind === "frame") {
+      const rect = e.currentTarget.getBoundingClientRect();
+      setContentOffset({
+        x: Math.min(1, Math.max(-1, drag.ox + ((e.clientX - drag.x) / rect.width) * 2)),
+        y: Math.min(1, Math.max(-1, drag.oy + ((e.clientY - drag.y) / rect.height) * 2)),
+      });
+    }
+  };
+
+  const onStagePointerUp = () => {
+    stageDragRef.current = null;
+  };
+
+  const startShapeResize = (id: string) => (e: ReactPointerEvent<HTMLDivElement>) => {
+    e.stopPropagation();
+    commit();
+    setSelection({ kind: "shape", id });
+    stageDragRef.current = { kind: "shape-resize", id };
+    const stage = stageRef.current;
+    stage?.setPointerCapture?.(e.pointerId);
   };
 
   /* ---------------- exportação ---------------- */
