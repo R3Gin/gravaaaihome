@@ -101,18 +101,39 @@ export interface SilenceRange {
 }
 
 export interface CaptionStyle {
+  anim: CaptionAnim;
+  fontFamily: string;
   fontSize: number;
   color: string;
+  /** cor de realce / fundo */
+  highlight: string;
+  bgOpacity: number;
   background: boolean;
   place: "bottom" | "middle" | "top";
+  align: "left" | "center" | "right";
+  bold: boolean;
+  italic: boolean;
+  outline: boolean;
+  /** anima palavra por palavra (senão, linha inteira de uma vez) */
+  wordByWord: boolean;
 }
 
 export const DEFAULT_CAPTION_STYLE: CaptionStyle = {
+  anim: "wordPop",
+  fontFamily: "Inter, system-ui, sans-serif",
   fontSize: 40,
   color: "#ffffff",
+  highlight: "#e53935",
+  bgOpacity: 0.55,
   background: true,
   place: "bottom",
+  align: "center",
+  bold: true,
+  italic: false,
+  outline: true,
+  wordByWord: true,
 };
+
 
 export function captionY(place: CaptionStyle["place"]) {
   return place === "top" ? 0.15 : place === "middle" ? 0.5 : 0.85;
