@@ -37,7 +37,7 @@ export function Preview({ videoRef }: Props) {
   const currentTime = useEditor((s) => s.currentTime);
   const playing = useEditor((s) => s.playing);
   const aspect = useEditor((s) => s.aspect);
-  const captionStyle = useEditor((s) => s.captionStyle);
+  
 
   const selectedClipId = useEditor((s) => s.selectedClipId);
   const setAspect = useEditor((s) => s.setAspect);
