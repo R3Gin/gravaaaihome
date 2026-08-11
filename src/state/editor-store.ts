@@ -42,6 +42,8 @@ export interface Clip {
   background?: boolean;
   // overlay
   overlayKind?: "blur" | "spotlight";
+  /** legenda gerada automaticamente (permite estilizar todas de uma vez) */
+  isCaption?: boolean;
   rect?: { x: number; y: number; w: number; h: number };
   strength?: number;
 }
@@ -55,6 +57,29 @@ export interface Track {
 
 export type AspectRatio = "16:9" | "9:16" | "1:1";
 export type Tool = "select" | "blade";
+
+export interface SilenceRange {
+  start: number;
+  end: number;
+}
+
+export interface CaptionStyle {
+  fontSize: number;
+  color: string;
+  background: boolean;
+  place: "bottom" | "middle" | "top";
+}
+
+export const DEFAULT_CAPTION_STYLE: CaptionStyle = {
+  fontSize: 40,
+  color: "#ffffff",
+  background: true,
+  place: "bottom",
+};
+
+export function captionY(place: CaptionStyle["place"]) {
+  return place === "top" ? 0.15 : place === "middle" ? 0.5 : 0.85;
+}
 
 export interface EditorState {
   projectName: string;
@@ -71,6 +96,11 @@ export interface EditorState {
   tracks: Track[];
   past: Track[][];
   future: Track[][];
+  /** arquivo original (usado por análise de áudio e exportação) */
+  sourceBlob: Blob | null;
+  /** trechos silenciosos detectados — só interface, não faz parte do projeto */
+  silences: SilenceRange[];
+  captionStyle: CaptionStyle;
 }
 
 export interface EditorActions {
@@ -97,6 +127,11 @@ export interface EditorActions {
   addZoomKeyframe: (clipId: string, timelineTime: number) => void;
   removeZoomKeyframe: (clipId: string, index: number) => void;
   cutRanges: (ranges: { start: number; end: number }[]) => void;
+  setSourceBlob: (blob: Blob | null) => void;
+  setSilences: (ranges: SilenceRange[]) => void;
+  addCaptionClips: (segments: { start: number; end: number; text: string }[]) => void;
+  setCaptionStyle: (patch: Partial<CaptionStyle>) => void;
+  clearCaptions: () => void;
   undo: () => void;
   redo: () => void;
   commit: () => void;
@@ -181,6 +216,9 @@ export const useEditor = create<EditorState & EditorActions>((set, get) => {
     tracks: emptyTracks(),
     past: [],
     future: [],
+    sourceBlob: null,
+    silences: [],
+    captionStyle: DEFAULT_CAPTION_STYLE,
 
     loadSource: (url, duration, size, name) => {
       const tracks = emptyTracks();
@@ -216,6 +254,7 @@ export const useEditor = create<EditorState & EditorActions>((set, get) => {
         selectedClipId: clip.id,
         past: [],
         future: [],
+        silences: [],
       });
     },
 
@@ -470,8 +509,62 @@ export const useEditor = create<EditorState & EditorActions>((set, get) => {
           });
         }),
       );
-      set({ selectedClipId: null });
+      set({ selectedClipId: null, silences: [] });
     },
+
+    setSourceBlob: (sourceBlob) => set({ sourceBlob }),
+    setSilences: (silences) => set({ silences }),
+
+    addCaptionClips: (segments) => {
+      const style = get().captionStyle;
+      const clips: Clip[] = segments
+        .filter((s) => s.text.trim() && s.end - s.start > 0.1)
+        .map((s) => ({
+          id: uid(),
+          trackId: TEXT_TRACK,
+          type: "text" as const,
+          sourceUrl: "",
+          startTime: Math.max(0, s.start),
+          duration: Math.max(0.4, s.end - s.start),
+          sourceInStart: 0,
+          sourceInEnd: Math.max(0.4, s.end - s.start),
+          textContent: s.text.trim(),
+          fontSize: style.fontSize,
+          color: style.color,
+          background: style.background,
+          position: { x: 0.5, y: captionY(style.place) },
+          isCaption: true,
+        }));
+      if (clips.length === 0) return;
+      write((tracks) =>
+        mapTracks(tracks, (existing, track) =>
+          track.id === TEXT_TRACK ? [...existing.filter((c) => !c.isCaption), ...clips] : existing,
+        ),
+      );
+    },
+
+    setCaptionStyle: (patch) => {
+      const style = { ...get().captionStyle, ...patch };
+      set({ captionStyle: style });
+      write((tracks) =>
+        mapTracks(tracks, (clips) =>
+          clips.map((c) =>
+            c.isCaption
+              ? {
+                  ...c,
+                  fontSize: style.fontSize,
+                  color: style.color,
+                  background: style.background,
+                  position: { x: c.position?.x ?? 0.5, y: captionY(style.place) },
+                }
+              : c,
+          ),
+        ),
+      );
+    },
+
+    clearCaptions: () =>
+      write((tracks) => mapTracks(tracks, (clips) => clips.filter((c) => !c.isCaption))),
 
     undo: () =>
       set((s) => {
