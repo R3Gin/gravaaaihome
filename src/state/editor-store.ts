@@ -322,6 +322,18 @@ export const useEditor = create<EditorState & EditorActions>((set, get) => {
     setTool: (tool) => set({ tool }),
     select: (selectedClipId) => set({ selectedClipId, selectedKeyframes: [] }),
 
+    reorderTracks: (from, to) =>
+      set((s) => {
+        if (from === to || from < 0 || to < 0 || from >= s.tracks.length || to >= s.tracks.length)
+          return {};
+        const tracks = [...s.tracks];
+        const [moved] = tracks.splice(from, 1);
+        if (!moved) return {};
+        tracks.splice(to, 0, moved);
+        return { tracks };
+      }),
+
+
     updateClip: (id, patch) =>
       write((tracks) =>
         mapTracks(tracks, (clips) => clips.map((c) => (c.id === id ? { ...c, ...patch } : c))),
