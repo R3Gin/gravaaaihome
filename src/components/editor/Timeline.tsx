@@ -8,8 +8,10 @@ import {
   type AnimProp,
   type Easing,
 } from "@/lib/keyframes";
+import { KeyframeSpeedModal } from "@/components/editor/KeyframeSpeedModal";
 import { getPeaks, type Peaks } from "@/lib/waveform";
 import { cn } from "@/lib/utils";
+
 
 const LABEL_W = 96;
 const LANE_H = 56;
@@ -23,25 +25,69 @@ function fmt(t: number) {
 
 type Ghost = { start: number; duration: number } | null;
 type KfMenu = { x: number; y: number; prop: string; kfId: string } | null;
+type KfSpeed = { prop: string; kfId: string } | null;
+
 
 /** Sub-linha com os keyframes de uma propriedade do clipe selecionado. */
 function KeyframeLane({
   clip,
   prop,
   onMenu,
+  onSpeed,
 }: {
   clip: Clip;
   prop: AnimProp;
   onMenu: (menu: KfMenu) => void;
+  onSpeed: (target: KfSpeed) => void;
 }) {
   const zoom = useEditor((s) => s.zoom);
   const selected = useEditor((s) => s.selectedKeyframes);
   const selectKeyframe = useEditor((s) => s.selectKeyframe);
   const moveKeyframes = useEditor((s) => s.moveKeyframes);
+  const setKeyframeSpeed = useEditor((s) => s.setKeyframeSpeed);
   const keys = clip.keyframes?.[prop.key] ?? [];
+
+  /** Alt/Option + arrastar: ajusta visualmente as tangentes do keyframe. */
+  const startTangentDrag = (kfId: string) => (e: React.PointerEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    selectKeyframe(prop.key, kfId);
+    const kf = keys.find((k) => k.id === kfId);
+    const baseIn = kf?.incomingSpeed ?? { x: 0, y: 0, influence: 33.33 };
+    const baseOut = kf?.outgoingSpeed ?? { x: 0, y: 0, influence: 33.33 };
+    const x0 = e.clientX;
+    const y0 = e.clientY;
+    const move = (ev: PointerEvent) => {
+      const dx = (ev.clientX - x0) / 3; // influência
+      const dy = -(ev.clientY - y0) / 40; // velocidade
+      const side = ev.clientX < x0 ? "in" : "out";
+      const influence = Math.min(100, Math.max(1, (side === "in" ? baseIn : baseOut).influence + Math.abs(dx)));
+      setKeyframeSpeed(
+        clip.id,
+        prop.key,
+        kfId,
+        side === "in"
+          ? { incomingSpeed: { ...baseIn, influence, x: baseIn.x + dy, y: baseIn.y + dy } }
+          : { outgoingSpeed: { ...baseOut, influence, x: baseOut.x + dy, y: baseOut.y + dy } },
+        true,
+      );
+    };
+    const up = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      useEditor.getState().commit();
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+  };
 
   const startDrag = (kfId: string) => (e: React.PointerEvent) => {
     if (e.button !== 0) return;
+    if (e.altKey) {
+      startTangentDrag(kfId)(e);
+      return;
+    }
+
     e.preventDefault();
     e.stopPropagation();
     const additive = e.shiftKey;
@@ -102,9 +148,12 @@ function KeyframeLane({
           <span
             key={k.id}
             data-kf-id={k.id}
-            title={`${prop.label} · ${k.time.toFixed(2)}s · ${k.easing}`}
+            title={`${prop.label} · ${k.time.toFixed(2)}s · ${k.easing}\nDuplo clique: velocidade do quadro-chave · Alt+arrastar: tangentes`}
             onPointerDown={startDrag(k.id)}
-            onDoubleClick={(e) => onMenu({ x: e.clientX, y: e.clientY, prop: prop.key, kfId: k.id })}
+            onDoubleClick={(e) => {
+              e.stopPropagation();
+              onSpeed({ prop: prop.key, kfId: k.id });
+            }}
             onContextMenu={(e) => {
               e.preventDefault();
               onMenu({ x: e.clientX, y: e.clientY, prop: prop.key, kfId: k.id });
@@ -115,7 +164,9 @@ function KeyframeLane({
                 ? "border-white bg-white"
                 : "border-[var(--brand)] bg-[var(--brand)]",
               k.easing === "hold" && "rounded-none",
+              k.easing === "custom" && "ring-1 ring-sky-300",
             )}
+
             style={{ left: (clip.startTime + k.time) * zoom }}
           />
         );
@@ -414,6 +465,8 @@ export function Timeline() {
   const removeKeyframe = useEditor((s) => s.removeKeyframe);
   const cycleKeyframeRows = useEditor((s) => s.cycleKeyframeRows);
   const [menu, setMenu] = useState<KfMenu>(null);
+  const [speedTarget, setSpeedTarget] = useState<KfSpeed>(null);
+
 
   const selectedClip = findClip(tracks, selectedClipId);
   const kfRows: AnimProp[] = useMemo(() => {
@@ -634,7 +687,14 @@ export function Timeline() {
                   </div>
                   {selectedClip?.trackId === track.id
                     ? kfRows.map((p) => (
-                        <KeyframeLane key={p.key} clip={selectedClip} prop={p} onMenu={setMenu} />
+                        <KeyframeLane
+                          key={p.key}
+                          clip={selectedClip}
+                          prop={p}
+                          onMenu={setMenu}
+                          onSpeed={setSpeedTarget}
+                        />
+
                       ))
                     : null}
                 </div>
@@ -679,6 +739,15 @@ export function Timeline() {
           ))}
           <button
             onClick={() => {
+              setSpeedTarget({ prop: menu.prop, kfId: menu.kfId });
+              setMenu(null);
+            }}
+            className="mt-1 block w-full border-t border-[var(--border)] px-3 py-1.5 text-left hover:bg-[var(--brand)]/15"
+          >
+            Velocidade do quadro-chave…
+          </button>
+          <button
+            onClick={() => {
               removeKeyframe(selectedClip.id, menu.prop, menu.kfId);
               setMenu(null);
             }}
@@ -688,6 +757,17 @@ export function Timeline() {
           </button>
         </div>
       ) : null}
+
+      {speedTarget && selectedClip ? (
+        <KeyframeSpeedModal
+          clipId={selectedClip.id}
+          prop={speedTarget.prop}
+          kfId={speedTarget.kfId}
+          onClose={() => setSpeedTarget(null)}
+        />
+      ) : null}
+
+
 
       <button className="hidden" onClick={() => cycleKeyframeRows()}>
         {MIN_CLIP}

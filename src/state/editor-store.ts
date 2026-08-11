@@ -1,13 +1,24 @@
 import { create } from "zustand";
 import {
+  applyContinuity,
   newKeyframe,
   propByKey,
   sortKeys,
   upsertKeyframe,
   type Easing,
+  type Keyframe,
   type KeyValue,
   type KeyframeMap,
+  type TangentSpeed,
 } from "@/lib/keyframes";
+import {
+  applyPreset,
+  revealModeFor,
+  stripPreset,
+  type PresetConfig,
+  type PresetId,
+} from "@/lib/text-presets";
+
 
 
 /* ------------------------------------------------------------------ *
@@ -57,6 +68,15 @@ export interface Clip {
   fontSize?: number;
   color?: string;
   background?: boolean;
+  /** desfoque em px (animável) */
+  blur?: number;
+  /** revelação 0–1 (typewriter / wipe) */
+  reveal?: number;
+  revealMode?: "none" | "typewriter" | "wipe";
+  /** presets de animação de entrada/saída */
+  animIn?: PresetConfig;
+  animOut?: PresetConfig;
+
   // overlay
   overlayKind?: "blur" | "spotlight";
   /** legenda gerada automaticamente (permite estilizar todas de uma vez) */
@@ -164,6 +184,21 @@ export interface EditorActions {
   setPropValue: (clipId: string, prop: string, value: KeyValue, live?: boolean) => void;
   moveKeyframes: (clipId: string, moves: { prop: string; kfId: string; time: number }[], live?: boolean) => void;
   setKeyframeEasing: (clipId: string, prop: string, kfId: string, easing: Easing) => void;
+  /** modal "Velocidade do quadro-chave" (tangentes de Bezier) */
+  setKeyframeSpeed: (
+    clipId: string,
+    prop: string,
+    kfId: string,
+    patch: {
+      incomingSpeed?: Partial<TangentSpeed>;
+      outgoingSpeed?: Partial<TangentSpeed>;
+      continuous?: boolean;
+    },
+    live?: boolean,
+  ) => void;
+  /** presets de animação de entrada/saída de texto */
+  setTextPreset: (clipId: string, side: "in" | "out", cfg: Partial<PresetConfig>) => void;
+
   removeKeyframe: (clipId: string, prop: string, kfId: string) => void;
   removeSelectedKeyframes: () => void;
   selectKeyframe: (prop: string, kfId: string, additive?: boolean) => void;
@@ -682,6 +717,64 @@ export const useEditor = create<EditorState & EditorActions>((set, get) => {
       };
       get().updateClip(clipId, { keyframes: map });
     },
+
+    setKeyframeSpeed: (clipId, prop, kfId, patch, live) => {
+      const clip = findClip(get().tracks, clipId);
+      if (!clip?.keyframes?.[prop]) return;
+      const map: KeyframeMap = {
+        ...clip.keyframes,
+        [prop]: clip.keyframes[prop].map((k) => {
+          if (k.id !== kfId) return k;
+          const next: Keyframe = {
+            ...k,
+            easing: "custom",
+            continuous: patch.continuous ?? k.continuous,
+            incomingSpeed: {
+              x: 0,
+              y: 0,
+              influence: 33.33,
+              ...k.incomingSpeed,
+              ...patch.incomingSpeed,
+            },
+            outgoingSpeed: {
+              x: 0,
+              y: 0,
+              influence: 33.33,
+              ...k.outgoingSpeed,
+              ...patch.outgoingSpeed,
+            },
+          };
+          return applyContinuity(next);
+        }),
+      };
+      (live ? get().updateClipLive : get().updateClip)(clipId, { keyframes: map });
+    },
+
+    setTextPreset: (clipId, side, cfg) => {
+      const clip = findClip(get().tracks, clipId);
+      if (!clip) return;
+      const current: PresetConfig = {
+        preset: "none",
+        duration: 0.5,
+        speed: 100,
+        ...(side === "in" ? clip.animIn : clip.animOut),
+        ...cfg,
+      };
+      const next: Clip = { ...clip, ...(side === "in" ? { animIn: current } : { animOut: current }) };
+      const keyframes =
+        current.preset === "none"
+          ? stripPreset({ ...(clip.keyframes ?? {}) }, side)
+          : applyPreset(next, side, current);
+      const inPreset: PresetId = (side === "in" ? current.preset : next.animIn?.preset) ?? "none";
+      const outPreset: PresetId = (side === "out" ? current.preset : next.animOut?.preset) ?? "none";
+      get().updateClip(clipId, {
+        ...(side === "in" ? { animIn: current } : { animOut: current }),
+        keyframes,
+        revealMode: revealModeFor(inPreset, outPreset),
+      });
+    },
+
+
 
     removeKeyframe: (clipId, prop, kfId) => {
       const clip = findClip(get().tracks, clipId);
