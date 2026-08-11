@@ -170,3 +170,97 @@ export async function remuxMp4FastStart(
     try { await ff.deleteFile("output.mp4"); } catch { /* ignore */ }
   }
 }
+
+export interface EditSegment {
+  start: number;
+  end: number;
+}
+
+export interface EditFilters {
+  brightness: number; // -1..1 (0 = neutro)
+  contrast: number; // 0..2 (1 = neutro)
+  saturation: number; // 0..3 (1 = neutro)
+}
+
+function eqExpr(f: EditFilters) {
+  return `eq=brightness=${f.brightness.toFixed(3)}:contrast=${f.contrast.toFixed(3)}:saturation=${f.saturation.toFixed(3)}`;
+}
+
+/**
+ * Aplica cortes (mantendo apenas os segmentos informados, em ordem) e ajustes
+ * de imagem, exportando um MP4 H.264/AAC pronto para download. Tudo local.
+ */
+export async function exportEditedMp4(
+  source: Blob,
+  segments: EditSegment[],
+  filters: EditFilters,
+  onProgress?: (ratio: number) => void,
+): Promise<Blob> {
+  const ff = await getFFmpeg();
+  const progressHandler = ({ progress }: { progress: number }) => {
+    onProgress?.(Math.min(1, Math.max(0, progress)));
+  };
+  ff.on("progress", progressHandler);
+  const inputName = "edit-input";
+  try {
+    await ff.writeFile(inputName, await fetchFile(source));
+
+    const keep = segments
+      .filter((s) => s.end - s.start > 0.05)
+      .sort((a, b) => a.start - b.start);
+    if (keep.length === 0) throw new Error("Nenhum trecho selecionado para exportar.");
+
+    const run = async (withAudio: boolean) => {
+      const parts: string[] = [];
+      keep.forEach((s, i) => {
+        parts.push(
+          `[0:v]trim=start=${s.start.toFixed(3)}:end=${s.end.toFixed(3)},setpts=PTS-STARTPTS,${eqExpr(filters)}[v${i}]`,
+        );
+        if (withAudio) {
+          parts.push(
+            `[0:a]atrim=start=${s.start.toFixed(3)}:end=${s.end.toFixed(3)},asetpts=PTS-STARTPTS[a${i}]`,
+          );
+        }
+      });
+      const refs = keep
+        .map((_, i) => (withAudio ? `[v${i}][a${i}]` : `[v${i}]`))
+        .join("");
+      parts.push(
+        `${refs}concat=n=${keep.length}:v=1:a=${withAudio ? 1 : 0}${withAudio ? "[vout][aout]" : "[vout]"}`,
+      );
+      const args = [
+        "-y",
+        "-i", inputName,
+        "-filter_complex", parts.join(";"),
+        "-map", "[vout]",
+      ];
+      if (withAudio) args.push("-map", "[aout]", "-c:a", "aac", "-b:a", "160k");
+      args.push(
+        "-c:v", "libx264",
+        "-preset", "veryfast",
+        "-crf", "23",
+        "-pix_fmt", "yuv420p",
+        "-movflags", "+faststart",
+        "edit-output.mp4",
+      );
+      await ff.exec(args);
+    };
+
+    try {
+      await run(true);
+    } catch (audioErr) {
+      console.warn("[ffmpeg] export com áudio falhou, tentando somente vídeo", audioErr);
+      try { await ff.deleteFile("edit-output.mp4"); } catch { /* ignore */ }
+      await run(false);
+    }
+
+    const data = (await ff.readFile("edit-output.mp4")) as Uint8Array;
+    const buf = new ArrayBuffer(data.byteLength);
+    new Uint8Array(buf).set(data);
+    return new Blob([buf], { type: "video/mp4" });
+  } finally {
+    ff.off("progress", progressHandler);
+    try { await ff.deleteFile(inputName); } catch { /* ignore */ }
+    try { await ff.deleteFile("edit-output.mp4"); } catch { /* ignore */ }
+  }
+}
