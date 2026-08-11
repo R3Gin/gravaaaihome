@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as SlidesCameraRouteImport } from './routes/slides-camera'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as MosaicosTeleprompterRouteImport } from './routes/mosaicos.teleprompter'
 import { Route as MosaicosGdocsPresentationRouteImport } from './routes/mosaicos.gdocs-presentation'
 import { Route as MosaicosEditorRouteImport } from './routes/mosaicos.editor'
 
@@ -22,6 +23,11 @@ const SlidesCameraRoute = SlidesCameraRouteImport.update({
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const MosaicosTeleprompterRoute = MosaicosTeleprompterRouteImport.update({
+  id: '/mosaicos/teleprompter',
+  path: '/mosaicos/teleprompter',
   getParentRoute: () => rootRouteImport,
 } as any)
 const MosaicosGdocsPresentationRoute =
@@ -41,12 +47,14 @@ export interface FileRoutesByFullPath {
   '/slides-camera': typeof SlidesCameraRoute
   '/mosaicos/editor': typeof MosaicosEditorRoute
   '/mosaicos/gdocs-presentation': typeof MosaicosGdocsPresentationRoute
+  '/mosaicos/teleprompter': typeof MosaicosTeleprompterRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/slides-camera': typeof SlidesCameraRoute
   '/mosaicos/editor': typeof MosaicosEditorRoute
   '/mosaicos/gdocs-presentation': typeof MosaicosGdocsPresentationRoute
+  '/mosaicos/teleprompter': typeof MosaicosTeleprompterRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -54,6 +62,7 @@ export interface FileRoutesById {
   '/slides-camera': typeof SlidesCameraRoute
   '/mosaicos/editor': typeof MosaicosEditorRoute
   '/mosaicos/gdocs-presentation': typeof MosaicosGdocsPresentationRoute
+  '/mosaicos/teleprompter': typeof MosaicosTeleprompterRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -62,18 +71,21 @@ export interface FileRouteTypes {
     | '/slides-camera'
     | '/mosaicos/editor'
     | '/mosaicos/gdocs-presentation'
+    | '/mosaicos/teleprompter'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
     | '/slides-camera'
     | '/mosaicos/editor'
     | '/mosaicos/gdocs-presentation'
+    | '/mosaicos/teleprompter'
   id:
     | '__root__'
     | '/'
     | '/slides-camera'
     | '/mosaicos/editor'
     | '/mosaicos/gdocs-presentation'
+    | '/mosaicos/teleprompter'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -81,6 +93,7 @@ export interface RootRouteChildren {
   SlidesCameraRoute: typeof SlidesCameraRoute
   MosaicosEditorRoute: typeof MosaicosEditorRoute
   MosaicosGdocsPresentationRoute: typeof MosaicosGdocsPresentationRoute
+  MosaicosTeleprompterRoute: typeof MosaicosTeleprompterRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -97,6 +110,13 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/mosaicos/teleprompter': {
+      id: '/mosaicos/teleprompter'
+      path: '/mosaicos/teleprompter'
+      fullPath: '/mosaicos/teleprompter'
+      preLoaderRoute: typeof MosaicosTeleprompterRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/mosaicos/gdocs-presentation': {
@@ -121,6 +141,7 @@ const rootRouteChildren: RootRouteChildren = {
   SlidesCameraRoute: SlidesCameraRoute,
   MosaicosEditorRoute: MosaicosEditorRoute,
   MosaicosGdocsPresentationRoute: MosaicosGdocsPresentationRoute,
+  MosaicosTeleprompterRoute: MosaicosTeleprompterRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
