@@ -1,8 +1,12 @@
 import { Link } from "@tanstack/react-router";
-import { Monitor, Scissors, ArrowRight } from "lucide-react";
+import { Monitor, Scissors, FileText, ArrowRight } from "lucide-react";
 import type { ComponentType, SVGProps } from "react";
 
-type MosaicoHref = "/slides-camera" | "/mosaicos/gdocs-presentation" | "/mosaicos/editor";
+type MosaicoHref =
+  | "/slides-camera"
+  | "/mosaicos/gdocs-presentation"
+  | "/mosaicos/editor"
+  | "/mosaicos/teleprompter";
 
 interface MosaicoDef {
   title: string;
@@ -26,8 +30,16 @@ const mosaicos: MosaicoDef[] = [
     href: "/mosaicos/editor",
     Icon: Scissors,
   },
+  {
+    title: "Teleprompter",
+    description:
+      "Leia seu roteiro na tela enquanto grava, sem aparecer no vídeo final.",
+    href: "/mosaicos/teleprompter",
+    Icon: FileText,
+  },
 
 ];
+
 
 
 function openPopup(href: string) {
