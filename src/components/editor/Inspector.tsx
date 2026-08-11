@@ -437,7 +437,10 @@ export function Inspector() {
               />
               Fundo atrás do texto
             </label>
+            <PresetSection clip={clip} side="in" />
+            <PresetSection clip={clip} side="out" />
           </>
+
         ) : null}
 
         {clip?.type === "overlay" ? (
