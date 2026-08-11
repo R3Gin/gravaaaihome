@@ -6,6 +6,20 @@ export interface CaptionSegment {
   text: string;
 }
 
+/** timing individual de cada palavra devolvido pelo Whisper */
+export interface WordTiming {
+  word: string;
+  start: number;
+  end: number;
+}
+
+export interface TranscribeResult {
+  /** frases completas (compatível com o fluxo antigo) */
+  segments: CaptionSegment[];
+  /** palavras com timing — vazio se o modelo não suportar */
+  words: WordTiming[];
+}
+
 export interface TranscribeEvents {
   onStage?: (stage: "audio" | "model" | "transcribe") => void;
   onDownload?: (progress: number) => void;
@@ -13,12 +27,13 @@ export interface TranscribeEvents {
 
 /**
  * Transcreve o áudio inteiramente no navegador (Whisper via Web Worker).
+ * Devolve frases e, quando disponível, timestamps por palavra.
  */
 export async function transcribe(
   blob: Blob,
   language: string | undefined,
   events: TranscribeEvents = {},
-): Promise<CaptionSegment[]> {
+): Promise<TranscribeResult> {
   events.onStage?.("audio");
   const audio = await decodeMono16k(blob);
   if (!audio || audio.length < 16000 * 0.3) {
@@ -28,16 +43,16 @@ export async function transcribe(
   const worker = new Worker(new URL("./whisper.worker.ts", import.meta.url), { type: "module" });
 
   try {
-    return await new Promise<CaptionSegment[]>((resolve, reject) => {
+    return await new Promise<TranscribeResult>((resolve, reject) => {
       worker.onmessage = (e: MessageEvent) => {
         const msg = e.data as
           | { type: "stage"; stage: "model" | "transcribe" }
           | { type: "download"; progress: number }
-          | { type: "done"; segments: CaptionSegment[] }
+          | { type: "done"; segments: CaptionSegment[]; words?: WordTiming[] }
           | { type: "error"; message: string };
         if (msg.type === "stage") events.onStage?.(msg.stage);
         if (msg.type === "download") events.onDownload?.(msg.progress);
-        if (msg.type === "done") resolve(msg.segments);
+        if (msg.type === "done") resolve({ segments: msg.segments, words: msg.words ?? [] });
         if (msg.type === "error") reject(new Error(msg.message));
       };
       worker.onerror = () => reject(new Error("O modelo de transcrição não pôde ser carregado."));
