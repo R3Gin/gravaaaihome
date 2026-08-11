@@ -1,5 +1,5 @@
 import { useMemo, useRef, useState } from "react";
-import { Copy, Scissors, Trash2, ZoomIn, ZoomOut } from "lucide-react";
+import { AudioLines, Copy, Scissors, Trash2, ZoomIn, ZoomOut } from "lucide-react";
 import { MIN_CLIP, useEditor, type Clip, type Track } from "@/state/editor-store";
 import { cn } from "@/lib/utils";
 
@@ -157,6 +157,8 @@ export function Timeline() {
   const removeClip = useEditor((s) => s.removeClip);
   const duplicateClip = useEditor((s) => s.duplicateClip);
   const splitPlayhead = useEditor((s) => s.splitPlayhead);
+  const silences = useEditor((s) => s.silences);
+  const sourceUrl = useEditor((s) => s.sourceUrl);
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const width = Math.max(600, (duration + 4) * zoom);
@@ -191,6 +193,13 @@ export function Timeline() {
           title="Dividir: ative e clique no clipe"
         >
           <Scissors className="h-4 w-4" /> Dividir
+        </button>
+        <button
+          disabled={!sourceUrl}
+          onClick={() => window.dispatchEvent(new CustomEvent("editor:open-panel", { detail: "silence" }))}
+          className="flex items-center gap-1.5 rounded-lg border border-[var(--border)] px-2.5 py-1.5 text-xs font-semibold text-[var(--muted-foreground)] disabled:opacity-40"
+        >
+          <AudioLines className="h-4 w-4" /> Detectar silêncios
         </button>
         <button
           onClick={splitPlayhead}
@@ -259,6 +268,22 @@ export function Timeline() {
                 </span>
               ))}
             </div>
+
+            {/* trechos silenciosos detectados */}
+            {silences.length > 0 ? (
+              <div
+                className="pointer-events-none absolute left-0 z-20"
+                style={{ top: 28, height: tracks.length * LANE_H, width }}
+              >
+                {silences.map((s, i) => (
+                  <span
+                    key={i}
+                    className="absolute top-0 h-full border-x border-amber-300/50 bg-amber-300/20"
+                    style={{ left: s.start * zoom, width: Math.max(2, (s.end - s.start) * zoom) }}
+                  />
+                ))}
+              </div>
+            ) : null}
 
             <div onPointerDown={(e) => e.target === e.currentTarget && select(null)}>
               {tracks.map((track) => (
