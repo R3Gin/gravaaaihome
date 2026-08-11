@@ -493,17 +493,24 @@ export function Timeline() {
       </div>
 
       <div className="flex min-h-0 flex-1">
-        {/* rótulos das faixas */}
+        {/* rótulos das faixas (arraste vertical para reordenar) */}
         <div className="shrink-0 border-r border-[var(--border)]" style={{ width: LABEL_W }}>
           <div className="h-7 border-b border-[var(--border)]" />
-          <div className="overflow-hidden">
-            {tracks.map((t) => (
+          <div ref={labelsRef} className="overflow-hidden">
+            {tracks.map((t, i) => (
               <div key={t.id}>
                 <div
-                  className="flex items-center border-b border-[var(--border)] px-3 text-[11px] font-semibold text-[var(--muted-foreground)]"
+                  onPointerDown={startTrackDrag(i)}
+                  title="Arraste para cima ou para baixo para reordenar"
+                  className={cn(
+                    "group flex cursor-grab select-none items-center gap-1.5 border-b border-[var(--border)] px-2 text-[11px] font-semibold text-[var(--muted-foreground)] transition-colors",
+                    dragTrack?.id === t.id && "cursor-grabbing bg-[var(--brand)]/20 text-[var(--foreground)]",
+                    dragTrack && dragTrack.id !== t.id && dragTrack.overIndex === i && "bg-[var(--brand)]/10",
+                  )}
                   style={{ height: LANE_H }}
                 >
-                  {t.label}
+                  <GripVertical className="h-3.5 w-3.5 shrink-0 opacity-40 group-hover:opacity-90" />
+                  <span className="truncate">{t.label}</span>
                 </div>
                 {selectedClip?.trackId === t.id
                   ? kfRows.map((p) => (
@@ -522,6 +529,7 @@ export function Timeline() {
             ))}
           </div>
         </div>
+
 
         <div id="tl-scroll" ref={scrollRef} className="relative min-w-0 flex-1 overflow-auto">
           <div style={{ width }} className="relative">
