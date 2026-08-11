@@ -135,6 +135,9 @@ export interface EditorActions {
   setAspect: (a: AspectRatio) => void;
   setTool: (t: Tool) => void;
   select: (id: string | null) => void;
+  /** Reordena as faixas da timeline (arraste vertical). */
+  reorderTracks: (from: number, to: number) => void;
+
   updateClip: (id: string, patch: Partial<Clip>) => void;
   /** Atualiza sem criar ponto de histórico (uso durante arraste contínuo). */
   updateClipLive: (id: string, patch: Partial<Clip>) => void;
@@ -181,13 +184,15 @@ const TEXT_TRACK = "track-text";
 const AUDIO_TRACK = "track-audio";
 
 function emptyTracks(): Track[] {
+  /* Ordem padrão: o áudio (waveform) fica logo abaixo do vídeo. */
   return [
     { id: VIDEO_TRACK, type: "video", label: "Vídeo", clips: [] },
+    { id: AUDIO_TRACK, type: "audio", label: "Áudio", clips: [] },
     { id: OVERLAY_TRACK, type: "overlay", label: "Efeitos", clips: [] },
     { id: TEXT_TRACK, type: "text", label: "Texto", clips: [] },
-    { id: AUDIO_TRACK, type: "audio", label: "Áudio", clips: [] },
   ];
 }
+
 
 export function allClips(tracks: Track[]): Clip[] {
   return tracks.flatMap((t) => t.clips);
@@ -316,6 +321,18 @@ export const useEditor = create<EditorState & EditorActions>((set, get) => {
     setAspect: (aspect) => set({ aspect }),
     setTool: (tool) => set({ tool }),
     select: (selectedClipId) => set({ selectedClipId, selectedKeyframes: [] }),
+
+    reorderTracks: (from, to) =>
+      set((s) => {
+        if (from === to || from < 0 || to < 0 || from >= s.tracks.length || to >= s.tracks.length)
+          return {};
+        const tracks = [...s.tracks];
+        const [moved] = tracks.splice(from, 1);
+        if (!moved) return {};
+        tracks.splice(to, 0, moved);
+        return { tracks };
+      }),
+
 
     updateClip: (id, patch) =>
       write((tracks) =>

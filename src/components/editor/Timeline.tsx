@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AudioLines, Copy, Scissors, Trash2, ZoomIn, ZoomOut } from "lucide-react";
+import { AudioLines, Copy, GripVertical, Scissors, Trash2, ZoomIn, ZoomOut } from "lucide-react";
 import { MIN_CLIP, findClip, useEditor, type Clip, type Track } from "@/state/editor-store";
 import {
   EASINGS,
@@ -430,6 +430,60 @@ export function Timeline() {
 
   const lanesHeight = tracks.length * LANE_H + kfRows.length * KF_H;
 
+  /* --- reordenar faixas (arraste vertical nos rótulos) --- */
+  const reorderTracks = useEditor((s) => s.reorderTracks);
+  const labelsRef = useRef<HTMLDivElement>(null);
+  const [dragTrack, setDragTrack] = useState<{ id: string; index: number; overIndex: number } | null>(
+    null,
+  );
+
+  const rowHeights = useMemo(
+    () =>
+      tracks.map(
+        (t) => LANE_H + (selectedClip?.trackId === t.id ? kfRows.length * KF_H : 0),
+      ),
+    [tracks, selectedClip, kfRows.length],
+  );
+
+  const indexFromY = useCallback(
+    (clientY: number) => {
+      const box = labelsRef.current?.getBoundingClientRect();
+      if (!box) return 0;
+      let y = clientY - box.top;
+      for (let i = 0; i < rowHeights.length; i++) {
+        const h = rowHeights[i] ?? LANE_H;
+        if (y < h / 2) return i;
+        if (y < h) return i;
+        y -= h;
+      }
+      return rowHeights.length - 1;
+    },
+    [rowHeights],
+  );
+
+  const startTrackDrag = (index: number) => (e: React.PointerEvent) => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    const track = tracks[index];
+    if (!track) return;
+    let over = index;
+    setDragTrack({ id: track.id, index, overIndex: index });
+    const move = (ev: PointerEvent) => {
+      over = indexFromY(ev.clientY);
+      setDragTrack((d) => (d ? { ...d, overIndex: over } : d));
+    };
+    const up = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      setDragTrack(null);
+      if (over !== index) reorderTracks(index, over);
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+  };
+
+
+
 
 
 
@@ -493,17 +547,24 @@ export function Timeline() {
       </div>
 
       <div className="flex min-h-0 flex-1">
-        {/* rótulos das faixas */}
+        {/* rótulos das faixas (arraste vertical para reordenar) */}
         <div className="shrink-0 border-r border-[var(--border)]" style={{ width: LABEL_W }}>
           <div className="h-7 border-b border-[var(--border)]" />
-          <div className="overflow-hidden">
-            {tracks.map((t) => (
+          <div ref={labelsRef} className="overflow-hidden">
+            {tracks.map((t, i) => (
               <div key={t.id}>
                 <div
-                  className="flex items-center border-b border-[var(--border)] px-3 text-[11px] font-semibold text-[var(--muted-foreground)]"
+                  onPointerDown={startTrackDrag(i)}
+                  title="Arraste para cima ou para baixo para reordenar"
+                  className={cn(
+                    "group flex cursor-grab select-none items-center gap-1.5 border-b border-[var(--border)] px-2 text-[11px] font-semibold text-[var(--muted-foreground)] transition-colors",
+                    dragTrack?.id === t.id && "cursor-grabbing bg-[var(--brand)]/20 text-[var(--foreground)]",
+                    dragTrack && dragTrack.id !== t.id && dragTrack.overIndex === i && "bg-[var(--brand)]/10",
+                  )}
                   style={{ height: LANE_H }}
                 >
-                  {t.label}
+                  <GripVertical className="h-3.5 w-3.5 shrink-0 opacity-40 group-hover:opacity-90" />
+                  <span className="truncate">{t.label}</span>
                 </div>
                 {selectedClip?.trackId === t.id
                   ? kfRows.map((p) => (
@@ -522,6 +583,7 @@ export function Timeline() {
             ))}
           </div>
         </div>
+
 
         <div id="tl-scroll" ref={scrollRef} className="relative min-w-0 flex-1 overflow-auto">
           <div style={{ width }} className="relative">
