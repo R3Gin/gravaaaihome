@@ -642,8 +642,19 @@ export const useEditor = create<EditorState & EditorActions>((set, get) => {
           });
         }),
       );
-      set({ selectedClipId: null, silences: [] });
+      const prev = get().removedRanges;
+      const inOriginal = ordered.map((r) => ({
+        start: toOriginalTime(r.start, prev),
+        end: toOriginalTime(r.end, prev),
+      }));
+      set({
+        selectedClipId: null,
+        silences: [],
+        removedRanges: [...prev, ...inOriginal].sort((a, b) => a.start - b.start),
+      });
+      return captionsBefore;
     },
+
 
     setSourceBlob: (sourceBlob) => set({ sourceBlob }),
     setSilences: (silences) => set({ silences }),
