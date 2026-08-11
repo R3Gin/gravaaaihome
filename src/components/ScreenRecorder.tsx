@@ -3,6 +3,8 @@ import { ActionButton } from "./ActionButton";
 import { Toggle } from "./Toggle";
 import { convertWebmToMp4, fixWebmSeekable, remuxMp4FastStart } from "@/lib/ffmpeg-convert";
 import { cn } from "@/lib/utils";
+import { setEditorHandoff } from "@/lib/editor-handoff";
+import { useNavigate } from "@tanstack/react-router";
 import {
   CameraPipBubble,
   useCameraPip,
@@ -27,6 +29,14 @@ function DownloadIcon() {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4">
       <path d="M12 3v12" /><path d="m7 10 5 5 5-5" /><path d="M5 21h14" />
+    </svg>
+  );
+}
+function ScissorsIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4">
+      <circle cx="6" cy="6" r="3" /><circle cx="6" cy="18" r="3" />
+      <path d="M20 4 8.12 15.88" /><path d="M14.47 14.48 20 20" /><path d="M8.12 8.12 12 12" />
     </svg>
   );
 }
@@ -59,6 +69,7 @@ export function ScreenRecorder() {
   const [supported] = useState(
     () => typeof navigator !== "undefined" && !!navigator.mediaDevices?.getDisplayMedia,
   );
+  const navigate = useNavigate();
   const [status, setStatus] = useState<Status>("idle");
   const [screenAudio, setScreenAudio] = useState(true);
   const [micAudio, setMicAudio] = useState(false);
@@ -665,6 +676,14 @@ export function ScreenRecorder() {
     window.setTimeout(() => URL.revokeObjectURL(url), 1000);
   }, [downloadExt]);
 
+  const sendToEditor = useCallback(() => {
+    const finalBlob = downloadBlobRef.current;
+    if (!finalBlob) return;
+    setEditorHandoff(finalBlob, `gravaai.${downloadExt}`);
+    void navigate({ to: "/mosaicos/editor" });
+  }, [downloadExt, navigate]);
+
+
   const isRecording = status === "recording";
   const isConverting = status === "converting";
   const canRecord = status === "capturing";
@@ -856,6 +875,15 @@ export function ScreenRecorder() {
             ? "Convertendo p/ MP4…"
             : `Baixar ${downloadExt.toUpperCase()}`}
         </ActionButton>
+        {downloadUrl && !isConverting ? (
+          <ActionButton
+            tone="neutral"
+            icon={<ScissorsIcon />}
+            onClick={sendToEditor}
+          >
+            Enviar para o editor
+          </ActionButton>
+        ) : null}
       </div>
     </div>
   );
