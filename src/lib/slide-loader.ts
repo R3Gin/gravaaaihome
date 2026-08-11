@@ -260,11 +260,23 @@ function drawShape(
   node: Element,
   ctx: CanvasRenderingContext2D,
   scale: number,
+  phBoxes: Map<string, Box>,
 ) {
   const txBody = firstLocal(node, "txBody");
   if (!txBody) return;
-  const box = readXfrm(node, scale);
-  const maxWidth = box.w > 0 ? box.w : ctx.canvas.width - box.x - 40;
+  const key = placeholderKey(node);
+  const isTitle = !!key && /title/i.test(key);
+  let box = readXfrm(node, scale);
+  if (box.w <= 0 && key && phBoxes.has(key)) box = phBoxes.get(key)!;
+  if (box.w <= 0) {
+    const W = ctx.canvas.width;
+    const H = ctx.canvas.height;
+    box = isTitle
+      ? { x: W * 0.08, y: H * 0.08, w: W * 0.84, h: H * 0.2 }
+      : { x: W * 0.08, y: H * 0.35, w: W * 0.84, h: H * 0.55 };
+  }
+  const maxWidth = box.w;
+  const defaultSz = isTitle ? 4000 : 1800;
 
   let cursorY = box.y;
   for (const p of local(txBody, "p")) {
@@ -275,11 +287,12 @@ function drawShape(
         text: local(r, "t")
           .map((t) => t.textContent ?? "")
           .join(""),
-        size: (Number(attr(rPr, "sz") ?? 1800) / 100) * scale * 1.33,
-        bold: attr(rPr, "b") === "1",
+        size: (Number(attr(rPr, "sz") ?? defaultSz) / 100) * scale * 1.33,
+        bold: attr(rPr, "b") === "1" || isTitle,
         color: solid ? `#${attr(solid, "val")}` : "#111111",
       };
     });
+
     const text = runs.map((r) => r.text).join("").trim();
     if (!text) {
       cursorY += 12 * scale;
