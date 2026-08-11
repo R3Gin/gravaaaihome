@@ -7,25 +7,44 @@ import {
   type ChangeEvent,
   type DragEvent,
   type PointerEvent as ReactPointerEvent,
+  type ReactNode,
 } from "react";
 import {
+  AudioLines,
+  Captions,
+  Copy,
+  Crop,
   Download,
+  FileText,
+  FlipHorizontal2,
+  Image as ImageIcon,
   Loader2,
+  Maximize2,
+  Minus,
+  MoreHorizontal,
   MousePointer2,
+  Music,
   Pause,
   Play,
   Plus,
+  Redo2,
   RotateCcw,
   Scissors,
+  Shapes,
+  SlidersHorizontal,
+  Sparkles,
   SplitSquareHorizontal,
   Trash2,
   Type,
+  Undo2,
   Upload,
   Video,
+  Volume2,
+  VolumeX,
+  Wand2,
   ZoomIn,
   ZoomOut,
 } from "lucide-react";
-import { ActionButton } from "@/components/ActionButton";
 import {
   exportTimeline,
   type TimelineClip,
@@ -54,20 +73,44 @@ interface Clip {
   transition: TransitionKind;
   filters: Filters;
   zoomKeys: ZoomKey[];
+  volume: number;
+  fadeIn: number;
+  fadeOut: number;
+  animIn: "none" | "fade" | "slide";
+  animOut: "none" | "fade" | "slide";
 }
 
 interface TextLayer {
   id: string;
+  lane: "text" | "overlay";
   text: string;
   start: number;
   end: number;
-  x: number; // 0..1 (centro)
-  y: number; // 0..1 (centro)
-  size: number; // px relativo a 1080p
+  x: number;
+  y: number;
+  size: number;
   color: string;
+  align: "left" | "center" | "right";
+  animIn: "none" | "fade" | "slide";
+  animOut: "none" | "fade" | "slide";
 }
 
 type Selection = { kind: "clip" | "text"; id: string } | null;
+type PanelId =
+  | "upload"
+  | "audio"
+  | "text"
+  | "elements"
+  | "captions"
+  | "transcript"
+  | "effects"
+  | "transitions"
+  | "filters";
+
+interface Snapshot {
+  clips: Clip[];
+  texts: TextLayer[];
+}
 
 const uid = () => Math.random().toString(36).slice(2, 9);
 
@@ -78,6 +121,7 @@ function fmt(t: number) {
   const cs = Math.floor((t % 1) * 10);
   return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}.${cs}`;
 }
+const short = (t: number) => fmt(t).slice(0, 5);
 
 const clipDuration = (c: Clip) => (c.srcEnd - c.srcStart) / (c.speed || 1);
 const clipEnd = (c: Clip) => c.start + clipDuration(c);
@@ -96,7 +140,45 @@ function zoomAt(keys: ZoomKey[], t: number) {
   return 1;
 }
 
+const PANELS: { id: PanelId; label: string; Icon: typeof Upload }[] = [
+  { id: "upload", label: "Upload", Icon: Upload },
+  { id: "audio", label: "Áudio", Icon: Music },
+  { id: "text", label: "Texto", Icon: Type },
+  { id: "elements", label: "Elementos", Icon: Shapes },
+  { id: "captions", label: "Legendas", Icon: Captions },
+  { id: "transcript", label: "Transcrição", Icon: FileText },
+  { id: "effects", label: "Efeitos", Icon: Sparkles },
+  { id: "transitions", label: "Transições", Icon: Wand2 },
+  { id: "filters", label: "Filtros", Icon: SlidersHorizontal },
+];
+
+const FILTER_PRESETS: { name: string; filters: Filters }[] = [
+  { name: "Original", filters: { ...NEUTRAL } },
+  { name: "Vívido", filters: { brightness: 0.05, contrast: 1.2, saturation: 1.5 } },
+  { name: "P&B", filters: { brightness: 0, contrast: 1.15, saturation: 0 } },
+  { name: "Vintage", filters: { brightness: 0.08, contrast: 0.9, saturation: 0.7 } },
+  { name: "Frio", filters: { brightness: -0.03, contrast: 1.1, saturation: 0.9 } },
+  { name: "Clarear", filters: { brightness: 0.18, contrast: 1, saturation: 1.05 } },
+];
+
+const TEXT_TEMPLATES: { name: string; size: number; color: string; y: number }[] = [
+  { name: "Título", size: 110, color: "#ffffff", y: 0.22 },
+  { name: "Subtítulo", size: 64, color: "#e8e8e8", y: 0.34 },
+  { name: "Legenda", size: 52, color: "#ffffff", y: 0.86 },
+  { name: "Destaque", size: 88, color: "#ff3b30", y: 0.5 },
+];
+
+const STICKERS = ["⭐", "🔥", "👉", "✅", "❗", "💡", "🎯", "❤️"];
+
+const RATIOS: { id: string; label: string; value: number }[] = [
+  { id: "16:9", label: "16:9", value: 16 / 9 },
+  { id: "9:16", label: "9:16", value: 9 / 16 },
+  { id: "1:1", label: "1:1", value: 1 },
+];
+
 export function VideoEditor() {
+  const [projectName, setProjectName] = useState("Projeto sem título");
+  const [editingName, setEditingName] = useState(false);
   const [fileName, setFileName] = useState<string | null>(null);
   const [srcUrl, setSrcUrl] = useState<string | null>(null);
   const [srcSize, setSrcSize] = useState({ width: 1280, height: 720 });
@@ -109,6 +191,7 @@ export function VideoEditor() {
   const [playing, setPlaying] = useState(false);
   const [time, setTime] = useState(0);
   const [thumbs, setThumbs] = useState<string[]>([]);
+  const [peaks, setPeaks] = useState<number[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
@@ -116,12 +199,23 @@ export function VideoEditor() {
   const [resultUrl, setResultUrl] = useState<string | null>(null);
   const [sel, setSel] = useState({ start: 0, end: 0 });
   const [muted, setMuted] = useState(false);
+  const [panel, setPanel] = useState<PanelId | null>("upload");
+  const [previewZoom, setPreviewZoom] = useState(1);
+  const [ratio, setRatio] = useState(RATIOS[0]);
+  const [inspectorTab, setInspectorTab] = useState<
+    "basic" | "bg" | "audio" | "anim" | "speed"
+  >("basic");
+  const [transcript, setTranscript] = useState("");
+  const [past, setPast] = useState<Snapshot[]>([]);
+  const [future, setFuture] = useState<Snapshot[]>([]);
+  const [moreOpen, setMoreOpen] = useState(false);
 
   const sourceBlobRef = useRef<Blob | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
   const lanesRef = useRef<HTMLDivElement | null>(null);
+  const shellRef = useRef<HTMLDivElement | null>(null);
   const timeRef = useRef(0);
   const playingRef = useRef(false);
   const stateRef = useRef({ clips, texts, srcSize, selection });
@@ -163,6 +257,42 @@ export function VideoEditor() {
     [srcUrl, resultUrl],
   );
 
+  useEffect(() => {
+    setInspectorTab(selectedClip ? "basic" : "basic");
+  }, [selection?.id]);
+
+  /* ---------------- histórico ---------------- */
+
+  const commit = useCallback(() => {
+    setPast((p) => [...p.slice(-49), { clips, texts }]);
+    setFuture([]);
+    setResultUrl(null);
+  }, [clips, texts]);
+
+  const undo = () => {
+    setPast((p) => {
+      if (p.length === 0) return p;
+      const prev = p[p.length - 1];
+      setFuture((f) => [{ clips, texts }, ...f].slice(0, 50));
+      setClips(prev.clips);
+      setTexts(prev.texts);
+      setSelection(null);
+      return p.slice(0, -1);
+    });
+  };
+
+  const redo = () => {
+    setFuture((f) => {
+      if (f.length === 0) return f;
+      const next = f[0];
+      setPast((p) => [...p, { clips, texts }]);
+      setClips(next.clips);
+      setTexts(next.texts);
+      setSelection(null);
+      return f.slice(1);
+    });
+  };
+
   /* ---------------- carregamento ---------------- */
 
   const generateThumbs = useCallback(async (url: string) => {
@@ -177,9 +307,9 @@ export function VideoEditor() {
     const dur = v.duration;
     const canvas = document.createElement("canvas");
     const h = 56;
-    const ratio = v.videoWidth && v.videoHeight ? v.videoWidth / v.videoHeight : 16 / 9;
+    const ratioWH = v.videoWidth && v.videoHeight ? v.videoWidth / v.videoHeight : 16 / 9;
     canvas.height = h;
-    canvas.width = Math.round(h * ratio);
+    canvas.width = Math.round(h * ratioWH);
     const ctx = canvas.getContext("2d")!;
     const out: string[] = [];
     for (let i = 0; i < THUMB_COUNT; i++) {
@@ -195,10 +325,36 @@ export function VideoEditor() {
     return out;
   }, []);
 
+  const generatePeaks = useCallback(async (blob: Blob) => {
+    try {
+      const Ctx =
+        window.AudioContext ??
+        (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+      if (!Ctx) return [] as number[];
+      const ctx = new Ctx();
+      const buf = await ctx.decodeAudioData(await blob.arrayBuffer());
+      const data = buf.getChannelData(0);
+      const N = 400;
+      const step = Math.max(1, Math.floor(data.length / N));
+      const out: number[] = [];
+      for (let i = 0; i < N; i++) {
+        let peak = 0;
+        for (let j = 0; j < step; j += 8) {
+          const v = Math.abs(data[i * step + j] ?? 0);
+          if (v > peak) peak = v;
+        }
+        out.push(Math.min(1, peak));
+      }
+      void ctx.close();
+      return out;
+    } catch {
+      return [] as number[];
+    }
+  }, []);
+
   const loadBlob = useCallback(
     async (blob: Blob, name: string) => {
-      const okType =
-        blob.type.startsWith("video/") || /\.(mp4|webm|mov|m4v)$/i.test(name);
+      const okType = blob.type.startsWith("video/") || /\.(mp4|webm|mov|m4v)$/i.test(name);
       if (!okType) {
         setError("Formato não suportado. Envie um arquivo de vídeo MP4.");
         return;
@@ -207,8 +363,11 @@ export function VideoEditor() {
       setLoading(true);
       setResultUrl(null);
       setThumbs([]);
+      setPeaks([]);
       setTexts([]);
       setClips([]);
+      setPast([]);
+      setFuture([]);
       setSelection(null);
       setTime(0);
       timeRef.current = 0;
@@ -220,8 +379,12 @@ export function VideoEditor() {
           return url;
         });
         setFileName(name);
+        setProjectName((cur) =>
+          cur === "Projeto sem título" ? name.replace(/\.[^.]+$/, "") : cur,
+        );
         const list = await generateThumbs(url).catch(() => [] as string[]);
         setThumbs(list);
+        void generatePeaks(blob).then(setPeaks);
       } catch (err) {
         console.error(err);
         setError("Não foi possível ler este vídeo. Tente outro arquivo MP4.");
@@ -229,10 +392,9 @@ export function VideoEditor() {
         setLoading(false);
       }
     },
-    [generateThumbs],
+    [generateThumbs, generatePeaks],
   );
 
-  // Vídeo vindo do botão "Enviar para o editor".
   useEffect(() => {
     const handoff = takeEditorHandoff();
     if (handoff) void loadBlob(handoff.blob, handoff.name);
@@ -251,27 +413,34 @@ export function VideoEditor() {
     if (f) void loadBlob(f, f.name);
   };
 
-  const onLoadedMetadata = () => {
+  const initializedUrlRef = useRef<string | null>(null);
+  const onLoadedMetadata = useCallback(() => {
     const v = videoRef.current;
-    if (!v || !Number.isFinite(v.duration)) return;
+    if (!v || !Number.isFinite(v.duration) || v.duration <= 0) return;
+    if (initializedUrlRef.current === v.currentSrc) return;
+    initializedUrlRef.current = v.currentSrc;
     setDuration(v.duration);
     setSrcSize({ width: v.videoWidth || 1280, height: v.videoHeight || 720 });
-    setClips([
-      {
-        id: uid(),
-        srcStart: 0,
-        srcEnd: v.duration,
-        start: 0,
-        speed: 1,
-        transition: "none",
-        filters: { ...NEUTRAL },
-        zoomKeys: [],
-      },
-    ]);
+    setClips([newClip(0, v.duration)]);
     setSel({ start: 0, end: v.duration });
-  };
+  }, []);
 
-  /* ---------------- preview (canvas) ---------------- */
+  // O evento pode disparar antes da hidratação; garantimos a leitura aqui.
+  useEffect(() => {
+    const v = videoRef.current;
+    if (!v || !srcUrl) return;
+    const handler = () => onLoadedMetadata();
+    v.addEventListener("loadedmetadata", handler);
+    v.addEventListener("durationchange", handler);
+    if (v.readyState >= 1) handler();
+    return () => {
+      v.removeEventListener("loadedmetadata", handler);
+      v.removeEventListener("durationchange", handler);
+    };
+  }, [srcUrl, onLoadedMetadata]);
+
+
+  /* ---------------- preview ---------------- */
 
   useEffect(() => {
     let raf = 0;
@@ -304,6 +473,7 @@ export function VideoEditor() {
         const local = t - clip.start;
         const want = clip.srcStart + local * (clip.speed || 1);
         video.playbackRate = Math.min(4, Math.max(0.25, clip.speed || 1));
+        video.volume = Math.min(1, Math.max(0, clip.volume));
         if (Math.abs(video.currentTime - want) > (playingRef.current ? 0.35 : 0.02)) {
           try {
             video.currentTime = Math.min(want, Math.max(0, (video.duration || want) - 0.03));
@@ -363,7 +533,7 @@ export function VideoEditor() {
           if (t < layer.start || t > layer.end) continue;
           const fontSize = (layer.size / 1080) * H;
           ctx.font = `700 ${fontSize}px "DM Sans", system-ui, sans-serif`;
-          ctx.textAlign = "center";
+          ctx.textAlign = layer.align;
           ctx.textBaseline = "middle";
           ctx.fillStyle = layer.color;
           ctx.shadowColor = "rgba(0,0,0,0.55)";
@@ -406,7 +576,7 @@ export function VideoEditor() {
     }
   };
 
-  /* ---------------- timeline: interações ---------------- */
+  /* ---------------- timeline ---------------- */
 
   const timeFromX = useCallback(
     (clientX: number) => {
@@ -432,6 +602,7 @@ export function VideoEditor() {
       return;
     }
     setSelection({ kind: "clip", id: clip.id });
+    commit();
     dragRef.current = { kind: "clip", id: clip.id, grabOffset: t - clip.start };
     (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
   };
@@ -440,12 +611,20 @@ export function VideoEditor() {
     (layer: TextLayer, edge?: "start" | "end") => (e: ReactPointerEvent<HTMLDivElement>) => {
       e.stopPropagation();
       setSelection({ kind: "text", id: layer.id });
+      commit();
       const t = timeFromX(e.clientX);
       dragRef.current = edge
         ? { kind: "text-edge", id: layer.id, edge }
         : { kind: "text", id: layer.id, grabOffset: t - layer.start };
       (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
     };
+
+  const laneUnderPointer = (clientY: number, clientX: number): "text" | "overlay" | null => {
+    const el = document.elementFromPoint(clientX, clientY) as HTMLElement | null;
+    const lane = el?.closest("[data-lane]") as HTMLElement | null;
+    const id = lane?.dataset.lane;
+    return id === "text" || id === "overlay" ? id : null;
+  };
 
   const onLanesPointerMove = (e: ReactPointerEvent<HTMLDivElement>) => {
     const drag = dragRef.current;
@@ -456,12 +635,13 @@ export function VideoEditor() {
         cur.map((c) => (c.id === drag.id ? { ...c, start: Math.max(0, t - drag.grabOffset) } : c)),
       );
     } else if (drag.kind === "text") {
+      const lane = laneUnderPointer(e.clientY, e.clientX);
       setTexts((cur) =>
         cur.map((l) => {
           if (l.id !== drag.id) return l;
           const len = l.end - l.start;
           const start = Math.max(0, t - drag.grabOffset);
-          return { ...l, start, end: start + len };
+          return { ...l, start, end: start + len, lane: lane ?? l.lane };
         }),
       );
     } else if (drag.kind === "text-edge") {
@@ -490,7 +670,26 @@ export function VideoEditor() {
 
   /* ---------------- edições ---------------- */
 
+  function newClip(srcStart: number, srcEnd: number, start = 0): Clip {
+    return {
+      id: uid(),
+      srcStart,
+      srcEnd,
+      start,
+      speed: 1,
+      transition: "none",
+      filters: { ...NEUTRAL },
+      zoomKeys: [],
+      volume: 1,
+      fadeIn: 0,
+      fadeOut: 0,
+      animIn: "none",
+      animOut: "none",
+    };
+  }
+
   const splitClip = (id: string, t: number) => {
+    commit();
     setClips((cur) => {
       const idx = cur.findIndex((c) => c.id === id);
       if (idx < 0) return cur;
@@ -499,69 +698,101 @@ export function VideoEditor() {
       if (local < MIN_CLIP || local > clipDuration(c) - MIN_CLIP) return cur;
       const srcSplit = c.srcStart + local * (c.speed || 1);
       const left: Clip = { ...c, srcEnd: srcSplit };
-      const right: Clip = {
-        ...c,
-        id: uid(),
-        srcStart: srcSplit,
-        start: c.start + local,
-        zoomKeys: [],
-      };
+      const right: Clip = { ...c, id: uid(), srcStart: srcSplit, start: c.start + local, zoomKeys: [] };
       const next = [...cur];
       next.splice(idx, 1, left, right);
       return next;
     });
-    setResultStale();
   };
 
-  const setResultStale = () => setResultUrl(null);
+  const splitAtPlayhead = () => {
+    const target = selectedClip ?? clips.find((c) => time > c.start && time < clipEnd(c));
+    if (target) splitClip(target.id, time);
+  };
 
   const deleteSelected = () => {
-    if (selection?.kind === "clip") {
-      setClips((cur) => cur.filter((c) => c.id !== selection.id));
-    } else if (selection?.kind === "text") {
-      setTexts((cur) => cur.filter((t) => t.id !== selection.id));
-    }
+    if (!selection) return;
+    commit();
+    if (selection.kind === "clip") setClips((cur) => cur.filter((c) => c.id !== selection.id));
+    else setTexts((cur) => cur.filter((t) => t.id !== selection.id));
     setSelection(null);
-    setResultStale();
   };
 
-  const updateSelectedClip = (patch: Partial<Clip>) => {
+  const duplicateSelected = () => {
+    if (!selection) return;
+    commit();
+    if (selectedClip) {
+      const copy: Clip = {
+        ...selectedClip,
+        id: uid(),
+        start: clipEnd(selectedClip),
+        zoomKeys: [...selectedClip.zoomKeys],
+      };
+      setClips((cur) => [...cur, copy]);
+      setSelection({ kind: "clip", id: copy.id });
+    } else if (selectedText) {
+      const len = selectedText.end - selectedText.start;
+      const copy: TextLayer = {
+        ...selectedText,
+        id: uid(),
+        start: selectedText.end,
+        end: selectedText.end + len,
+      };
+      setTexts((cur) => [...cur, copy]);
+      setSelection({ kind: "text", id: copy.id });
+    }
+  };
+
+  const updateSelectedClip = (patch: Partial<Clip>, record = true) => {
     if (!selectedClip) return;
+    if (record) commit();
     setClips((cur) => cur.map((c) => (c.id === selectedClip.id ? { ...c, ...patch } : c)));
-    setResultStale();
   };
 
-  const updateSelectedText = (patch: Partial<TextLayer>) => {
+  const updateSelectedText = (patch: Partial<TextLayer>, record = true) => {
     if (!selectedText) return;
+    if (record) commit();
     setTexts((cur) => cur.map((t) => (t.id === selectedText.id ? { ...t, ...patch } : t)));
-    setResultStale();
   };
 
-  const addText = () => {
+  const addText = (
+    preset?: Partial<TextLayer> & { text?: string },
+    lane: "text" | "overlay" = "text",
+  ) => {
+    commit();
     const start = Math.min(time, Math.max(0, total - 1));
     const layer: TextLayer = {
       id: uid(),
+      lane,
       text: "Novo texto",
       start,
-      end: Math.min(total, start + 3),
+      end: Math.min(Math.max(total, start + 3), start + 3),
       x: 0.5,
       y: 0.8,
       size: 72,
       color: "#ffffff",
+      align: "center",
+      animIn: "none",
+      animOut: "none",
+      ...preset,
     };
     setTexts((cur) => [...cur, layer]);
     setSelection({ kind: "text", id: layer.id });
-    setResultStale();
+    setPanel(null);
   };
 
   const addZoomKey = () => {
     if (!selectedClip) return;
     const local = Math.max(0, Math.min(time - selectedClip.start, clipDuration(selectedClip)));
-    const keys = [...selectedClip.zoomKeys.filter((k) => Math.abs(k.t - local) > 0.05), { t: local, scale: 1.5 }];
+    const keys = [
+      ...selectedClip.zoomKeys.filter((k) => Math.abs(k.t - local) > 0.05),
+      { t: local, scale: 1.5 },
+    ];
     updateSelectedClip({ zoomKeys: keys.sort((a, b) => a.t - b.t) });
   };
 
   const keepSelection = () => {
+    commit();
     setClips((cur) =>
       cur
         .map((c) => {
@@ -578,10 +809,10 @@ export function VideoEditor() {
         })
         .filter(Boolean) as Clip[],
     );
-    setResultStale();
   };
 
   const removeSelection = () => {
+    commit();
     setClips((cur) => {
       const out: Clip[] = [];
       for (const c of cur) {
@@ -592,10 +823,8 @@ export function VideoEditor() {
           out.push(c);
           continue;
         }
-        if (sel.start > cs) {
-          out.push({ ...c, srcEnd: c.srcStart + (sel.start - cs) * speed });
-        }
-        if (sel.end < ce) {
+        if (sel.start > cs) out.push({ ...c, srcEnd: c.srcStart + (sel.start - cs) * speed });
+        if (sel.end < ce)
           out.push({
             ...c,
             id: uid(),
@@ -603,14 +832,13 @@ export function VideoEditor() {
             start: sel.end,
             zoomKeys: [],
           });
-        }
       }
       return out.filter((c) => clipDuration(c) > MIN_CLIP);
     });
-    setResultStale();
   };
 
   const rippleClose = () => {
+    commit();
     setClips((cur) => {
       const sorted = [...cur].sort((a, b) => a.start - b.start);
       let cursor = 0;
@@ -620,30 +848,18 @@ export function VideoEditor() {
         return next;
       });
     });
-    setResultStale();
   };
 
   const resetAll = () => {
     if (duration <= 0) return;
-    setClips([
-      {
-        id: uid(),
-        srcStart: 0,
-        srcEnd: duration,
-        start: 0,
-        speed: 1,
-        transition: "none",
-        filters: { ...NEUTRAL },
-        zoomKeys: [],
-      },
-    ]);
+    commit();
+    setClips([newClip(0, duration)]);
     setTexts([]);
     setSel({ start: 0, end: duration });
     setSelection(null);
-    setResultStale();
   };
 
-  /* ---------------- overlay de texto no player ---------------- */
+  /* ---------------- overlay no player ---------------- */
 
   const onStagePointerDown = (e: ReactPointerEvent<HTMLDivElement>) => {
     if (!selectedText) return;
@@ -654,10 +870,13 @@ export function VideoEditor() {
   const moveTextTo = (e: ReactPointerEvent<HTMLDivElement>) => {
     if (!selectedText) return;
     const rect = e.currentTarget.getBoundingClientRect();
-    updateSelectedText({
-      x: Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width)),
-      y: Math.min(1, Math.max(0, (e.clientY - rect.top) / rect.height)),
-    });
+    updateSelectedText(
+      {
+        x: Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width)),
+        y: Math.min(1, Math.max(0, (e.clientY - rect.top) / rect.height)),
+      },
+      false,
+    );
   };
 
   /* ---------------- exportação ---------------- */
@@ -671,7 +890,7 @@ export function VideoEditor() {
         const ctx = c.getContext("2d")!;
         const fontSize = (layer.size / 1080) * c.height;
         ctx.font = `700 ${fontSize}px "DM Sans", system-ui, sans-serif`;
-        ctx.textAlign = "center";
+        ctx.textAlign = layer.align;
         ctx.textBaseline = "middle";
         ctx.fillStyle = layer.color;
         ctx.shadowColor = "rgba(0,0,0,0.55)";
@@ -690,7 +909,6 @@ export function VideoEditor() {
     setError(null);
     try {
       const ordered = [...clips].sort((a, b) => a.start - b.start);
-      // mapeia tempo da timeline -> tempo no arquivo exportado
       const bounds: { from: number; to: number; out: number }[] = [];
       let acc = 0;
       for (const c of ordered) {
@@ -700,9 +918,7 @@ export function VideoEditor() {
         acc += d - (acc > 0 ? trimmed : 0);
       }
       const mapTime = (t: number) => {
-        for (const b of bounds) {
-          if (t >= b.from && t <= b.to) return b.out + (t - b.from);
-        }
+        for (const b of bounds) if (t >= b.from && t <= b.to) return b.out + (t - b.from);
         return Math.min(Math.max(0, t - (ordered[0]?.start ?? 0)), acc);
       };
 
@@ -743,15 +959,15 @@ export function VideoEditor() {
     if (!resultUrl) return;
     const a = document.createElement("a");
     a.href = resultUrl;
-    a.download = "gravaai-editado.mp4";
+    a.download = `${projectName || "gravaai-editado"}.mp4`;
     document.body.appendChild(a);
     a.click();
     a.remove();
   };
 
-  /* ---------------- render ---------------- */
+  /* ---------------- render helpers ---------------- */
 
-  const laneWidth = Math.max(total * pxPerSec + 80, 640);
+  const laneWidth = Math.max(total * pxPerSec + 120, 800);
   const ticks = useMemo(() => {
     const stepCandidates = [0.5, 1, 2, 5, 10, 30, 60];
     const step = stepCandidates.find((s) => s * pxPerSec >= 70) ?? 60;
@@ -767,269 +983,548 @@ export function VideoEditor() {
     return thumbs.slice(from, to);
   };
 
+  const toggleFullscreen = () => {
+    const el = shellRef.current;
+    if (!el) return;
+    if (document.fullscreenElement) void document.exitFullscreen();
+    else void el.requestFullscreen().catch(() => {});
+  };
+
+  const hasMedia = Boolean(srcUrl);
+
   return (
-    <div className="min-h-screen bg-[var(--background)] text-[var(--foreground)]">
-      <header className="sticky top-0 z-30 border-b border-[var(--border)] bg-black/50 backdrop-blur-md">
-        <div className="mx-auto flex max-w-7xl items-center justify-between gap-3 px-4 py-3 sm:px-6">
-          <div className="flex min-w-0 items-center gap-3">
-            <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-[var(--brand)]/15 text-[var(--brand)]">
-              <Scissors className="h-4 w-4" />
+    <div
+      ref={shellRef}
+      className="flex h-screen flex-col overflow-hidden bg-[var(--background)] text-[var(--foreground)]"
+    >
+      <input ref={inputRef} type="file" accept="video/mp4,video/*" className="hidden" onChange={onPick} />
+
+      {/* ---------- 1. BARRA SUPERIOR ---------- */}
+      <header className="flex h-14 shrink-0 items-center gap-3 border-b border-[var(--border)] bg-black/40 px-3">
+        <div className="flex min-w-0 flex-1 items-center gap-2">
+          <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-[var(--brand)]/15 text-[var(--brand)]">
+            <Scissors className="h-4 w-4" />
+          </span>
+          {editingName ? (
+            <input
+              autoFocus
+              value={projectName}
+              onChange={(e) => setProjectName(e.target.value)}
+              onBlur={() => setEditingName(false)}
+              onKeyDown={(e) => e.key === "Enter" && setEditingName(false)}
+              className="w-52 rounded-md border border-[var(--brand)]/60 bg-[var(--surface-2)] px-2 py-1 text-sm font-semibold outline-none"
+            />
+          ) : (
+            <button
+              onClick={() => setEditingName(true)}
+              title="Clique para renomear"
+              className="truncate rounded-md px-2 py-1 text-sm font-semibold hover:bg-[var(--surface-2)]"
+            >
+              {projectName}
+            </button>
+          )}
+          {fileName ? (
+            <span className="hidden truncate text-xs text-[var(--muted-foreground)] lg:block">
+              {fileName}
             </span>
-            <h1 className="font-display truncate text-sm font-bold tracking-tight sm:text-base">
-              Editor Simplificado
-            </h1>
-            {fileName ? (
-              <span className="hidden truncate text-xs text-[var(--muted-foreground)] sm:block">
-                {fileName}
-              </span>
-            ) : null}
-          </div>
-          {srcUrl ? (
-            <div className="flex items-center gap-2">
-              <ActionButton
-                tone="neutral"
-                icon={<Upload className="h-4 w-4" />}
-                onClick={() => inputRef.current?.click()}
-              >
-                Trocar vídeo
-              </ActionButton>
-              <ActionButton
-                tone="download"
-                icon={exporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
-                onClick={runExport}
-                disabled={exporting || clips.length === 0}
-              >
-                {exporting ? `Exportando… ${Math.round(progress * 100)}%` : "Exportar MP4"}
-              </ActionButton>
-            </div>
           ) : null}
+        </div>
+
+        <div className="flex items-center gap-1.5">
+          <IconBtn label="Reproduzir/Pausar" onClick={togglePlay} disabled={!hasMedia}>
+            {playing ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
+          </IconBtn>
+          <div className="flex items-center gap-1 rounded-lg border border-[var(--border)] bg-[var(--surface-2)] px-1">
+            <IconBtn label="Reduzir preview" bare onClick={() => setPreviewZoom((z) => Math.max(0.25, z - 0.1))}>
+              <Minus className="h-3.5 w-3.5" />
+            </IconBtn>
+            <span className="w-11 text-center text-[11px] tabular-nums text-[var(--muted-foreground)]">
+              {Math.round(previewZoom * 100)}%
+            </span>
+            <IconBtn label="Ampliar preview" bare onClick={() => setPreviewZoom((z) => Math.min(3, z + 0.1))}>
+              <Plus className="h-3.5 w-3.5" />
+            </IconBtn>
+          </div>
+          <IconBtn label="Desfazer" onClick={undo} disabled={past.length === 0}>
+            <Undo2 className="h-4 w-4" />
+          </IconBtn>
+          <IconBtn label="Refazer" onClick={redo} disabled={future.length === 0}>
+            <Redo2 className="h-4 w-4" />
+          </IconBtn>
+        </div>
+
+        <div className="flex flex-1 items-center justify-end gap-2">
+          {resultUrl ? (
+            <button
+              onClick={downloadResult}
+              className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-[var(--border)] bg-[var(--surface-2)] px-3 text-xs font-semibold"
+            >
+              <Download className="h-4 w-4" /> Baixar MP4
+            </button>
+          ) : null}
+          <button
+            onClick={runExport}
+            disabled={exporting || clips.length === 0}
+            className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-[var(--brand)] px-4 text-sm font-semibold text-white transition-transform active:scale-[0.96] disabled:opacity-50"
+          >
+            {exporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+            {exporting ? `Exportando… ${Math.round(progress * 100)}%` : "Exportar MP4"}
+          </button>
         </div>
       </header>
 
-      <input
-        ref={inputRef}
-        type="file"
-        accept="video/mp4,video/*"
-        className="hidden"
-        onChange={onPick}
-      />
+      {exporting ? (
+        <div className="h-1 w-full bg-[var(--surface-2)]">
+          <div
+            className="h-full bg-[var(--brand)] transition-all"
+            style={{ width: `${Math.round(progress * 100)}%` }}
+          />
+        </div>
+      ) : null}
 
-      <main className="mx-auto max-w-7xl px-4 pb-24 pt-6 sm:px-6">
-        {error ? (
-          <div className="mb-4 rounded-lg border border-[var(--brand)]/40 bg-[var(--brand)]/10 px-4 py-3 text-sm text-[var(--brand)]">
-            {error}
-          </div>
+      <div className="flex min-h-0 flex-1">
+        {/* ---------- 2. SIDEBAR ESQUERDA ---------- */}
+        <nav className="flex w-16 shrink-0 flex-col items-center gap-1 border-r border-[var(--border)] bg-black/30 py-2">
+          {PANELS.map((p) => (
+            <button
+              key={p.id}
+              onClick={() => setPanel((cur) => (cur === p.id ? null : p.id))}
+              className={cn(
+                "flex w-14 flex-col items-center gap-1 rounded-lg py-2 text-[10px] font-medium transition-colors",
+                panel === p.id
+                  ? "bg-[var(--brand)]/15 text-[var(--brand)]"
+                  : "text-[var(--muted-foreground)] hover:bg-[var(--surface-2)] hover:text-[var(--foreground)]",
+              )}
+            >
+              <p.Icon className="h-5 w-5" />
+              {p.label}
+            </button>
+          ))}
+        </nav>
+
+        {panel ? (
+          <aside className="w-72 shrink-0 overflow-y-auto border-r border-[var(--border)] bg-[var(--surface)] p-3">
+            <SidePanel
+              panel={panel}
+              hasMedia={hasMedia}
+              fileName={fileName}
+              duration={duration}
+              thumb={thumbs[0]}
+              onUpload={() => inputRef.current?.click()}
+              onDropFile={onDrop}
+              onAddText={addText}
+              onApplyFilters={(f) => updateSelectedClip({ filters: f })}
+              onApplyTransition={(t) => updateSelectedClip({ transition: t })}
+              selectedClip={selectedClip}
+              transcript={transcript}
+              setTranscript={setTranscript}
+              time={time}
+            />
+          </aside>
         ) : null}
 
-        {!srcUrl ? (
-          <div
-            onDragOver={(e) => e.preventDefault()}
-            onDrop={onDrop}
-            className="flex flex-col items-center justify-center gap-4 rounded-2xl border border-dashed border-white/15 bg-[var(--surface)] px-6 py-24 text-center"
-          >
-            {loading ? (
-              <>
-                <Loader2 className="h-8 w-8 animate-spin text-[var(--brand)]" />
-                <p className="text-sm text-[var(--muted-foreground)]">Carregando vídeo…</p>
-              </>
-            ) : (
-              <>
-                <span className="grid h-14 w-14 place-items-center rounded-2xl bg-[var(--brand)]/15 text-[var(--brand)]">
-                  <Video className="h-7 w-7" />
-                </span>
-                <div>
-                  <h2 className="font-display text-xl font-bold tracking-tight">
-                    Importe um vídeo para começar
-                  </h2>
-                  <p className="mt-2 text-sm text-[var(--muted-foreground)]">
-                    Arraste um MP4 aqui ou selecione um arquivo. Você também pode gravar na
-                    home e clicar em “Enviar para o editor”. Tudo roda no seu navegador.
-                  </p>
-                </div>
-                <ActionButton
-                  tone="record"
-                  icon={<Upload className="h-4 w-4" />}
-                  onClick={() => inputRef.current?.click()}
+        {/* ---------- 3. PREVIEW + 5. TIMELINE ---------- */}
+        <div className="flex min-w-0 flex-1 flex-col">
+          {error ? (
+            <div className="border-b border-[var(--brand)]/40 bg-[var(--brand)]/10 px-4 py-2 text-xs text-[var(--brand)]">
+              {error}
+            </div>
+          ) : null}
+
+          <section className="relative flex min-h-0 flex-1 items-center justify-center bg-black/40 p-4">
+            <div className="absolute left-4 top-4 z-10 flex items-center gap-1 rounded-lg border border-[var(--border)] bg-black/60 p-1">
+              {RATIOS.map((r) => (
+                <button
+                  key={r.id}
+                  onClick={() => setRatio(r)}
+                  className={cn(
+                    "rounded-md px-2 py-1 text-[11px] font-semibold",
+                    ratio.id === r.id
+                      ? "bg-[var(--brand)] text-white"
+                      : "text-[var(--muted-foreground)] hover:text-white",
+                  )}
                 >
-                  Selecionar arquivo
-                </ActionButton>
-              </>
-            )}
-          </div>
-        ) : (
-          <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_300px]">
-            {/* Player */}
-            <div className="space-y-3">
+                  {r.label}
+                </button>
+              ))}
+            </div>
+
+            {!hasMedia ? (
+              <div
+                onDragOver={(e) => e.preventDefault()}
+                onDrop={onDrop}
+                className="flex max-w-md flex-col items-center gap-4 rounded-2xl border border-dashed border-white/15 bg-[var(--surface)] px-8 py-12 text-center"
+              >
+                {loading ? (
+                  <>
+                    <Loader2 className="h-8 w-8 animate-spin text-[var(--brand)]" />
+                    <p className="text-sm text-[var(--muted-foreground)]">Carregando vídeo…</p>
+                  </>
+                ) : (
+                  <>
+                    <span className="grid h-14 w-14 place-items-center rounded-2xl bg-[var(--brand)]/15 text-[var(--brand)]">
+                      <Video className="h-7 w-7" />
+                    </span>
+                    <div>
+                      <h2 className="font-display text-lg font-bold tracking-tight">
+                        Importe um vídeo para começar
+                      </h2>
+                      <p className="mt-2 text-sm text-[var(--muted-foreground)]">
+                        Arraste um MP4 aqui ou selecione um arquivo. Você também pode gravar na home
+                        e clicar em “Enviar para o editor”.
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => inputRef.current?.click()}
+                      className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-[var(--brand)] px-4 text-sm font-semibold text-white"
+                    >
+                      <Upload className="h-4 w-4" /> Selecionar arquivo
+                    </button>
+                  </>
+                )}
+              </div>
+            ) : (
               <div
                 onPointerDown={onStagePointerDown}
                 onPointerMove={(e) => textDragRef.current && moveTextTo(e)}
                 onPointerUp={() => (textDragRef.current = false)}
+                style={{
+                  aspectRatio: String(ratio.value),
+                  transform: `scale(${previewZoom})`,
+                  maxHeight: "100%",
+                  maxWidth: "100%",
+                }}
                 className={cn(
-                  "relative overflow-hidden rounded-2xl border border-[var(--border)] bg-black",
+                  "relative h-full overflow-hidden rounded-xl border border-[var(--border)] bg-black transition-transform",
                   selectedText && "cursor-move",
                 )}
               >
-                <canvas ref={canvasRef} className="aspect-video w-full bg-black object-contain" />
+                <canvas ref={canvasRef} className="h-full w-full object-contain" />
                 <video
                   ref={videoRef}
-                  src={srcUrl}
+                  src={srcUrl ?? undefined}
                   onLoadedMetadata={onLoadedMetadata}
                   playsInline
                   className="pointer-events-none absolute h-px w-px opacity-0"
                 />
                 {selectedText ? (
-                  <span className="pointer-events-none absolute left-3 top-3 rounded-md bg-black/70 px-2 py-1 text-[11px] text-[var(--muted-foreground)]">
-                    Arraste no player para posicionar o texto
-                  </span>
+                  <div
+                    className="pointer-events-none absolute -translate-x-1/2 -translate-y-1/2 border border-[var(--brand)]"
+                    style={{
+                      left: `${selectedText.x * 100}%`,
+                      top: `${selectedText.y * 100}%`,
+                      width: `${Math.min(90, selectedText.text.length * (selectedText.size / 1080) * 60 + 10)}%`,
+                      height: `${(selectedText.size / 1080) * 160}%`,
+                    }}
+                  >
+                    {["-left-1 -top-1", "-right-1 -top-1", "-left-1 -bottom-1", "-right-1 -bottom-1"].map(
+                      (pos) => (
+                        <span key={pos} className={cn("absolute h-2 w-2 rounded-sm bg-white", pos)} />
+                      ),
+                    )}
+                  </div>
+                ) : null}
+              </div>
+            )}
+          </section>
+
+          {/* ---------- 5. TIMELINE ---------- */}
+          <section className="flex h-[340px] shrink-0 flex-col border-t border-[var(--border)] bg-[var(--surface)]">
+            <div className="flex items-center gap-1 border-b border-[var(--border)] px-2 py-1.5">
+              <IconBtn label="Reproduzir/Pausar" onClick={togglePlay} disabled={!hasMedia}>
+                {playing ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
+              </IconBtn>
+              <span className="mr-2 text-[11px] tabular-nums text-[var(--muted-foreground)]">
+                {short(time)} / {short(total)}
+              </span>
+              <div className="mx-1 h-5 w-px bg-[var(--border)]" />
+              <IconBtn label="Selecionar" active={tool === "select"} onClick={() => setTool("select")}>
+                <MousePointer2 className="h-4 w-4" />
+              </IconBtn>
+              <IconBtn label="Lâmina" active={tool === "blade"} onClick={() => setTool("blade")}>
+                <SplitSquareHorizontal className="h-4 w-4" />
+              </IconBtn>
+              <IconBtn label="Dividir no playhead" onClick={splitAtPlayhead} disabled={!hasMedia}>
+                <Scissors className="h-4 w-4" />
+              </IconBtn>
+              <IconBtn label="Deletar" onClick={deleteSelected} disabled={!selection}>
+                <Trash2 className="h-4 w-4" />
+              </IconBtn>
+              <IconBtn label="Duplicar" onClick={duplicateSelected} disabled={!selection}>
+                <Copy className="h-4 w-4" />
+              </IconBtn>
+              <IconBtn label="Cortar para a seleção" onClick={keepSelection} disabled={!hasMedia}>
+                <Crop className="h-4 w-4" />
+              </IconBtn>
+              <IconBtn
+                label="Espelhar seleção (remover trecho)"
+                onClick={removeSelection}
+                disabled={!hasMedia}
+              >
+                <FlipHorizontal2 className="h-4 w-4" />
+              </IconBtn>
+              <div className="relative">
+                <IconBtn label="Mais opções" onClick={() => setMoreOpen((o) => !o)}>
+                  <MoreHorizontal className="h-4 w-4" />
+                </IconBtn>
+                {moreOpen ? (
+                  <div className="absolute left-0 top-10 z-30 w-56 rounded-lg border border-[var(--border)] bg-[var(--surface-2)] p-1 text-xs shadow-lg">
+                    <MenuItem
+                      onClick={() => {
+                        rippleClose();
+                        setMoreOpen(false);
+                      }}
+                    >
+                      Fechar espaços entre clipes
+                    </MenuItem>
+                    <MenuItem
+                      onClick={() => {
+                        addText();
+                        setMoreOpen(false);
+                      }}
+                    >
+                      Adicionar texto no playhead
+                    </MenuItem>
+                    <MenuItem
+                      onClick={() => {
+                        resetAll();
+                        setMoreOpen(false);
+                      }}
+                    >
+                      Recomeçar edição
+                    </MenuItem>
+                  </div>
                 ) : null}
               </div>
 
-              <div className="flex flex-wrap items-center gap-2">
-                <ActionButton
-                  tone="neutral"
-                  icon={playing ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
-                  onClick={togglePlay}
-                >
-                  {playing ? "Pausar" : "Reproduzir"}
-                </ActionButton>
-                <span className="text-xs tabular-nums text-[var(--muted-foreground)]">
-                  {fmt(time)} / {fmt(total)}
-                </span>
-                <div className="ml-auto flex items-center gap-2">
-                  <button
-                    onClick={() => setTool("select")}
-                    className={cn(
-                      "inline-flex h-9 items-center gap-1.5 rounded-lg border border-[var(--border)] px-3 text-xs font-semibold",
-                      tool === "select"
-                        ? "bg-[var(--brand)] text-white"
-                        : "bg-[var(--surface-2)] text-[var(--muted-foreground)]",
-                    )}
-                  >
-                    <MousePointer2 className="h-3.5 w-3.5" /> Selecionar
-                  </button>
-                  <button
-                    onClick={() => setTool("blade")}
-                    className={cn(
-                      "inline-flex h-9 items-center gap-1.5 rounded-lg border border-[var(--border)] px-3 text-xs font-semibold",
-                      tool === "blade"
-                        ? "bg-[var(--brand)] text-white"
-                        : "bg-[var(--surface-2)] text-[var(--muted-foreground)]",
-                    )}
-                  >
-                    <SplitSquareHorizontal className="h-3.5 w-3.5" /> Lâmina
-                  </button>
-                  <button
-                    onClick={addText}
-                    className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-[var(--border)] bg-[var(--surface-2)] px-3 text-xs font-semibold text-[var(--foreground)]"
-                  >
-                    <Type className="h-3.5 w-3.5" /> Adicionar texto
-                  </button>
-                  <button
-                    onClick={deleteSelected}
-                    disabled={!selection}
-                    className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-[var(--border)] bg-[var(--surface-2)] px-3 text-xs font-semibold text-[var(--muted-foreground)] disabled:opacity-40"
-                  >
-                    <Trash2 className="h-3.5 w-3.5" /> Excluir
-                  </button>
-                </div>
+              <div className="ml-auto flex items-center gap-1">
+                <IconBtn label="Afastar timeline" onClick={() => setPxPerSec((p) => Math.max(15, p / 1.5))}>
+                  <ZoomOut className="h-4 w-4" />
+                </IconBtn>
+                <IconBtn label="Aproximar timeline" onClick={() => setPxPerSec((p) => Math.min(400, p * 1.5))}>
+                  <ZoomIn className="h-4 w-4" />
+                </IconBtn>
+                <IconBtn label="Tela cheia" onClick={toggleFullscreen}>
+                  <Maximize2 className="h-4 w-4" />
+                </IconBtn>
               </div>
             </div>
 
-            {/* Inspetor */}
-            <aside className="space-y-4 rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-4">
-              <h2 className="font-display text-sm font-bold tracking-tight">Propriedades</h2>
-
-              {selectedClip ? (
-                <div className="space-y-4">
-                  <div>
-                    <label className="mb-1 block text-xs text-[var(--muted-foreground)]">
-                      Velocidade
-                    </label>
-                    <select
-                      value={selectedClip.speed}
-                      onChange={(e) => updateSelectedClip({ speed: Number(e.target.value) })}
-                      className="w-full rounded-lg border border-[var(--border)] bg-[var(--surface-2)] px-3 py-2 text-sm"
+            <div
+              ref={lanesRef}
+              onPointerMove={onLanesPointerMove}
+              onPointerUp={endDrag}
+              onPointerLeave={endDrag}
+              className="relative min-h-0 flex-1 overflow-auto"
+            >
+              <div style={{ width: laneWidth }} className="relative pb-3">
+                {/* Régua */}
+                <div
+                  className="sticky top-0 z-10 h-7 cursor-pointer select-none border-b border-[var(--border)] bg-[var(--surface)]"
+                  onPointerDown={(e) => {
+                    dragRef.current = { kind: "playhead" };
+                    seek(timeFromX(e.clientX));
+                  }}
+                >
+                  {ticks.map((t) => (
+                    <span
+                      key={t}
+                      style={{ left: t * pxPerSec }}
+                      className="absolute top-1 border-l border-white/10 pl-1 text-[10px] tabular-nums text-[var(--muted-foreground)]"
                     >
-                      {[0.5, 0.75, 1, 1.5, 2].map((s) => (
-                        <option key={s} value={s}>
-                          {s}x
-                        </option>
-                      ))}
-                    </select>
-                  </div>
+                      {short(t)}
+                    </span>
+                  ))}
+                  <div
+                    className="absolute bottom-0 top-0 bg-[var(--info)]/15"
+                    style={{
+                      left: sel.start * pxPerSec,
+                      width: Math.max(0, (sel.end - sel.start) * pxPerSec),
+                    }}
+                  />
+                  {(["start", "end"] as const).map((edge) => (
+                    <div
+                      key={edge}
+                      onPointerDown={(e) => {
+                        e.stopPropagation();
+                        dragRef.current = { kind: "sel", edge };
+                      }}
+                      style={{ left: (edge === "start" ? sel.start : sel.end) * pxPerSec - 4 }}
+                      className="absolute bottom-0 top-0 w-2 cursor-ew-resize rounded bg-[var(--info)]"
+                    />
+                  ))}
+                </div>
 
-                  <div>
-                    <label className="mb-1 block text-xs text-[var(--muted-foreground)]">
-                      Transição de entrada
-                    </label>
-                    <select
-                      value={selectedClip.transition}
-                      onChange={(e) =>
-                        updateSelectedClip({ transition: e.target.value as TransitionKind })
-                      }
-                      className="w-full rounded-lg border border-[var(--border)] bg-[var(--surface-2)] px-3 py-2 text-sm"
+                {/* Faixa de vídeo */}
+                <Lane icon={<Video className="h-3.5 w-3.5" />} label="Vídeo" onPointerDown={onLanePointerDown}>
+                  {clips.length === 0 ? <Placeholder /> : null}
+                  {clips.map((c) => (
+                    <div
+                      key={c.id}
+                      onPointerDown={onClipPointerDown(c)}
+                      style={{ left: c.start * pxPerSec, width: Math.max(8, clipDuration(c) * pxPerSec) }}
+                      className={cn(
+                        "absolute inset-y-1 overflow-hidden rounded-md border bg-[var(--surface-2)]",
+                        tool === "blade" ? "cursor-crosshair" : "cursor-grab",
+                        selection?.kind === "clip" && selection.id === c.id
+                          ? "border-[var(--brand)] ring-1 ring-[var(--brand)]"
+                          : "border-white/10",
+                      )}
                     >
-                      <option value="none">Corte seco</option>
-                      <option value="fade">Fade</option>
-                      <option value="slide">Slide</option>
-                    </select>
-                  </div>
-
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs text-[var(--muted-foreground)]">
-                        Zoom (keyframes)
+                      <div className="pointer-events-none flex h-full">
+                        {thumbSlice(c).map((src, i) => (
+                          <img key={i} src={src} alt="" className="h-full w-auto opacity-70" />
+                        ))}
+                      </div>
+                      {c.transition !== "none" ? (
+                        <span className="pointer-events-none absolute left-0 top-0 flex h-full w-8 items-center justify-center bg-gradient-to-r from-[var(--brand)]/70 to-transparent text-[9px] font-bold text-white">
+                          {c.transition === "fade" ? "FD" : "SL"}
+                        </span>
+                      ) : null}
+                      <span className="pointer-events-none absolute bottom-0.5 left-1 rounded bg-black/60 px-1 text-[10px] tabular-nums text-white">
+                        {c.speed !== 1 ? `${c.speed}x · ` : ""}
+                        {short(clipDuration(c))}
                       </span>
-                      <button
-                        onClick={addZoomKey}
-                        className="inline-flex items-center gap-1 text-xs font-semibold text-[var(--brand)]"
-                      >
-                        <Plus className="h-3 w-3" /> no playhead
-                      </button>
+                      {c.zoomKeys.map((k, i) => (
+                        <span
+                          key={i}
+                          style={{ left: k.t * pxPerSec - 3 }}
+                          className="pointer-events-none absolute top-1 h-2 w-2 rotate-45 bg-[var(--info)]"
+                        />
+                      ))}
+                      {selection?.kind === "clip" && selection.id === c.id
+                        ? ["left-0 top-0", "right-0 top-0", "left-0 bottom-0", "right-0 bottom-0"].map(
+                            (pos) => (
+                              <span
+                                key={pos}
+                                className={cn("pointer-events-none absolute h-2 w-2 bg-white", pos)}
+                              />
+                            ),
+                          )
+                        : null}
                     </div>
-                    {selectedClip.zoomKeys.length === 0 ? (
-                      <p className="text-[11px] text-[var(--muted-foreground)]">
-                        Nenhum keyframe. Posicione o playhead e adicione.
-                      </p>
-                    ) : (
-                      selectedClip.zoomKeys.map((k, i) => (
-                        <div key={`${k.t}-${i}`} className="flex items-center gap-2">
-                          <span className="w-12 text-[11px] tabular-nums text-[var(--muted-foreground)]">
-                            {k.t.toFixed(1)}s
-                          </span>
-                          <input
-                            type="range"
-                            min={1}
-                            max={3}
-                            step={0.05}
-                            value={k.scale}
-                            onChange={(e) => {
-                              const keys = selectedClip.zoomKeys.map((kk, ii) =>
-                                ii === i ? { ...kk, scale: Number(e.target.value) } : kk,
-                              );
-                              updateSelectedClip({ zoomKeys: keys });
-                            }}
-                            className="flex-1 accent-[var(--brand)]"
-                          />
-                          <span className="w-10 text-right text-[11px] tabular-nums">
-                            {Math.round(k.scale * 100)}%
-                          </span>
-                          <button
-                            onClick={() =>
-                              updateSelectedClip({
-                                zoomKeys: selectedClip.zoomKeys.filter((_, ii) => ii !== i),
-                              })
-                            }
-                            className="text-[var(--muted-foreground)] hover:text-[var(--brand)]"
-                          >
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </button>
-                        </div>
-                      ))
-                    )}
-                  </div>
+                  ))}
+                </Lane>
 
-                  <div className="space-y-3 border-t border-[var(--border)] pt-3">
+                {/* Faixa de overlay */}
+                <Lane
+                  icon={<ImageIcon className="h-3.5 w-3.5" />}
+                  label="Overlay"
+                  laneId="overlay"
+                  onPointerDown={onLanePointerDown}
+                >
+                  {texts.filter((t) => t.lane === "overlay").length === 0 ? <Placeholder /> : null}
+                  {texts
+                    .filter((t) => t.lane === "overlay")
+                    .map((l) => (
+                      <TextClip
+                        key={l.id}
+                        layer={l}
+                        pxPerSec={pxPerSec}
+                        selected={selection?.kind === "text" && selection.id === l.id}
+                        onPointerDown={onTextPointerDown}
+                        tone="info"
+                      />
+                    ))}
+                </Lane>
+
+                {/* Faixa de texto */}
+                <Lane
+                  icon={<Type className="h-3.5 w-3.5" />}
+                  label="Texto"
+                  laneId="text"
+                  onPointerDown={onLanePointerDown}
+                >
+                  {texts.filter((t) => t.lane === "text").length === 0 ? <Placeholder /> : null}
+                  {texts
+                    .filter((t) => t.lane === "text")
+                    .map((l) => (
+                      <TextClip
+                        key={l.id}
+                        layer={l}
+                        pxPerSec={pxPerSec}
+                        selected={selection?.kind === "text" && selection.id === l.id}
+                        onPointerDown={onTextPointerDown}
+                        tone="brand"
+                      />
+                    ))}
+                </Lane>
+
+                {/* Faixa de áudio */}
+                <Lane
+                  icon={
+                    <button onClick={() => setMuted((m) => !m)} title={muted ? "Ativar som" : "Mudo"}>
+                      {muted ? (
+                        <VolumeX className="h-3.5 w-3.5 text-[var(--brand)]" />
+                      ) : (
+                        <Volume2 className="h-3.5 w-3.5" />
+                      )}
+                    </button>
+                  }
+                  label="Áudio"
+                >
+                  {clips.length === 0 ? <Placeholder /> : null}
+                  {clips.map((c) => (
+                    <div
+                      key={c.id}
+                      style={{
+                        left: c.start * pxPerSec,
+                        width: Math.max(8, clipDuration(c) * pxPerSec),
+                      }}
+                      className={cn(
+                        "absolute inset-y-2 overflow-hidden rounded-md border border-[var(--info)]/30 bg-[var(--info)]/10",
+                        muted && "opacity-40",
+                      )}
+                    >
+                      <Waveform peaks={peaks} clip={c} duration={duration} />
+                    </div>
+                  ))}
+                </Lane>
+
+                {/* Playhead */}
+                <div
+                  className="pointer-events-none absolute bottom-0 top-0 z-20 w-px bg-[var(--brand)]"
+                  style={{ left: time * pxPerSec }}
+                >
+                  <span className="absolute -left-1.5 top-0 h-2.5 w-2.5 rounded-full bg-[var(--brand)]" />
+                </div>
+              </div>
+            </div>
+          </section>
+        </div>
+
+        {/* ---------- 4. PAINEL DIREITO ---------- */}
+        {selectedClip || selectedText ? (
+          <aside className="w-80 shrink-0 overflow-y-auto border-l border-[var(--border)] bg-[var(--surface)] p-4">
+            {selectedClip ? (
+              <>
+                <div className="mb-3 flex flex-wrap gap-1">
+                  {(
+                    [
+                      ["basic", "Básico"],
+                      ["bg", "Remover fundo"],
+                      ["audio", "Áudio"],
+                      ["anim", "Animação"],
+                      ["speed", "Velocidade"],
+                    ] as const
+                  ).map(([id, label]) => (
+                    <button
+                      key={id}
+                      onClick={() => setInspectorTab(id)}
+                      className={cn(
+                        "rounded-md px-2 py-1 text-[11px] font-semibold",
+                        inspectorTab === id
+                          ? "bg-[var(--brand)] text-white"
+                          : "bg-[var(--surface-2)] text-[var(--muted-foreground)]",
+                      )}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+
+                {inspectorTab === "basic" ? (
+                  <div className="space-y-3">
                     {(
                       [
                         ["Brilho", "brightness", -0.5, 0.5, 0.01],
@@ -1037,343 +1532,691 @@ export function VideoEditor() {
                         ["Saturação", "saturation", 0, 3, 0.01],
                       ] as const
                     ).map(([label, key, min, max, step]) => (
-                      <div key={key}>
-                        <div className="mb-1 flex items-center justify-between text-xs text-[var(--muted-foreground)]">
-                          <span>{label}</span>
-                          <span className="tabular-nums">{selectedClip.filters[key].toFixed(2)}</span>
-                        </div>
-                        <input
-                          type="range"
-                          min={min}
-                          max={max}
-                          step={step}
-                          value={selectedClip.filters[key]}
-                          onChange={(e) =>
-                            updateSelectedClip({
-                              filters: { ...selectedClip.filters, [key]: Number(e.target.value) },
-                            })
-                          }
-                          className="w-full accent-[var(--brand)]"
-                        />
-                      </div>
+                      <Slider
+                        key={key}
+                        label={label}
+                        value={selectedClip.filters[key]}
+                        min={min}
+                        max={max}
+                        step={step}
+                        onChange={(v) =>
+                          updateSelectedClip({ filters: { ...selectedClip.filters, [key]: v } }, false)
+                        }
+                      />
                     ))}
                     <button
                       onClick={() => updateSelectedClip({ filters: { ...NEUTRAL } })}
                       className="inline-flex items-center gap-1.5 text-xs font-semibold text-[var(--muted-foreground)] hover:text-white"
                     >
-                      <RotateCcw className="h-3.5 w-3.5" /> Resetar ajustes
+                      <RotateCcw className="h-3.5 w-3.5" /> Resetar
+                    </button>
+
+                    <div className="space-y-2 border-t border-[var(--border)] pt-3">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs text-[var(--muted-foreground)]">Zoom (keyframes)</span>
+                        <button
+                          onClick={addZoomKey}
+                          className="inline-flex items-center gap-1 text-xs font-semibold text-[var(--brand)]"
+                        >
+                          <Plus className="h-3 w-3" /> no playhead
+                        </button>
+                      </div>
+                      {selectedClip.zoomKeys.length === 0 ? (
+                        <p className="text-[11px] text-[var(--muted-foreground)]">
+                          Nenhum keyframe. Posicione o playhead e adicione.
+                        </p>
+                      ) : (
+                        selectedClip.zoomKeys.map((k, i) => (
+                          <div key={`${k.t}-${i}`} className="flex items-center gap-2">
+                            <span className="w-10 text-[11px] tabular-nums text-[var(--muted-foreground)]">
+                              {k.t.toFixed(1)}s
+                            </span>
+                            <input
+                              type="range"
+                              min={1}
+                              max={3}
+                              step={0.05}
+                              value={k.scale}
+                              onChange={(e) =>
+                                updateSelectedClip(
+                                  {
+                                    zoomKeys: selectedClip.zoomKeys.map((kk, ii) =>
+                                      ii === i ? { ...kk, scale: Number(e.target.value) } : kk,
+                                    ),
+                                  },
+                                  false,
+                                )
+                              }
+                              className="flex-1 accent-[var(--brand)]"
+                            />
+                            <span className="w-10 text-right text-[11px] tabular-nums">
+                              {Math.round(k.scale * 100)}%
+                            </span>
+                            <button
+                              onClick={() =>
+                                updateSelectedClip({
+                                  zoomKeys: selectedClip.zoomKeys.filter((_, ii) => ii !== i),
+                                })
+                              }
+                              className="text-[var(--muted-foreground)] hover:text-[var(--brand)]"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </button>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </div>
+                ) : null}
+
+                {inspectorTab === "bg" ? (
+                  <p className="text-xs leading-relaxed text-[var(--muted-foreground)]">
+                    Remoção de fundo por IA ainda não está disponível neste editor local. Para gravações
+                    de tela com webcam, use a bolha redonda da câmera — ela já isola o enquadramento.
+                  </p>
+                ) : null}
+
+                {inspectorTab === "audio" ? (
+                  <div className="space-y-3">
+                    <Slider
+                      label="Volume"
+                      value={selectedClip.volume}
+                      min={0}
+                      max={1}
+                      step={0.01}
+                      onChange={(v) => updateSelectedClip({ volume: v }, false)}
+                    />
+                    <Slider
+                      label="Fade in (s)"
+                      value={selectedClip.fadeIn}
+                      min={0}
+                      max={3}
+                      step={0.1}
+                      onChange={(v) => updateSelectedClip({ fadeIn: v }, false)}
+                    />
+                    <Slider
+                      label="Fade out (s)"
+                      value={selectedClip.fadeOut}
+                      min={0}
+                      max={3}
+                      step={0.1}
+                      onChange={(v) => updateSelectedClip({ fadeOut: v }, false)}
+                    />
+                    <button
+                      onClick={() => setMuted((m) => !m)}
+                      className="w-full rounded-lg border border-[var(--border)] bg-[var(--surface-2)] px-3 py-2 text-xs font-semibold"
+                    >
+                      {muted ? "Ativar áudio da faixa" : "Silenciar faixa de áudio"}
                     </button>
                   </div>
+                ) : null}
+
+                {inspectorTab === "anim" ? (
+                  <div className="space-y-3">
+                    <Select
+                      label="Transição de entrada"
+                      value={selectedClip.transition}
+                      options={[
+                        ["none", "Corte seco"],
+                        ["fade", "Fade"],
+                        ["slide", "Slide"],
+                      ]}
+                      onChange={(v) => updateSelectedClip({ transition: v as TransitionKind })}
+                    />
+                    <Select
+                      label="Animação de entrada"
+                      value={selectedClip.animIn}
+                      options={[
+                        ["none", "Nenhuma"],
+                        ["fade", "Fade"],
+                        ["slide", "Slide"],
+                      ]}
+                      onChange={(v) => updateSelectedClip({ animIn: v as Clip["animIn"] })}
+                    />
+                    <Select
+                      label="Animação de saída"
+                      value={selectedClip.animOut}
+                      options={[
+                        ["none", "Nenhuma"],
+                        ["fade", "Fade"],
+                        ["slide", "Slide"],
+                      ]}
+                      onChange={(v) => updateSelectedClip({ animOut: v as Clip["animOut"] })}
+                    />
+                  </div>
+                ) : null}
+
+                {inspectorTab === "speed" ? (
+                  <div className="space-y-3">
+                    <Select
+                      label="Velocidade"
+                      value={String(selectedClip.speed)}
+                      options={[0.5, 0.75, 1, 1.5, 2].map((s) => [String(s), `${s}x`])}
+                      onChange={(v) => updateSelectedClip({ speed: Number(v) })}
+                    />
+                    <p className="text-[11px] text-[var(--muted-foreground)]">
+                      Duração do clipe: {short(clipDuration(selectedClip))}
+                    </p>
+                  </div>
+                ) : null}
+              </>
+            ) : selectedText ? (
+              <div className="space-y-3">
+                <h2 className="font-display text-sm font-bold tracking-tight">Texto</h2>
+                <div>
+                  <label className="mb-1 block text-xs text-[var(--muted-foreground)]">Conteúdo</label>
+                  <input
+                    value={selectedText.text}
+                    onChange={(e) => updateSelectedText({ text: e.target.value }, false)}
+                    className="w-full rounded-lg border border-[var(--border)] bg-[var(--surface-2)] px-3 py-2 text-sm"
+                  />
                 </div>
-              ) : selectedText ? (
-                <div className="space-y-3">
-                  <div>
-                    <label className="mb-1 block text-xs text-[var(--muted-foreground)]">
-                      Conteúdo
-                    </label>
-                    <input
-                      value={selectedText.text}
-                      onChange={(e) => updateSelectedText({ text: e.target.value })}
-                      className="w-full rounded-lg border border-[var(--border)] bg-[var(--surface-2)] px-3 py-2 text-sm"
-                    />
-                  </div>
-                  <div>
-                    <div className="mb-1 flex items-center justify-between text-xs text-[var(--muted-foreground)]">
-                      <span>Tamanho</span>
-                      <span className="tabular-nums">{selectedText.size}px</span>
-                    </div>
-                    <input
-                      type="range"
-                      min={24}
-                      max={200}
-                      step={2}
-                      value={selectedText.size}
-                      onChange={(e) => updateSelectedText({ size: Number(e.target.value) })}
-                      className="w-full accent-[var(--brand)]"
-                    />
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs text-[var(--muted-foreground)]">Cor</span>
-                    <input
-                      type="color"
-                      value={selectedText.color}
-                      onChange={(e) => updateSelectedText({ color: e.target.value })}
-                      className="h-8 w-14 rounded border border-[var(--border)] bg-transparent"
-                    />
-                  </div>
-                  <p className="text-[11px] text-[var(--muted-foreground)]">
-                    Entrada e saída: arraste as bordas do clipe de texto na timeline.
-                  </p>
+                <Slider
+                  label="Tamanho"
+                  value={selectedText.size}
+                  min={24}
+                  max={200}
+                  step={2}
+                  onChange={(v) => updateSelectedText({ size: v }, false)}
+                />
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-[var(--muted-foreground)]">Cor</span>
+                  <input
+                    type="color"
+                    value={selectedText.color}
+                    onChange={(e) => updateSelectedText({ color: e.target.value }, false)}
+                    className="h-8 w-14 rounded border border-[var(--border)] bg-transparent"
+                  />
                 </div>
-              ) : (
-                <p className="text-xs text-[var(--muted-foreground)]">
-                  Selecione um clipe ou uma camada de texto na timeline para editar as
-                  propriedades.
-                </p>
-              )}
-
-              <div className="space-y-2 border-t border-[var(--border)] pt-3">
-                <button
-                  onClick={rippleClose}
-                  className="w-full rounded-lg border border-[var(--border)] bg-[var(--surface-2)] px-3 py-2 text-xs font-semibold"
-                >
-                  Fechar espaços entre clipes
-                </button>
-                <button
-                  onClick={resetAll}
-                  className="w-full rounded-lg border border-[var(--border)] bg-[var(--surface-2)] px-3 py-2 text-xs font-semibold text-[var(--muted-foreground)]"
-                >
-                  Recomeçar edição
-                </button>
-              </div>
-
-              {exporting ? (
-                <div className="space-y-1 border-t border-[var(--border)] pt-3">
-                  <div className="h-2 w-full overflow-hidden rounded-full bg-[var(--surface-2)]">
-                    <div
-                      className="h-full bg-[var(--brand)] transition-all"
-                      style={{ width: `${Math.round(progress * 100)}%` }}
-                    />
-                  </div>
-                  <p className="text-[11px] text-[var(--muted-foreground)]">
-                    Processando localmente… {Math.round(progress * 100)}%
-                  </p>
-                </div>
-              ) : null}
-
-              {resultUrl ? (
-                <ActionButton
-                  tone="download"
-                  icon={<Download className="h-4 w-4" />}
-                  onClick={downloadResult}
-                  className="w-full"
-                >
-                  Baixar MP4
-                </ActionButton>
-              ) : null}
-            </aside>
-
-            {/* Timeline */}
-            <section className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-3 lg:col-span-2">
-              <div className="mb-2 flex items-center gap-2">
-                <span className="text-xs font-semibold text-[var(--muted-foreground)]">
-                  Timeline
-                </span>
-                <div className="ml-auto flex items-center gap-2">
-                  <button
-                    onClick={keepSelection}
-                    className="rounded-lg border border-[var(--border)] bg-[var(--surface-2)] px-2.5 py-1.5 text-[11px] font-semibold"
-                  >
-                    Manter seleção
-                  </button>
-                  <button
-                    onClick={removeSelection}
-                    className="rounded-lg border border-[var(--border)] bg-[var(--surface-2)] px-2.5 py-1.5 text-[11px] font-semibold"
-                  >
-                    Remover seleção
-                  </button>
-                  <button
-                    onClick={() => setPxPerSec((p) => Math.max(15, p / 1.5))}
-                    className="grid h-8 w-8 place-items-center rounded-lg border border-[var(--border)] bg-[var(--surface-2)]"
-                  >
-                    <ZoomOut className="h-4 w-4" />
-                  </button>
-                  <button
-                    onClick={() => setPxPerSec((p) => Math.min(400, p * 1.5))}
-                    className="grid h-8 w-8 place-items-center rounded-lg border border-[var(--border)] bg-[var(--surface-2)]"
-                  >
-                    <ZoomIn className="h-4 w-4" />
-                  </button>
-                </div>
-              </div>
-
-              <div
-                ref={lanesRef}
-                onPointerMove={onLanesPointerMove}
-                onPointerUp={endDrag}
-                onPointerLeave={endDrag}
-                className="relative overflow-x-auto pb-2"
-              >
-                <div style={{ width: laneWidth }} className="relative">
-                  {/* Régua */}
-                  <div
-                    className="relative h-7 cursor-pointer select-none border-b border-[var(--border)]"
-                    onPointerDown={(e) => {
-                      dragRef.current = { kind: "playhead" };
-                      seek(timeFromX(e.clientX));
-                    }}
-                  >
-                    {ticks.map((t) => (
-                      <span
-                        key={t}
-                        style={{ left: t * pxPerSec }}
-                        className="absolute top-1 text-[10px] tabular-nums text-[var(--muted-foreground)]"
-                      >
-                        {fmt(t).slice(0, 5)}
-                      </span>
-                    ))}
-                    {/* seleção in/out */}
-                    <div
-                      className="absolute bottom-0 top-0 bg-[var(--info)]/15"
-                      style={{ left: sel.start * pxPerSec, width: Math.max(0, (sel.end - sel.start) * pxPerSec) }}
-                    />
-                    {(["start", "end"] as const).map((edge) => (
-                      <div
-                        key={edge}
-                        onPointerDown={(e) => {
-                          e.stopPropagation();
-                          dragRef.current = { kind: "sel", edge };
-                        }}
-                        style={{ left: (edge === "start" ? sel.start : sel.end) * pxPerSec - 4 }}
-                        className="absolute bottom-0 top-0 w-2 cursor-ew-resize rounded bg-[var(--info)]"
-                      />
-                    ))}
-                  </div>
-
-                  {/* Faixa de vídeo */}
-                  <Lane label="Vídeo" onPointerDown={onLanePointerDown}>
-                    {clips.map((c) => (
-                      <div
-                        key={c.id}
-                        onPointerDown={onClipPointerDown(c)}
-                        style={{ left: c.start * pxPerSec, width: Math.max(8, clipDuration(c) * pxPerSec) }}
-                        className={cn(
-                          "absolute inset-y-1 overflow-hidden rounded-md border bg-[var(--surface-2)]",
-                          tool === "blade" ? "cursor-crosshair" : "cursor-grab",
-                          selection?.kind === "clip" && selection.id === c.id
-                            ? "border-[var(--brand)] ring-1 ring-[var(--brand)]"
-                            : "border-white/10",
-                        )}
-                      >
-                        <div className="pointer-events-none flex h-full">
-                          {thumbSlice(c).map((src, i) => (
-                            <img key={i} src={src} alt="" className="h-full w-auto opacity-70" />
-                          ))}
-                        </div>
-                        {c.transition !== "none" ? (
-                          <span className="pointer-events-none absolute left-0 top-0 h-full w-6 bg-gradient-to-r from-[var(--brand)]/70 to-transparent" />
-                        ) : null}
-                        <span className="pointer-events-none absolute bottom-0.5 left-1 rounded bg-black/60 px-1 text-[10px] tabular-nums text-white">
-                          {c.speed !== 1 ? `${c.speed}x · ` : ""}
-                          {fmt(clipDuration(c)).slice(0, 5)}
-                        </span>
-                        {c.zoomKeys.map((k, i) => (
-                          <span
-                            key={i}
-                            style={{ left: k.t * pxPerSec - 3 }}
-                            className="pointer-events-none absolute top-1 h-2 w-2 rotate-45 bg-[var(--info)]"
-                          />
-                        ))}
-                      </div>
-                    ))}
-                  </Lane>
-
-                  {/* Faixa de áudio */}
-                  <Lane
-                    label="Áudio"
-                    right={
+                <div>
+                  <span className="mb-1 block text-xs text-[var(--muted-foreground)]">Alinhamento</span>
+                  <div className="flex gap-1">
+                    {(["left", "center", "right"] as const).map((a) => (
                       <button
-                        onClick={() => setMuted((m) => !m)}
-                        className="text-[10px] font-semibold text-[var(--muted-foreground)] hover:text-white"
+                        key={a}
+                        onClick={() => updateSelectedText({ align: a })}
+                        className={cn(
+                          "flex-1 rounded-md px-2 py-1 text-[11px] font-semibold",
+                          selectedText.align === a
+                            ? "bg-[var(--brand)] text-white"
+                            : "bg-[var(--surface-2)] text-[var(--muted-foreground)]",
+                        )}
                       >
-                        {muted ? "Ativar" : "Mudo"}
+                        {a === "left" ? "Esq." : a === "center" ? "Centro" : "Dir."}
                       </button>
-                    }
-                  >
-                    {clips.map((c) => (
-                      <div
-                        key={c.id}
-                        style={{ left: c.start * pxPerSec, width: Math.max(8, clipDuration(c) * pxPerSec) }}
-                        className={cn(
-                          "absolute inset-y-2 rounded-md border border-[var(--info)]/30 bg-[var(--info)]/15",
-                          muted && "opacity-40",
-                        )}
-                      />
                     ))}
-                  </Lane>
-
-                  {/* Faixa de texto */}
-                  <Lane label="Texto" onPointerDown={onLanePointerDown}>
-                    {texts.map((l) => (
-                      <div
-                        key={l.id}
-                        onPointerDown={onTextPointerDown(l)}
-                        style={{ left: l.start * pxPerSec, width: Math.max(24, (l.end - l.start) * pxPerSec) }}
-                        className={cn(
-                          "absolute inset-y-2 cursor-grab overflow-hidden rounded-md border bg-[var(--brand)]/20 px-2 text-[10px] leading-[26px] text-white",
-                          selection?.kind === "text" && selection.id === l.id
-                            ? "border-[var(--brand)] ring-1 ring-[var(--brand)]"
-                            : "border-[var(--brand)]/40",
-                        )}
-                      >
-                        <span className="pointer-events-none truncate">{l.text}</span>
-                        <span
-                          onPointerDown={onTextPointerDown(l, "start")}
-                          className="absolute inset-y-0 left-0 w-1.5 cursor-ew-resize bg-[var(--brand)]"
-                        />
-                        <span
-                          onPointerDown={onTextPointerDown(l, "end")}
-                          className="absolute inset-y-0 right-0 w-1.5 cursor-ew-resize bg-[var(--brand)]"
-                        />
-                      </div>
-                    ))}
-                  </Lane>
-
-                  {/* Faixa de webcam */}
-                  <Lane label="Webcam">
-                    <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[10px] text-[var(--muted-foreground)]">
-                      A bolha da webcam já vem embutida na gravação — sem faixa separada.
-                    </span>
-                  </Lane>
-
-                  {/* Playhead */}
-                  <div
-                    className="pointer-events-none absolute bottom-0 top-0 z-20 w-px bg-[var(--brand)]"
-                    style={{ left: time * pxPerSec }}
-                  >
-                    <span className="absolute -left-1.5 top-0 h-2.5 w-2.5 rounded-full bg-[var(--brand)]" />
                   </div>
                 </div>
-              </div>
-
-              {clips.length === 0 ? (
-                <p className="px-2 py-4 text-center text-xs text-[var(--muted-foreground)]">
-                  Timeline vazia. Use “Recomeçar edição” para restaurar o clipe original.
+                <Select
+                  label="Animação de entrada"
+                  value={selectedText.animIn}
+                  options={[
+                    ["none", "Nenhuma"],
+                    ["fade", "Fade"],
+                    ["slide", "Slide"],
+                  ]}
+                  onChange={(v) => updateSelectedText({ animIn: v as TextLayer["animIn"] })}
+                />
+                <Select
+                  label="Animação de saída"
+                  value={selectedText.animOut}
+                  options={[
+                    ["none", "Nenhuma"],
+                    ["fade", "Fade"],
+                    ["slide", "Slide"],
+                  ]}
+                  onChange={(v) => updateSelectedText({ animOut: v as TextLayer["animOut"] })}
+                />
+                <p className="text-[11px] text-[var(--muted-foreground)]">
+                  Arraste no player para posicionar. Ajuste entrada e saída pelas bordas do clipe.
                 </p>
-              ) : null}
-            </section>
-          </div>
-        )}
-      </main>
+              </div>
+            ) : null}
+          </aside>
+        ) : null}
+      </div>
     </div>
   );
 }
 
-function Lane({
+/* ---------------- subcomponentes ---------------- */
+
+function IconBtn({
+  children,
   label,
-  right,
+  onClick,
+  disabled,
+  active,
+  bare,
+}: {
+  children: ReactNode;
+  label: string;
+  onClick?: () => void;
+  disabled?: boolean;
+  active?: boolean;
+  bare?: boolean;
+}) {
+  return (
+    <button
+      title={label}
+      aria-label={label}
+      onClick={onClick}
+      disabled={disabled}
+      className={cn(
+        "grid h-8 w-8 shrink-0 place-items-center rounded-lg transition-colors disabled:opacity-40",
+        bare
+          ? "text-[var(--muted-foreground)] hover:text-white"
+          : active
+            ? "bg-[var(--brand)] text-white"
+            : "border border-[var(--border)] bg-[var(--surface-2)] text-[var(--muted-foreground)] hover:text-white",
+      )}
+    >
+      {children}
+    </button>
+  );
+}
+
+function MenuItem({ children, onClick }: { children: ReactNode; onClick: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      className="block w-full rounded-md px-2 py-1.5 text-left text-[var(--muted-foreground)] hover:bg-[var(--surface)] hover:text-white"
+    >
+      {children}
+    </button>
+  );
+}
+
+function Slider({
+  label,
+  value,
+  min,
+  max,
+  step,
+  onChange,
+}: {
+  label: string;
+  value: number;
+  min: number;
+  max: number;
+  step: number;
+  onChange: (v: number) => void;
+}) {
+  return (
+    <div>
+      <div className="mb-1 flex items-center justify-between text-xs text-[var(--muted-foreground)]">
+        <span>{label}</span>
+        <span className="tabular-nums">{value.toFixed(2)}</span>
+      </div>
+      <input
+        type="range"
+        min={min}
+        max={max}
+        step={step}
+        value={value}
+        onChange={(e) => onChange(Number(e.target.value))}
+        className="w-full accent-[var(--brand)]"
+      />
+    </div>
+  );
+}
+
+function Select({
+  label,
+  value,
+  options,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  options: readonly (readonly [string, string])[];
+  onChange: (v: string) => void;
+}) {
+  return (
+    <div>
+      <label className="mb-1 block text-xs text-[var(--muted-foreground)]">{label}</label>
+      <select
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="w-full rounded-lg border border-[var(--border)] bg-[var(--surface-2)] px-3 py-2 text-sm"
+      >
+        {options.map(([v, l]) => (
+          <option key={v} value={v}>
+            {l}
+          </option>
+        ))}
+      </select>
+    </div>
+  );
+}
+
+function Placeholder() {
+  return (
+    <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[11px] text-[var(--muted-foreground)]">
+      Arraste arquivos aqui
+    </span>
+  );
+}
+
+function Lane({
+  icon,
+  label,
+  laneId,
   children,
   onPointerDown,
 }: {
+  icon: ReactNode;
   label: string;
-  right?: React.ReactNode;
-  children?: React.ReactNode;
+  laneId?: string;
+  children?: ReactNode;
   onPointerDown?: (e: ReactPointerEvent<HTMLDivElement>) => void;
 }) {
   return (
-    <div className="relative mt-2">
-      <div className="mb-1 flex items-center gap-2">
-        <span className="text-[10px] font-semibold uppercase tracking-wide text-[var(--muted-foreground)]">
-          {label}
-        </span>
-        {right}
+    <div className="mt-2 flex items-stretch gap-2 pl-2">
+      <div className="sticky left-0 z-10 flex w-24 shrink-0 items-center gap-1.5 rounded-lg bg-[var(--surface-2)] px-2 text-[10px] font-semibold uppercase tracking-wide text-[var(--muted-foreground)]">
+        {icon}
+        {label}
       </div>
       <div
+        data-lane={laneId}
         onPointerDown={onPointerDown}
-        className="relative h-14 w-full rounded-lg border border-[var(--border)] bg-black/30"
+        className="relative h-14 flex-1 rounded-lg border border-[var(--border)] bg-black/30"
       >
         {children}
       </div>
+    </div>
+  );
+}
+
+function TextClip({
+  layer,
+  pxPerSec,
+  selected,
+  onPointerDown,
+  tone,
+}: {
+  layer: TextLayer;
+  pxPerSec: number;
+  selected: boolean;
+  onPointerDown: (
+    l: TextLayer,
+    edge?: "start" | "end",
+  ) => (e: ReactPointerEvent<HTMLDivElement>) => void;
+  tone: "brand" | "info";
+}) {
+  const color = tone === "brand" ? "var(--brand)" : "var(--info)";
+  return (
+    <div
+      onPointerDown={onPointerDown(layer)}
+      style={{
+        left: layer.start * pxPerSec,
+        width: Math.max(24, (layer.end - layer.start) * pxPerSec),
+        backgroundColor: `color-mix(in oklab, ${color} 20%, transparent)`,
+        borderColor: selected ? color : `color-mix(in oklab, ${color} 40%, transparent)`,
+      }}
+      className={cn(
+        "absolute inset-y-2 cursor-grab overflow-hidden rounded-md border px-2 text-[10px] leading-[26px] text-white",
+        selected && "ring-1",
+      )}
+    >
+      <span className="pointer-events-none truncate">{layer.text}</span>
+      <span
+        onPointerDown={onPointerDown(layer, "start")}
+        style={{ backgroundColor: color }}
+        className="absolute inset-y-0 left-0 w-1.5 cursor-ew-resize"
+      />
+      <span
+        onPointerDown={onPointerDown(layer, "end")}
+        style={{ backgroundColor: color }}
+        className="absolute inset-y-0 right-0 w-1.5 cursor-ew-resize"
+      />
+      {selected
+        ? ["left-0 top-0", "right-0 top-0", "left-0 bottom-0", "right-0 bottom-0"].map((pos) => (
+            <span key={pos} className={cn("pointer-events-none absolute h-2 w-2 bg-white", pos)} />
+          ))
+        : null}
+    </div>
+  );
+}
+
+function Waveform({ peaks, clip, duration }: { peaks: number[]; clip: Clip; duration: number }) {
+  if (peaks.length === 0 || duration <= 0) {
+    return (
+      <div className="flex h-full items-center gap-px px-1 opacity-40">
+        <AudioLines className="h-4 w-4 text-[var(--info)]" />
+      </div>
+    );
+  }
+  const from = Math.floor((clip.srcStart / duration) * peaks.length);
+  const to = Math.max(from + 1, Math.ceil((clip.srcEnd / duration) * peaks.length));
+  const slice = peaks.slice(from, to);
+  return (
+    <div className="flex h-full items-center gap-[1px] overflow-hidden px-1">
+      {slice.map((p, i) => (
+        <span
+          key={i}
+          style={{ height: `${Math.max(8, p * 100)}%` }}
+          className="w-[2px] shrink-0 rounded-full bg-[var(--info)]/70"
+        />
+      ))}
+    </div>
+  );
+}
+
+function SidePanel({
+  panel,
+  hasMedia,
+  fileName,
+  duration,
+  thumb,
+  onUpload,
+  onDropFile,
+  onAddText,
+  onApplyFilters,
+  onApplyTransition,
+  selectedClip,
+  transcript,
+  setTranscript,
+  time,
+}: {
+  panel: PanelId;
+  hasMedia: boolean;
+  fileName: string | null;
+  duration: number;
+  thumb?: string;
+  onUpload: () => void;
+  onDropFile: (e: DragEvent<HTMLDivElement>) => void;
+  onAddText: (preset?: Partial<TextLayer>, lane?: "text" | "overlay") => void;
+  onApplyFilters: (f: Filters) => void;
+  onApplyTransition: (t: TransitionKind) => void;
+  selectedClip: Clip | null;
+  transcript: string;
+  setTranscript: (v: string) => void;
+  time: number;
+}) {
+  const title = PANELS.find((p) => p.id === panel)?.label ?? "";
+
+  const media = hasMedia ? (
+    <div className="flex items-center gap-2 rounded-lg border border-[var(--border)] bg-[var(--surface-2)] p-2">
+      {thumb ? (
+        <img src={thumb} alt="" className="h-10 w-16 rounded object-cover" />
+      ) : (
+        <span className="grid h-10 w-16 place-items-center rounded bg-black/40">
+          <Video className="h-4 w-4 text-[var(--muted-foreground)]" />
+        </span>
+      )}
+      <div className="min-w-0">
+        <p className="truncate text-xs font-semibold">{fileName}</p>
+        <p className="text-[11px] tabular-nums text-[var(--muted-foreground)]">{short(duration)}</p>
+      </div>
+    </div>
+  ) : (
+    <p className="text-xs text-[var(--muted-foreground)]">Nenhum arquivo no projeto ainda.</p>
+  );
+
+  return (
+    <div className="space-y-3">
+      <h2 className="font-display text-sm font-bold tracking-tight">{title}</h2>
+
+      {panel === "upload" ? (
+        <>
+          <div
+            onDragOver={(e) => e.preventDefault()}
+            onDrop={onDropFile}
+            className="rounded-lg border border-dashed border-white/15 p-4 text-center"
+          >
+            <p className="text-xs text-[var(--muted-foreground)]">
+              Arraste vídeos, imagens ou áudios aqui
+            </p>
+            <button
+              onClick={onUpload}
+              className="mt-2 inline-flex h-8 items-center gap-1.5 rounded-lg bg-[var(--brand)] px-3 text-xs font-semibold text-white"
+            >
+              <Upload className="h-3.5 w-3.5" /> Selecionar arquivo
+            </button>
+          </div>
+          {media}
+        </>
+      ) : null}
+
+      {panel === "audio" ? (
+        <>
+          {media}
+          <p className="text-xs text-[var(--muted-foreground)]">
+            O áudio do vídeo aparece na faixa de áudio da timeline. Para adicionar uma trilha, importe
+            um arquivo de áudio pelo painel Upload.
+          </p>
+          <button
+            onClick={onUpload}
+            className="w-full rounded-lg border border-[var(--border)] bg-[var(--surface-2)] px-3 py-2 text-xs font-semibold"
+          >
+            Adicionar trilha
+          </button>
+        </>
+      ) : null}
+
+      {panel === "text" ? (
+        <div className="grid gap-2">
+          {TEXT_TEMPLATES.map((t) => (
+            <button
+              key={t.name}
+              onClick={() => onAddText({ text: t.name, size: t.size, color: t.color, y: t.y })}
+              className="rounded-lg border border-[var(--border)] bg-[var(--surface-2)] px-3 py-3 text-left text-sm font-semibold hover:border-[var(--brand)]"
+            >
+              {t.name}
+            </button>
+          ))}
+          <button
+            onClick={() => onAddText()}
+            className="rounded-lg bg-[var(--brand)] px-3 py-2 text-xs font-semibold text-white"
+          >
+            Texto customizado
+          </button>
+        </div>
+      ) : null}
+
+      {panel === "elements" ? (
+        <div className="grid grid-cols-4 gap-2">
+          {STICKERS.map((s) => (
+            <button
+              key={s}
+              onClick={() => onAddText({ text: s, size: 140, y: 0.5 }, "overlay")}
+              className="grid h-14 place-items-center rounded-lg border border-[var(--border)] bg-[var(--surface-2)] text-2xl hover:border-[var(--brand)]"
+            >
+              {s}
+            </button>
+          ))}
+        </div>
+      ) : null}
+
+      {panel === "captions" ? (
+        <>
+          <p className="text-xs text-[var(--muted-foreground)]">
+            A legenda automática por IA ainda não está ligada. Enquanto isso, crie legendas na posição
+            do playhead — cada uma vira um clipe na faixa de texto.
+          </p>
+          <button
+            onClick={() => onAddText({ text: "Nova legenda", size: 52, y: 0.86 })}
+            className="w-full rounded-lg bg-[var(--brand)] px-3 py-2 text-xs font-semibold text-white"
+          >
+            Adicionar legenda em {short(time)}
+          </button>
+        </>
+      ) : null}
+
+      {panel === "transcript" ? (
+        <>
+          <textarea
+            value={transcript}
+            onChange={(e) => setTranscript(e.target.value)}
+            rows={10}
+            placeholder="Cole ou escreva a transcrição do áudio aqui…"
+            className="w-full rounded-lg border border-[var(--border)] bg-[var(--surface-2)] p-2 text-xs"
+          />
+          <button
+            onClick={() => {
+              const line = transcript.split("\n").find((l) => l.trim().length > 0);
+              if (line) onAddText({ text: line.trim(), size: 52, y: 0.86 });
+            }}
+            className="w-full rounded-lg border border-[var(--border)] bg-[var(--surface-2)] px-3 py-2 text-xs font-semibold"
+          >
+            Enviar primeira linha para a timeline
+          </button>
+        </>
+      ) : null}
+
+      {panel === "effects" || panel === "filters" ? (
+        <>
+          {!selectedClip ? (
+            <p className="text-xs text-[var(--muted-foreground)]">
+              Selecione um clipe na timeline para aplicar.
+            </p>
+          ) : null}
+          <div className="grid grid-cols-2 gap-2">
+            {FILTER_PRESETS.map((p) => (
+              <button
+                key={p.name}
+                disabled={!selectedClip}
+                onClick={() => onApplyFilters(p.filters)}
+                className="rounded-lg border border-[var(--border)] bg-[var(--surface-2)] px-2 py-3 text-xs font-semibold hover:border-[var(--brand)] disabled:opacity-40"
+              >
+                {p.name}
+              </button>
+            ))}
+          </div>
+        </>
+      ) : null}
+
+      {panel === "transitions" ? (
+        <>
+          {!selectedClip ? (
+            <p className="text-xs text-[var(--muted-foreground)]">
+              Selecione o clipe de destino na timeline para aplicar a transição de entrada.
+            </p>
+          ) : null}
+          <div className="grid gap-2">
+            {(
+              [
+                ["none", "Corte seco"],
+                ["fade", "Fade"],
+                ["slide", "Slide"],
+              ] as const
+            ).map(([v, l]) => (
+              <button
+                key={v}
+                disabled={!selectedClip}
+                onClick={() => onApplyTransition(v)}
+                className={cn(
+                  "rounded-lg border border-[var(--border)] bg-[var(--surface-2)] px-3 py-3 text-left text-xs font-semibold hover:border-[var(--brand)] disabled:opacity-40",
+                  selectedClip?.transition === v && "border-[var(--brand)] text-[var(--brand)]",
+                )}
+              >
+                {l}
+              </button>
+            ))}
+          </div>
+        </>
+      ) : null}
     </div>
   );
 }
