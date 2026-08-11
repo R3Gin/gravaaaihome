@@ -135,6 +135,9 @@ export interface EditorActions {
   setAspect: (a: AspectRatio) => void;
   setTool: (t: Tool) => void;
   select: (id: string | null) => void;
+  /** Reordena as faixas da timeline (arraste vertical). */
+  reorderTracks: (from: number, to: number) => void;
+
   updateClip: (id: string, patch: Partial<Clip>) => void;
   /** Atualiza sem criar ponto de histórico (uso durante arraste contínuo). */
   updateClipLive: (id: string, patch: Partial<Clip>) => void;
