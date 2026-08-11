@@ -660,22 +660,28 @@ export const useEditor = create<EditorState & EditorActions>((set, get) => {
     setSourceBlob: (sourceBlob) => set({ sourceBlob }),
     setSilences: (silences) => set({ silences }),
 
-    addCaptionClips: (rawSegments) => {
+    addCaptionClips: (rawSegments, words) => {
       const style = get().captionStyle;
+      const preset = BLOCK_PRESETS[style.blockSize ?? "medio"];
+      // reagrupa em blocos curtos (pausas reais da fala) antes de qualquer remap
+      const chunked = words?.length
+        ? chunkCaptionWords(words, preset)
+        : chunkSegmentsByText(rawSegments, preset);
+      const base = chunked.length ? chunked : rawSegments;
       // legendas vêm do áudio original: aplica os cortes já feitos
       const removed = get().removedRanges;
-      const segments = removed.length ? remapCaptionsAfterCuts(rawSegments, removed) : rawSegments;
+      const segments = removed.length ? remapCaptionsAfterCuts(base, removed) : base;
       const clips: Clip[] = segments
-        .filter((s) => s.text.trim() && s.end - s.start > 0.1)
+        .filter((s) => s.text.trim() && s.end - s.start > 0.05)
         .map((s) => ({
           id: uid(),
           trackId: TEXT_TRACK,
           type: "text" as const,
           sourceUrl: "",
           startTime: Math.max(0, s.start),
-          duration: Math.max(0.4, s.end - s.start),
+          duration: Math.max(0.2, s.end - s.start),
           sourceInStart: 0,
-          sourceInEnd: Math.max(0.4, s.end - s.start),
+          sourceInEnd: Math.max(0.2, s.end - s.start),
           textContent: s.text.trim(),
           fontSize: style.fontSize,
           color: style.color,
@@ -690,6 +696,7 @@ export const useEditor = create<EditorState & EditorActions>((set, get) => {
         ),
       );
     },
+
 
     setCaptionStyle: (patch) => {
       const style = { ...get().captionStyle, ...patch };
