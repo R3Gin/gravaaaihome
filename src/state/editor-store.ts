@@ -660,8 +660,11 @@ export const useEditor = create<EditorState & EditorActions>((set, get) => {
     setSourceBlob: (sourceBlob) => set({ sourceBlob }),
     setSilences: (silences) => set({ silences }),
 
-    addCaptionClips: (segments) => {
+    addCaptionClips: (rawSegments) => {
       const style = get().captionStyle;
+      // legendas vêm do áudio original: aplica os cortes já feitos
+      const removed = get().removedRanges;
+      const segments = removed.length ? remapCaptionsAfterCuts(rawSegments, removed) : rawSegments;
       const clips: Clip[] = segments
         .filter((s) => s.text.trim() && s.end - s.start > 0.1)
         .map((s) => ({
