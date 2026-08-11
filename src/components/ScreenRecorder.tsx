@@ -348,7 +348,7 @@ export function ScreenRecorder() {
         const bx = b.x * sx;
         const by = b.y * sy;
         const bs = b.size * Math.min(sx, sy);
-        drawCameraPipCircle(ctx, camSource, bx, by, bs);
+        drawCameraPipCircle(ctx, camSource, bx, by, bs, cameraStyleRef.current);
       }
       // Traços da caneta (mesma escala do container do preview) — vão para o MP4.
       if (drawStrokesRef.current.length > 0) {
