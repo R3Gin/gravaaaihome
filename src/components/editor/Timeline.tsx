@@ -1,6 +1,7 @@
-import { useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AudioLines, Copy, Scissors, Trash2, ZoomIn, ZoomOut } from "lucide-react";
 import { MIN_CLIP, useEditor, type Clip, type Track } from "@/state/editor-store";
+import { getPeaks, type Peaks } from "@/lib/waveform";
 import { cn } from "@/lib/utils";
 
 const LABEL_W = 96;
@@ -13,6 +14,94 @@ function fmt(t: number) {
 }
 
 type Ghost = { start: number; duration: number } | null;
+
+/** Waveform do áudio do vídeo, desenhada na faixa "Áudio". */
+function AudioWaveform({ width }: { width: number }) {
+  const sourceBlob = useEditor((s) => s.sourceBlob);
+  const zoom = useEditor((s) => s.zoom);
+  const tracks = useEditor((s) => s.tracks);
+  const [peaks, setPeaks] = useState<Peaks | null>(null);
+  const [loading, setLoading] = useState(false);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+
+  const videoClips = useMemo(
+    () => tracks.find((t) => t.type === "video")?.clips ?? [],
+    [tracks],
+  );
+
+  useEffect(() => {
+    if (!sourceBlob) {
+      setPeaks(null);
+      return;
+    }
+    let alive = true;
+    setLoading(true);
+    void getPeaks(sourceBlob).then((p) => {
+      if (!alive) return;
+      setPeaks(p);
+      setLoading(false);
+    });
+    return () => {
+      alive = false;
+    };
+  }, [sourceBlob]);
+
+  const draw = useCallback(() => {
+    const canvas = canvasRef.current;
+    if (!canvas || !peaks) return;
+    const dpr = window.devicePixelRatio || 1;
+    const h = LANE_H - 10;
+    canvas.width = Math.max(1, Math.floor(width * dpr));
+    canvas.height = Math.floor(h * dpr);
+    canvas.style.width = `${width}px`;
+    canvas.style.height = `${h}px`;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    ctx.scale(dpr, dpr);
+    ctx.clearRect(0, 0, width, h);
+    ctx.fillStyle = "rgba(16,185,129,0.75)";
+
+    const mid = h / 2;
+    for (const clip of videoClips) {
+      const x0 = clip.startTime * zoom;
+      const w = clip.duration * zoom;
+      if (w < 1) continue;
+      const cols = Math.max(1, Math.floor(w));
+      for (let i = 0; i < cols; i++) {
+        const t = clip.sourceInStart + ((i / cols) * (clip.sourceInEnd - clip.sourceInStart));
+        const idx = Math.min(peaks.data.length - 1, Math.max(0, Math.round((t / peaks.duration) * peaks.data.length)));
+        const amp = (peaks.data[idx] ?? 0) * (mid - 2);
+        ctx.fillRect(x0 + i, mid - amp, 1, Math.max(1, amp * 2));
+      }
+    }
+  }, [peaks, videoClips, width, zoom]);
+
+  useEffect(() => {
+    draw();
+  }, [draw]);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(() => draw());
+    if (canvas.parentElement) ro.observe(canvas.parentElement);
+    return () => ro.disconnect();
+  }, [draw]);
+
+  if (!sourceBlob) return null;
+
+  return (
+    <div className="pointer-events-none absolute inset-x-0 top-[5px]">
+      {loading ? (
+        <span className="absolute left-2 top-2 text-[10px] text-[var(--muted-foreground)]">
+          Analisando áudio…
+        </span>
+      ) : null}
+      <canvas ref={canvasRef} className="block" />
+    </div>
+  );
+}
+
 
 function ClipBox({ clip, track }: { clip: Clip; track: Track }) {
   const zoom = useEditor((s) => s.zoom);
@@ -171,12 +260,44 @@ export function Timeline() {
   }, [duration, zoom]);
 
 
-  const seekFromEvent = (e: React.PointerEvent) => {
-    const lane = scrollRef.current;
-    if (!lane) return;
-    const box = lane.getBoundingClientRect();
-    setCurrentTime(Math.max(0, (e.clientX - box.left + lane.scrollLeft) / zoom));
-  };
+  const [scrubbing, setScrubbing] = useState(false);
+
+  const timeFromClientX = useCallback(
+    (clientX: number) => {
+      const lane = scrollRef.current;
+      if (!lane) return 0;
+      const box = lane.getBoundingClientRect();
+      return Math.max(0, (clientX - box.left + lane.scrollLeft) / zoom);
+    },
+    [zoom],
+  );
+
+  /* arrasto da agulha: listeners no document para funcionar fora do elemento */
+  const startScrub = useCallback(
+    (e: React.PointerEvent) => {
+      if (e.button !== 0) return;
+      e.preventDefault();
+      e.stopPropagation();
+      setScrubbing(true);
+      setCurrentTime(timeFromClientX(e.clientX));
+    },
+    [setCurrentTime, timeFromClientX],
+  );
+
+  useEffect(() => {
+    if (!scrubbing) return;
+    const move = (ev: PointerEvent) => setCurrentTime(timeFromClientX(ev.clientX));
+    const up = () => setScrubbing(false);
+    document.addEventListener("pointermove", move);
+    document.addEventListener("pointerup", up);
+    document.addEventListener("pointercancel", up);
+    return () => {
+      document.removeEventListener("pointermove", move);
+      document.removeEventListener("pointerup", up);
+      document.removeEventListener("pointercancel", up);
+    };
+  }, [scrubbing, setCurrentTime, timeFromClientX]);
+
 
   return (
     <div className="flex h-[280px] shrink-0 flex-col border-t border-[var(--border)] bg-[var(--surface-2)]">
@@ -203,10 +324,13 @@ export function Timeline() {
         </button>
         <button
           onClick={splitPlayhead}
-          className="rounded-lg border border-[var(--border)] px-2.5 py-1.5 text-xs font-semibold text-[var(--muted-foreground)]"
+          title="Dividir no playhead (atalho: S)"
+          className="flex items-center gap-1.5 rounded-lg border border-[var(--border)] px-2.5 py-1.5 text-xs font-semibold text-[var(--muted-foreground)]"
         >
           Dividir no playhead
+          <kbd className="rounded border border-[var(--border)] px-1 text-[10px] font-bold text-[var(--foreground)]">S</kbd>
         </button>
+
         <button
           disabled={!selectedClipId}
           onClick={() => selectedClipId && duplicateClip(selectedClipId)}
@@ -255,13 +379,13 @@ export function Timeline() {
           <div style={{ width }} className="relative">
             {/* régua */}
             <div
-              onPointerDown={seekFromEvent}
-              className="sticky top-0 z-30 h-7 cursor-pointer border-b border-[var(--border)] bg-[var(--surface-2)]"
+              onPointerDown={startScrub}
+              className="sticky top-0 z-30 h-7 cursor-ew-resize border-b border-[var(--border)] bg-[var(--surface-2)]"
             >
               {ticks.map((t) => (
                 <span
                   key={t}
-                  className="absolute top-1 text-[10px] tabular-nums text-[var(--muted-foreground)]"
+                  className="pointer-events-none absolute top-1 text-[10px] tabular-nums text-[var(--muted-foreground)]"
                   style={{ left: t * zoom + 3 }}
                 >
                   {fmt(t)}
@@ -293,6 +417,7 @@ export function Timeline() {
                   className="relative border-b border-[var(--border)]"
                   style={{ height: LANE_H }}
                 >
+                  {track.type === "audio" ? <AudioWaveform width={width} /> : null}
                   {track.clips.map((clip) => (
                     <ClipBox key={clip.id} clip={clip} track={track} />
                   ))}
@@ -301,16 +426,19 @@ export function Timeline() {
             </div>
 
 
-            {/* playhead */}
+            {/* playhead — arrastável */}
             <div
-              className="pointer-events-none absolute top-0 z-40 w-px bg-[var(--brand)]"
+              onPointerDown={startScrub}
+              className="absolute top-0 z-40 w-px cursor-ew-resize bg-[var(--brand)]"
               style={{ left: currentTime * zoom, height: 28 + tracks.length * LANE_H }}
             >
-              <span className="absolute -left-1.5 -top-0.5 h-2 w-3 rounded-sm bg-[var(--brand)]" />
+              <span className="absolute -left-2 -top-1 h-4 w-4 cursor-ew-resize rounded-sm bg-[var(--brand)]" />
+              <span className="absolute -left-2 top-0 h-full w-4" />
             </div>
           </div>
         </div>
       </div>
+
       <span className="hidden">{MIN_CLIP}</span>
     </div>
   );
