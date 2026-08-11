@@ -1,11 +1,19 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AudioLines, Copy, Scissors, Trash2, ZoomIn, ZoomOut } from "lucide-react";
-import { MIN_CLIP, useEditor, type Clip, type Track } from "@/state/editor-store";
+import { MIN_CLIP, findClip, useEditor, type Clip, type Track } from "@/state/editor-store";
+import {
+  EASINGS,
+  animatedProps,
+  modifiedProps,
+  type AnimProp,
+  type Easing,
+} from "@/lib/keyframes";
 import { getPeaks, type Peaks } from "@/lib/waveform";
 import { cn } from "@/lib/utils";
 
 const LABEL_W = 96;
 const LANE_H = 56;
+const KF_H = 22;
 
 function fmt(t: number) {
   const m = Math.floor(t / 60);
@@ -14,6 +22,108 @@ function fmt(t: number) {
 }
 
 type Ghost = { start: number; duration: number } | null;
+type KfMenu = { x: number; y: number; prop: string; kfId: string } | null;
+
+/** Sub-linha com os keyframes de uma propriedade do clipe selecionado. */
+function KeyframeLane({
+  clip,
+  prop,
+  onMenu,
+}: {
+  clip: Clip;
+  prop: AnimProp;
+  onMenu: (menu: KfMenu) => void;
+}) {
+  const zoom = useEditor((s) => s.zoom);
+  const selected = useEditor((s) => s.selectedKeyframes);
+  const selectKeyframe = useEditor((s) => s.selectKeyframe);
+  const moveKeyframes = useEditor((s) => s.moveKeyframes);
+  const keys = clip.keyframes?.[prop.key] ?? [];
+
+  const startDrag = (kfId: string) => (e: React.PointerEvent) => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const additive = e.shiftKey;
+    const already = useEditor.getState().selectedKeyframes.some((k) => k.kfId === kfId);
+    if (!already || additive) selectKeyframe(prop.key, kfId, additive);
+
+    const lane = document.getElementById("tl-scroll");
+    const startTime = keys.find((k) => k.id === kfId)?.time ?? 0;
+    const timeAt = (clientX: number) => {
+      if (!lane) return 0;
+      const box = lane.getBoundingClientRect();
+      return Math.max(0, (clientX - box.left + lane.scrollLeft) / zoom) - clip.startTime;
+    };
+    const grab = timeAt(e.clientX) - startTime;
+    const group = useEditor.getState().selectedKeyframes;
+    const batch =
+      group.length > 1 && group.some((k) => k.kfId === kfId)
+        ? group
+        : [{ prop: prop.key, kfId }];
+    const origins = batch.map((sel) => {
+      const list = clip.keyframes?.[sel.prop] ?? [];
+      return { ...sel, time: list.find((k) => k.id === sel.kfId)?.time ?? 0 };
+    });
+    let delta = 0;
+    let moved = false;
+
+    const move = (ev: PointerEvent) => {
+      moved = true;
+      delta = timeAt(ev.clientX) - grab - startTime;
+      moveKeyframes(
+        clip.id,
+        origins.map((o) => ({ prop: o.prop, kfId: o.kfId, time: o.time + delta })),
+        true,
+      );
+    };
+    const up = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      if (moved)
+        moveKeyframes(
+          clip.id,
+          origins.map((o) => ({ prop: o.prop, kfId: o.kfId, time: o.time + delta })),
+        );
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+  };
+
+  return (
+    <div className="relative border-b border-[var(--border)]/60 bg-[var(--surface-2)]" style={{ height: KF_H }}>
+      <span
+        className="absolute inset-y-0 left-0 border-l-2 border-[var(--brand)]/30"
+        style={{ left: clip.startTime * zoom, width: Math.max(4, clip.duration * zoom) }}
+      />
+      {keys.map((k) => {
+        const isSel = selected.some((s) => s.kfId === k.id);
+        return (
+          <span
+            key={k.id}
+            data-kf-id={k.id}
+            title={`${prop.label} · ${k.time.toFixed(2)}s · ${k.easing}`}
+            onPointerDown={startDrag(k.id)}
+            onDoubleClick={(e) => onMenu({ x: e.clientX, y: e.clientY, prop: prop.key, kfId: k.id })}
+            onContextMenu={(e) => {
+              e.preventDefault();
+              onMenu({ x: e.clientX, y: e.clientY, prop: prop.key, kfId: k.id });
+            }}
+            className={cn(
+              "absolute top-1/2 h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rotate-45 cursor-ew-resize border",
+              isSel
+                ? "border-white bg-white"
+                : "border-[var(--brand)] bg-[var(--brand)]",
+              k.easing === "hold" && "rounded-none",
+            )}
+            style={{ left: (clip.startTime + k.time) * zoom }}
+          />
+        );
+      })}
+    </div>
+  );
+}
+
 
 /** Waveform do áudio do vídeo, desenhada na faixa "Áudio". */
 function AudioWaveform({ width }: { width: number }) {
