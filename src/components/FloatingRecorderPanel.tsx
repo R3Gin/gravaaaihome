@@ -297,22 +297,23 @@ export const FloatingRecorderPanel = forwardRef<
           MutedIcon={CameraOff}
           onClick={props.onToggleCamera}
         />
-        {props.onTogglePen && (
+        {drawing && (
           <button
             type="button"
-            onClick={props.onTogglePen}
-            title={props.penOn ? "Caneta ativa — clique para desativar" : "Desenhar na tela"}
+            onClick={() => drawing.setActive(!drawing.active)}
+            title={drawing.active ? "Caneta ativa — clique para desativar" : "Desenhar na tela"}
             aria-label="Caneta"
             className={cn(
               "flex h-8 w-8 items-center justify-center rounded-full border transition-all duration-150 active:scale-[0.98]",
-              props.penOn
-                ? "border-[var(--recording-btn-danger-to)] bg-[var(--recording-btn-danger-to)]/25 text-white"
+              drawing.active
+                ? "border-[var(--recording-btn-danger-to)] bg-[var(--recording-btn-danger-to)]/25 text-white shadow-[0_0_10px_-2px_var(--recording-btn-danger-glow)]"
                 : "border-[var(--recording-btn-neutral-border)] bg-[var(--recording-btn-neutral-bg)] text-white/90 hover:bg-[var(--recording-btn-neutral-bg-hover)]",
             )}
           >
             <Pen className="h-3.5 w-3.5" />
           </button>
         )}
+
       </div>
 
       {supportsDocumentPip() && (
