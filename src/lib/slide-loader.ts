@@ -128,19 +128,52 @@ async function loadPptxDeck(
     const xml = await zip.file(path)!.async("string");
     const doc = parser.parseFromString(xml, "application/xml");
 
-    // Relacionamentos (imagens)
+    // Relacionamentos (imagens + layout)
     const relPath = path.replace(/slides\/(slide\d+)\.xml/, "slides/_rels/$1.xml.rels");
     const rels = new Map<string, string>();
+    let layoutPath: string | null = null;
     const relXml = await zip.file(relPath)?.async("string");
     if (relXml) {
       const relDoc = parser.parseFromString(relXml, "application/xml");
       Array.from(relDoc.getElementsByTagName("Relationship")).forEach((r) => {
         const id = r.getAttribute("Id");
         const target = r.getAttribute("Target");
-        if (id && target)
-          rels.set(id, target.replace(/^\.\.\//, "ppt/").replace(/^\//, ""));
+        if (!id || !target) return;
+        const resolved = target.replace(/^\.\.\//, "ppt/").replace(/^\//, "");
+        rels.set(id, resolved);
+        if ((r.getAttribute("Type") ?? "").endsWith("/slideLayout"))
+          layoutPath = resolved;
       });
     }
+
+    // Placeholders herdam posição do layout (e do master).
+    const phBoxes = new Map<string, Box>();
+    const inheritFrom = async (p: string | null): Promise<string | null> => {
+      if (!p) return null;
+      const x = await zip.file(p)?.async("string");
+      if (!x) return null;
+      const d = parser.parseFromString(x, "application/xml");
+      const tree = firstLocal(d.documentElement, "spTree");
+      if (tree) {
+        for (const node of Array.from(tree.children)) {
+          if (node.localName !== "sp") continue;
+          const key = placeholderKey(node);
+          const box = readXfrm(node, scale);
+          if (key && box.w > 0 && !phBoxes.has(key)) phBoxes.set(key, box);
+        }
+      }
+      const rp = p.replace(/([^/]+)\.xml$/, "_rels/$1.xml.rels");
+      const rx = await zip.file(rp)?.async("string");
+      if (!rx) return null;
+      const rd = parser.parseFromString(rx, "application/xml");
+      const master = Array.from(rd.getElementsByTagName("Relationship")).find(
+        (r) => (r.getAttribute("Type") ?? "").endsWith("/slideMaster"),
+      );
+      const t = master?.getAttribute("Target");
+      return t ? t.replace(/^\.\.\//, "ppt/").replace(/^\//, "") : null;
+    };
+    const masterPath = await inheritFrom(layoutPath);
+    await inheritFrom(masterPath);
 
     const canvas = document.createElement("canvas");
     canvas.width = canvasW;
@@ -157,7 +190,7 @@ async function loadPptxDeck(
         if (kind === "pic") {
           await drawPicture(node, ctx, scale, zip, rels);
         } else if (kind === "sp") {
-          drawShape(node, ctx, scale);
+          drawShape(node, ctx, scale, phBoxes);
         }
       }
     }
@@ -169,7 +202,20 @@ async function loadPptxDeck(
   return { width: canvasW, height: canvasH, slides, name: file.name };
 }
 
-function readXfrm(node: Element, scale: number) {
+interface Box {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+function placeholderKey(node: Element): string | null {
+  const ph = firstLocal(node, "ph");
+  if (!ph) return null;
+  return `${attr(ph, "type") ?? "body"}:${attr(ph, "idx") ?? "0"}`;
+}
+
+function readXfrm(node: Element, scale: number): Box {
   const xfrm = firstLocal(node, "xfrm");
   const off = xfrm ? firstLocal(xfrm, "off") : null;
   const ext = xfrm ? firstLocal(xfrm, "ext") : null;
@@ -180,6 +226,7 @@ function readXfrm(node: Element, scale: number) {
     h: (Number(attr(ext, "cy") ?? 0) / EMU_PER_PX) * scale,
   };
 }
+
 
 async function drawPicture(
   node: Element,
