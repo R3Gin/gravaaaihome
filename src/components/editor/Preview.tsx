@@ -289,7 +289,17 @@ export function Preview({ videoRef }: Props) {
               src={sourceUrl}
               playsInline
               className="h-full w-full object-contain"
-              style={{ ...filterStyle, ...zoomStyle(videoClip) }}
+              style={(() => {
+                const base = { ...filterStyle, ...zoomStyle(videoClip) } as React.CSSProperties;
+                if (!transitionStyle) return base;
+                const t = transitionStyle as React.CSSProperties;
+                return {
+                  ...base,
+                  ...t,
+                  transform: [base.transform, t.transform].filter(Boolean).join(" ") || undefined,
+                  opacity: (Number(base.opacity ?? 1) || 1) * Number(t.opacity ?? 1),
+                };
+              })()}
             />
           ) : (
             <div className="grid h-full w-full place-items-center text-sm text-[var(--muted-foreground)]">
