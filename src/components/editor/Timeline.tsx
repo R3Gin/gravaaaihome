@@ -33,19 +33,61 @@ function KeyframeLane({
   clip,
   prop,
   onMenu,
+  onSpeed,
 }: {
   clip: Clip;
   prop: AnimProp;
   onMenu: (menu: KfMenu) => void;
+  onSpeed: (target: KfSpeed) => void;
 }) {
   const zoom = useEditor((s) => s.zoom);
   const selected = useEditor((s) => s.selectedKeyframes);
   const selectKeyframe = useEditor((s) => s.selectKeyframe);
   const moveKeyframes = useEditor((s) => s.moveKeyframes);
+  const setKeyframeSpeed = useEditor((s) => s.setKeyframeSpeed);
   const keys = clip.keyframes?.[prop.key] ?? [];
+
+  /** Alt/Option + arrastar: ajusta visualmente as tangentes do keyframe. */
+  const startTangentDrag = (kfId: string) => (e: React.PointerEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    selectKeyframe(prop.key, kfId);
+    const kf = keys.find((k) => k.id === kfId);
+    const baseIn = kf?.incomingSpeed ?? { x: 0, y: 0, influence: 33.33 };
+    const baseOut = kf?.outgoingSpeed ?? { x: 0, y: 0, influence: 33.33 };
+    const x0 = e.clientX;
+    const y0 = e.clientY;
+    const move = (ev: PointerEvent) => {
+      const dx = (ev.clientX - x0) / 3; // influência
+      const dy = -(ev.clientY - y0) / 40; // velocidade
+      const side = ev.clientX < x0 ? "in" : "out";
+      const influence = Math.min(100, Math.max(1, (side === "in" ? baseIn : baseOut).influence + Math.abs(dx)));
+      setKeyframeSpeed(
+        clip.id,
+        prop.key,
+        kfId,
+        side === "in"
+          ? { incomingSpeed: { ...baseIn, influence, x: baseIn.x + dy, y: baseIn.y + dy } }
+          : { outgoingSpeed: { ...baseOut, influence, x: baseOut.x + dy, y: baseOut.y + dy } },
+        true,
+      );
+    };
+    const up = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      useEditor.getState().commit();
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+  };
 
   const startDrag = (kfId: string) => (e: React.PointerEvent) => {
     if (e.button !== 0) return;
+    if (e.altKey) {
+      startTangentDrag(kfId)(e);
+      return;
+    }
+
     e.preventDefault();
     e.stopPropagation();
     const additive = e.shiftKey;
