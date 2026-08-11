@@ -84,6 +84,8 @@ export interface EditorActions {
   setTool: (t: Tool) => void;
   select: (id: string | null) => void;
   updateClip: (id: string, patch: Partial<Clip>) => void;
+  /** Atualiza sem criar ponto de histórico (uso durante arraste contínuo). */
+  updateClipLive: (id: string, patch: Partial<Clip>) => void;
   splitAt: (clipId: string, time: number) => void;
   splitPlayhead: () => void;
   removeClip: (id: string) => void;
