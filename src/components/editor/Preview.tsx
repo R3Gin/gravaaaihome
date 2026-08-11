@@ -289,6 +289,13 @@ export function Preview({ videoRef }: Props) {
 
           {textClips.map((clip) => {
             const selected = clip.id === selectedClipId;
+            const reveal = Math.max(0, Math.min(1, clip.reveal ?? 1));
+            const mode = clip.revealMode ?? "none";
+            const full = clip.textContent ?? "";
+            const shown =
+              mode === "typewriter" ? full.slice(0, Math.round(full.length * reveal)) : full;
+            const blur = clip.blur ?? 0;
+            const scale = clip.scale ?? 1;
             return (
               <div
                 key={clip.id}
@@ -307,14 +314,19 @@ export function Preview({ videoRef }: Props) {
                   top: `${(clip.position?.y ?? 0.82) * 100}%`,
                   opacity: clip.opacity ?? 1,
                   rotate: `${clip.rotation ?? 0}deg`,
+                  scale: String(scale),
+                  filter: blur > 0.01 ? `blur(${blur}px)` : undefined,
+                  clipPath:
+                    mode === "wipe" ? `inset(0 ${(1 - reveal) * 100}% 0 0)` : undefined,
                   color: clip.color ?? "#fff",
                   fontSize: `${((clip.fontSize ?? 48) / 720) * 100}cqh`,
                 }}
               >
-                {clip.textContent}
+                {mode === "typewriter" ? shown || "\u200b" : full}
               </div>
             );
           })}
+
         </div>
       </div>
 
