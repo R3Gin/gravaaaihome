@@ -11,7 +11,7 @@ import {
   type KeyframeMap,
   type TangentSpeed,
 } from "@/lib/keyframes";
-import { remapCaptionsAfterCuts } from "@/lib/caption-remap";
+import { remapCaptionsAfterCuts, toOriginalTime } from "@/lib/caption-remap";
 import {
   applyPreset,
   revealModeFor,
