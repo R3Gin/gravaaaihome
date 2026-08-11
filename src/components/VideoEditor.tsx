@@ -336,18 +336,19 @@ export function VideoEditor() {
   /* ---------------- histórico ---------------- */
 
   const commit = useCallback(() => {
-    setPast((p) => [...p.slice(-49), { clips, texts }]);
+    setPast((p) => [...p.slice(-49), { clips, texts, shapes }]);
     setFuture([]);
     setResultUrl(null);
-  }, [clips, texts]);
+  }, [clips, texts, shapes]);
 
   const undo = () => {
     setPast((p) => {
       if (p.length === 0) return p;
       const prev = p[p.length - 1];
-      setFuture((f) => [{ clips, texts }, ...f].slice(0, 50));
+      setFuture((f) => [{ clips, texts, shapes }, ...f].slice(0, 50));
       setClips(prev.clips);
       setTexts(prev.texts);
+      setShapes(prev.shapes);
       setSelection(null);
       return p.slice(0, -1);
     });
@@ -357,9 +358,10 @@ export function VideoEditor() {
     setFuture((f) => {
       if (f.length === 0) return f;
       const next = f[0];
-      setPast((p) => [...p, { clips, texts }]);
+      setPast((p) => [...p, { clips, texts, shapes }]);
       setClips(next.clips);
       setTexts(next.texts);
+      setShapes(next.shapes);
       setSelection(null);
       return f.slice(1);
     });
