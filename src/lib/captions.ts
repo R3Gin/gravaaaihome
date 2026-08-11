@@ -58,7 +58,7 @@ export async function transcribe(
         if (msg.type === "error") reject(new Error(msg.message));
       };
       worker.onerror = () => reject(new Error("O modelo de transcrição não pôde ser carregado."));
-      worker.postMessage({ type: "transcribe", audio, language }, [audio.buffer]);
+      worker.postMessage({ type: "transcribe", audio, language: lang }, [audio.buffer]);
     });
   } finally {
     worker.terminate();
