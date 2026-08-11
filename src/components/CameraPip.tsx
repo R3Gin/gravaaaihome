@@ -461,7 +461,7 @@ export function CameraPipBubble({
       if (raf) cancelAnimationFrame(raf);
       try { seg?.close?.(); } catch { /* noop */ }
     };
-  }, [effectActive, effect, bgImageUrl, videoRef, effectCanvasRef]);
+  }, [effectActive, effect, bgImageUrl, bgColor, videoRef, effectCanvasRef]);
 
   const onDown = (e: PointerEvent<HTMLDivElement>) => {
     (e.target as Element).setPointerCapture?.(e.pointerId);
@@ -484,6 +484,8 @@ export function CameraPipBubble({
     dragRef.current = null;
   };
 
+  const transparentBg = effect === "transparent";
+
   return (
     <div
       onPointerDown={active ? onDown : undefined}
@@ -496,9 +498,14 @@ export function CameraPipBubble({
         width: bubble.size,
         height: bubble.size,
         display: active ? undefined : "none",
+        borderRadius: shapeRadius(style.shape, bubble.size),
+        border: style.borderEnabled
+          ? `${style.borderWidth}px solid ${style.borderColor}`
+          : "none",
+        background: transparentBg ? "transparent" : "#000",
       }}
       className={cn(
-        "absolute z-20 cursor-grab overflow-hidden rounded-full border-2 border-white/80 bg-black shadow-2xl active:cursor-grabbing",
+        "absolute z-20 cursor-grab overflow-hidden shadow-2xl active:cursor-grabbing",
         className,
       )}
     >
