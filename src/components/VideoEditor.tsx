@@ -950,6 +950,9 @@ export function VideoEditor() {
       align: "center",
       animIn: "none",
       animOut: "none",
+      bg: "",
+      font: "DM Sans",
+      caption: false,
       ...preset,
     };
     setTexts((cur) => [...cur, layer]);
