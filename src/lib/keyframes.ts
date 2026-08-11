@@ -40,8 +40,8 @@ export interface Keyframe {
 
 export type KeyframeMap = Record<string, Keyframe[]>;
 
-/** tolerância para considerar o playhead "em cima" de um keyframe */
-export const KF_EPS = 0.02;
+/** tolerância para considerar o playhead "em cima" de um keyframe (100 ms) */
+export const KF_EPS = 0.1;
 
 export const DEFAULT_INFLUENCE = 33.33;
 
