@@ -260,22 +260,21 @@ export function Timeline() {
               ))}
             </div>
 
-            <DndContext sensors={sensors} onDragEnd={onDragEnd}>
-              <div onPointerDown={(e) => e.target === e.currentTarget && select(null)}>
-                {tracks.map((track) => (
-                  <div
-                    key={track.id}
-                    onPointerDown={(e) => e.target === e.currentTarget && select(null)}
-                    className="relative border-b border-[var(--border)]"
-                    style={{ height: LANE_H }}
-                  >
-                    {track.clips.map((clip) => (
-                      <ClipBox key={clip.id} clip={clip} track={track} />
-                    ))}
-                  </div>
-                ))}
-              </div>
-            </DndContext>
+            <div onPointerDown={(e) => e.target === e.currentTarget && select(null)}>
+              {tracks.map((track) => (
+                <div
+                  key={track.id}
+                  onPointerDown={(e) => e.target === e.currentTarget && select(null)}
+                  className="relative border-b border-[var(--border)]"
+                  style={{ height: LANE_H }}
+                >
+                  {track.clips.map((clip) => (
+                    <ClipBox key={clip.id} clip={clip} track={track} />
+                  ))}
+                </div>
+              ))}
+            </div>
+
 
             {/* playhead */}
             <div
