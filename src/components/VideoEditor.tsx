@@ -527,7 +527,14 @@ export function VideoEditor() {
       last = now;
       const video = videoRef.current;
       const canvas = canvasRef.current;
-      const { clips: cs, texts: ts, srcSize: size } = stateRef.current;
+      const {
+        clips: cs,
+        texts: ts,
+        shapes: sh,
+        srcSize: size,
+        ratio: rt,
+        contentOffset: off,
+      } = stateRef.current;
 
       if (playingRef.current) {
         const totalNow = cs.reduce((m, c) => Math.max(m, clipEnd(c)), 0);
@@ -564,8 +571,9 @@ export function VideoEditor() {
       }
 
       if (canvas) {
-        const W = size.width;
-        const H = size.height;
+        const base = Math.max(size.width, size.height);
+        const H = Math.max(2, Math.round((rt.value >= 1 ? base / rt.value : base) / 2) * 2);
+        const W = Math.max(2, Math.round((H * rt.value) / 2) * 2);
         if (canvas.width !== W || canvas.height !== H) {
           canvas.width = W;
           canvas.height = H;
@@ -578,12 +586,13 @@ export function VideoEditor() {
         ctx.fillStyle = "#000";
         ctx.fillRect(0, 0, W, H);
 
+        let placed: { dx: number; dy: number; dw: number; dh: number } | null = null;
         if (video && clip && video.readyState >= 2) {
           const local = t - clip.start;
           const f = clip.filters;
           const z = Math.max(1, zoomAt(clip.zoomKeys, local));
           let alpha = 1;
-          let offsetX = 0;
+          let shiftX = 0;
           const dur = clipDuration(clip);
           const isFirst = cs.length > 0 && cs.indexOf(clip) === 0;
           if (!isFirst && clip.transition !== "none") {
@@ -591,26 +600,85 @@ export function VideoEditor() {
             if (local < d) {
               const r = local / d;
               if (clip.transition === "fade") alpha = r;
-              else offsetX = (1 - r) * W;
+              else shiftX = (1 - r) * W;
             }
           }
+          const vw = size.width;
+          const vh = size.height;
+          const fit = Math.min(W / vw, H / vh) * z;
+          const dw = vw * fit;
+          const dh = vh * fit;
+          const dx = (W - dw) / 2 + (off.x * W) / 2 + shiftX;
+          const dy = (H - dh) / 2 + (off.y * H) / 2;
+          placed = { dx, dy, dw, dh };
           ctx.filter = `brightness(${(1 + f.brightness).toFixed(3)}) contrast(${f.contrast.toFixed(
             3,
           )}) saturate(${f.saturation.toFixed(3)})`;
           ctx.globalAlpha = alpha;
-          const dw = W * z;
-          const dh = H * z;
-          ctx.drawImage(video, offsetX - (dw - W) / 2, -(dh - H) / 2, dw, dh);
+          ctx.drawImage(video, dx, dy, dw, dh);
           ctx.filter = "none";
           ctx.globalAlpha = 1;
+        }
+
+        // Camadas de blur e spotlight
+        for (const s of sh) {
+          if (t < s.start || t > s.end) continue;
+          const rx = s.x * W;
+          const ry = s.y * H;
+          const rw = s.w * W;
+          const rh = s.h * H;
+          if (s.kind === "blur") {
+            if (!video || !placed) continue;
+            ctx.save();
+            ctx.beginPath();
+            ctx.rect(rx, ry, rw, rh);
+            ctx.clip();
+            ctx.filter = `blur(${Math.max(1, s.strength).toFixed(0)}px)`;
+            ctx.drawImage(video, placed.dx, placed.dy, placed.dw, placed.dh);
+            ctx.filter = "none";
+            ctx.restore();
+          } else {
+            ctx.save();
+            ctx.beginPath();
+            ctx.rect(0, 0, W, H);
+            ctx.ellipse(rx + rw / 2, ry + rh / 2, rw / 2, rh / 2, 0, 0, Math.PI * 2);
+            ctx.fillStyle = `rgba(0,0,0,${Math.min(0.95, Math.max(0, s.strength))})`;
+            ctx.fill("evenodd");
+            ctx.beginPath();
+            ctx.ellipse(rx + rw / 2, ry + rh / 2, rw / 2, rh / 2, 0, 0, Math.PI * 2);
+            ctx.strokeStyle = s.color;
+            ctx.lineWidth = Math.max(2, W * 0.004);
+            ctx.stroke();
+            ctx.restore();
+          }
         }
 
         for (const layer of ts) {
           if (t < layer.start || t > layer.end) continue;
           const fontSize = (layer.size / 1080) * H;
-          ctx.font = `700 ${fontSize}px "DM Sans", system-ui, sans-serif`;
+          ctx.font = `700 ${fontSize}px "${layer.font || "DM Sans"}", system-ui, sans-serif`;
           ctx.textAlign = layer.align;
           ctx.textBaseline = "middle";
+          if (layer.bg) {
+            const m = ctx.measureText(layer.text);
+            const padX = fontSize * 0.35;
+            const padY = fontSize * 0.28;
+            const bx =
+              layer.align === "center"
+                ? layer.x * W - m.width / 2
+                : layer.align === "right"
+                  ? layer.x * W - m.width
+                  : layer.x * W;
+            ctx.fillStyle = layer.bg;
+            ctx.globalAlpha = 0.7;
+            ctx.fillRect(
+              bx - padX,
+              layer.y * H - fontSize / 2 - padY,
+              m.width + padX * 2,
+              fontSize + padY * 2,
+            );
+            ctx.globalAlpha = 1;
+          }
           ctx.fillStyle = layer.color;
           ctx.shadowColor = "rgba(0,0,0,0.55)";
           ctx.shadowBlur = fontSize * 0.25;
