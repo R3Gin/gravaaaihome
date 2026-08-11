@@ -1,8 +1,8 @@
 import { Link } from "@tanstack/react-router";
-import { Monitor, ArrowRight } from "lucide-react";
+import { Monitor, Scissors, ArrowRight } from "lucide-react";
 import type { ComponentType, SVGProps } from "react";
 
-type MosaicoHref = "/slides-camera" | "/mosaicos/gdocs-presentation";
+type MosaicoHref = "/slides-camera" | "/mosaicos/gdocs-presentation" | "/mosaicos/editor";
 
 interface MosaicoDef {
   title: string;
@@ -16,11 +16,18 @@ const mosaicos: MosaicoDef[] = [
     title: "Apresentação + Câmera",
     description:
       "Suba um PDF ou PPTX, apresente com a bolha da webcam por cima e grave tudo em MP4.",
-
     href: "/mosaicos/gdocs-presentation",
     Icon: Monitor,
   },
+  {
+    title: "Editor Simplificado",
+    description:
+      "Corte, ajuste cores e refine sua gravação sem sair do navegador.",
+    href: "/mosaicos/editor",
+    Icon: Scissors,
+  },
 ];
+
 
 function openPopup(href: string) {
   const isBig = href.startsWith("/mosaicos/");
