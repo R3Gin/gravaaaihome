@@ -144,13 +144,9 @@ const PANELS: { id: PanelId; label: string; Icon: typeof Upload }[] = [
   { id: "upload", label: "Upload", Icon: Upload },
   { id: "audio", label: "Áudio", Icon: Music },
   { id: "text", label: "Texto", Icon: Type },
-  { id: "elements", label: "Elementos", Icon: Shapes },
-  { id: "captions", label: "Legendas", Icon: Captions },
-  { id: "transcript", label: "Transcrição", Icon: FileText },
-  { id: "effects", label: "Efeitos", Icon: Sparkles },
   { id: "transitions", label: "Transições", Icon: Wand2 },
-  { id: "filters", label: "Filtros", Icon: SlidersHorizontal },
 ];
+
 
 const FILTER_PRESETS: { name: string; filters: Filters }[] = [
   { name: "Original", filters: { ...NEUTRAL } },
