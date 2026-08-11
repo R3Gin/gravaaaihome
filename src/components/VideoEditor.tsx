@@ -165,7 +165,22 @@ const PANELS: { id: PanelId; label: string; Icon: typeof Upload }[] = [
   { id: "upload", label: "Upload", Icon: Upload },
   { id: "audio", label: "Áudio", Icon: Music },
   { id: "text", label: "Texto", Icon: Type },
+  { id: "captions", label: "Legendas", Icon: Captions },
+  { id: "elements", label: "Elementos", Icon: Shapes },
   { id: "transitions", label: "Transições", Icon: Wand2 },
+];
+
+const FONTS: readonly (readonly [string, string])[] = [
+  ["DM Sans", "DM Sans"],
+  ["Georgia", "Georgia"],
+  ["Impact", "Impact"],
+  ["Courier New", "Courier"],
+];
+
+const CAPTION_POSITIONS: readonly (readonly [string, number])[] = [
+  ["Topo", 0.12],
+  ["Centro", 0.5],
+  ["Base", 0.86],
 ];
 
 
