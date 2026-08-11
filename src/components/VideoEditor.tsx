@@ -889,6 +889,7 @@ export function VideoEditor() {
     if (!selection) return;
     commit();
     if (selection.kind === "clip") setClips((cur) => cur.filter((c) => c.id !== selection.id));
+    else if (selection.kind === "shape") setShapes((cur) => cur.filter((s) => s.id !== selection.id));
     else setTexts((cur) => cur.filter((t) => t.id !== selection.id));
     setSelection(null);
   };
