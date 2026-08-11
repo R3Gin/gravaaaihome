@@ -546,9 +546,9 @@ export function CameraPipBubble({
 }
 
 /**
- * Desenha o frame atual do vídeo da câmera dentro de um círculo em um canvas
- * de destino, aplicando cover-crop centralizado + espelhamento (efeito
- * selfie) para replicar visualmente o preview HTML/CSS.
+ * Desenha o frame atual da câmera na forma configurada (círculo, quadrado
+ * arredondado ou quadrado reto) em um canvas de destino, com cover-crop
+ * centralizado + espelhamento (efeito selfie) e borda opcional.
  * Usado APENAS pelo pipeline de gravação — nunca para preview.
  */
 export function drawCameraPipCircle(
@@ -557,6 +557,7 @@ export function drawCameraPipCircle(
   x: number,
   y: number,
   size: number,
+  style: CameraStyle = DEFAULT_CAMERA_STYLE,
 ): void {
   const vw =
     (source as HTMLVideoElement).videoWidth ||
@@ -577,20 +578,35 @@ export function drawCameraPipCircle(
     sH = vw;
     sy = (vh - vw) / 2;
   }
+
+  const r = shapeRadius(style.shape, size);
+  const path = () => {
+    ctx.beginPath();
+    if (style.shape === "circle") {
+      ctx.arc(x + size / 2, y + size / 2, size / 2, 0, Math.PI * 2);
+    } else if (r > 0 && typeof ctx.roundRect === "function") {
+      ctx.roundRect(x, y, size, size, r);
+    } else {
+      ctx.rect(x, y, size, size);
+    }
+    ctx.closePath();
+  };
+
   ctx.save();
-  ctx.beginPath();
-  ctx.arc(x + size / 2, y + size / 2, size / 2, 0, Math.PI * 2);
-  ctx.closePath();
+  path();
   ctx.clip();
   // Espelhamento horizontal (efeito selfie)
   ctx.translate(x + size, y);
   ctx.scale(-1, 1);
   ctx.drawImage(source, sx, sy, sW, sH, 0, 0, size, size);
   ctx.restore();
-  // Borda
-  ctx.beginPath();
-  ctx.arc(x + size / 2, y + size / 2, size / 2, 0, Math.PI * 2);
-  ctx.lineWidth = 4;
-  ctx.strokeStyle = "rgba(255,255,255,0.9)";
-  ctx.stroke();
+
+  if (style.borderEnabled && style.borderWidth > 0) {
+    ctx.save();
+    path();
+    ctx.lineWidth = style.borderWidth;
+    ctx.strokeStyle = style.borderColor;
+    ctx.stroke();
+    ctx.restore();
+  }
 }
