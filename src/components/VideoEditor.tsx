@@ -2461,17 +2461,39 @@ function SidePanel({
       ) : null}
 
       {panel === "elements" ? (
-        <div className="grid grid-cols-4 gap-2">
-          {STICKERS.map((s) => (
-            <button
-              key={s}
-              onClick={() => onAddText({ text: s, size: 140, y: 0.5 }, "overlay")}
-              className="grid h-14 place-items-center rounded-lg border border-[var(--border)] bg-[var(--surface-2)] text-2xl hover:border-[var(--brand)]"
-            >
-              {s}
-            </button>
-          ))}
-        </div>
+        <>
+          <button
+            disabled={!hasMedia}
+            onClick={() => onAddShape("blur")}
+            className="w-full rounded-lg border border-[var(--border)] bg-[var(--surface-2)] px-3 py-3 text-left text-xs font-semibold hover:border-[var(--brand)] disabled:opacity-40"
+          >
+            Adicionar área de blur
+            <span className="mt-1 block font-normal text-[var(--muted-foreground)]">
+              Retângulo arrastável que desfoca o vídeo por baixo.
+            </span>
+          </button>
+          <button
+            disabled={!hasMedia}
+            onClick={() => onAddShape("spotlight")}
+            className="w-full rounded-lg border border-[var(--border)] bg-[var(--surface-2)] px-3 py-3 text-left text-xs font-semibold hover:border-[var(--brand)] disabled:opacity-40"
+          >
+            Adicionar spotlight
+            <span className="mt-1 block font-normal text-[var(--muted-foreground)]">
+              Destaca uma área e escurece o restante do quadro.
+            </span>
+          </button>
+          <div className="grid grid-cols-4 gap-2 pt-1">
+            {STICKERS.map((s) => (
+              <button
+                key={s}
+                onClick={() => onAddText({ text: s, size: 140, y: 0.5 }, "overlay")}
+                className="grid h-14 place-items-center rounded-lg border border-[var(--border)] bg-[var(--surface-2)] text-2xl hover:border-[var(--brand)]"
+              >
+                {s}
+              </button>
+            ))}
+          </div>
+        </>
       ) : null}
 
       {panel === "captions" ? (
