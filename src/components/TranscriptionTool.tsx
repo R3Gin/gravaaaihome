@@ -108,8 +108,8 @@ export function TranscriptionTool() {
           ),
         onDownload: (p) => setProgress(p),
       });
-      setSegments(result);
-      if (result.length === 0) setError("Nenhuma fala reconhecida neste arquivo.");
+      setSegments(result.segments);
+      if (result.segments.length === 0) setError("Nenhuma fala reconhecida neste arquivo.");
     } catch (err) {
       console.error(err);
       setError(err instanceof Error ? err.message : "Falha na transcrição.");
