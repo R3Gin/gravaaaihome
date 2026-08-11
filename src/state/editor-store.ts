@@ -46,6 +46,13 @@ export interface Clip {
   denoise?: boolean;
   zoomKeyframes?: ZoomKeyframe[];
   position?: { x: number; y: number };
+  // transformações animáveis
+  opacity?: number;
+  scale?: number;
+  rotation?: number;
+  /** keyframes por nome de propriedade (tempo relativo ao clipe) */
+  keyframes?: KeyframeMap;
+
   // texto
   textContent?: string;
   fontSize?: number;
