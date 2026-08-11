@@ -430,6 +430,60 @@ export function Timeline() {
 
   const lanesHeight = tracks.length * LANE_H + kfRows.length * KF_H;
 
+  /* --- reordenar faixas (arraste vertical nos rótulos) --- */
+  const reorderTracks = useEditor((s) => s.reorderTracks);
+  const labelsRef = useRef<HTMLDivElement>(null);
+  const [dragTrack, setDragTrack] = useState<{ id: string; index: number; overIndex: number } | null>(
+    null,
+  );
+
+  const rowHeights = useMemo(
+    () =>
+      tracks.map(
+        (t) => LANE_H + (selectedClip?.trackId === t.id ? kfRows.length * KF_H : 0),
+      ),
+    [tracks, selectedClip, kfRows.length],
+  );
+
+  const indexFromY = useCallback(
+    (clientY: number) => {
+      const box = labelsRef.current?.getBoundingClientRect();
+      if (!box) return 0;
+      let y = clientY - box.top;
+      for (let i = 0; i < rowHeights.length; i++) {
+        const h = rowHeights[i] ?? LANE_H;
+        if (y < h / 2) return i;
+        if (y < h) return i;
+        y -= h;
+      }
+      return rowHeights.length - 1;
+    },
+    [rowHeights],
+  );
+
+  const startTrackDrag = (index: number) => (e: React.PointerEvent) => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    const track = tracks[index];
+    if (!track) return;
+    let over = index;
+    setDragTrack({ id: track.id, index, overIndex: index });
+    const move = (ev: PointerEvent) => {
+      over = indexFromY(ev.clientY);
+      setDragTrack((d) => (d ? { ...d, overIndex: over } : d));
+    };
+    const up = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      setDragTrack(null);
+      if (over !== index) reorderTracks(index, over);
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+  };
+
+
+
 
 
 
