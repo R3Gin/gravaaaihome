@@ -38,7 +38,10 @@ import type { WordTiming } from "@/lib/captions";
  * ------------------------------------------------------------------ */
 
 export type TrackType = "video" | "audio" | "text" | "overlay";
-export type TransitionKind = "none" | "fade" | "slide";
+export type TransitionKind = "none" | "fade" | "slide" | "zoom" | "wipe";
+export type TransitionDir = "left" | "right" | "up" | "down";
+
+export const DEFAULT_TRANSITION_DURATION = 0.5;
 
 export interface ZoomKeyframe {
   time: number; // segundos, relativo ao início do clipe na timeline
@@ -62,8 +65,14 @@ export interface Clip {
   contrast?: number;
   saturation?: number;
   speed?: number;
+  /** transição de ENTRADA deste clipe (sobrepõe o fim do clipe anterior) */
   transition?: TransitionKind;
+  transitionDuration?: number;
+  transitionDir?: TransitionDir;
   denoise?: boolean;
+  /** fades de áudio em segundos */
+  fadeIn?: number;
+  fadeOut?: number;
   zoomKeyframes?: ZoomKeyframe[];
   position?: { x: number; y: number };
   // transformações animáveis
