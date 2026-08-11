@@ -1152,7 +1152,13 @@ export function VideoEditor() {
               </aside>
             ) : null}
 
-            <section className="relative flex min-h-0 min-w-0 flex-1 items-center justify-center overflow-hidden bg-black/40 p-4">
+            <section
+              className={cn(
+                "relative flex min-h-0 min-w-0 flex-1 items-center justify-center overflow-hidden bg-black/40 p-4",
+                panel && "pl-[17rem] xl:pl-4",
+              )}
+            >
+
             <div className="absolute right-4 top-4 z-10 flex items-center gap-1 rounded-lg border border-[var(--border)] bg-black/60 p-1">
 
               {RATIOS.map((r) => (
