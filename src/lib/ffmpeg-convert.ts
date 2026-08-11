@@ -354,6 +354,33 @@ function zoomExpr(keys: ZoomKey[]): string {
   return `if(lt(t,${first.t.toFixed(3)}),${first.scale.toFixed(3)},${expr})`;
 }
 
+/** Expressão ffmpeg que interpola linearmente uma lista de keyframes em `t`. */
+function valueExpr(keys: ValueKey[]): string {
+  const sorted = [...keys].sort((a, b) => a.t - b.t);
+  if (sorted.length === 1) return sorted[0].value.toFixed(4);
+  let expr = sorted[sorted.length - 1].value.toFixed(4);
+  for (let i = sorted.length - 2; i >= 0; i--) {
+    const a = sorted[i];
+    const b = sorted[i + 1];
+    const span = Math.max(0.001, b.t - a.t);
+    const lerp = `(${a.value.toFixed(4)}+(${(b.value - a.value).toFixed(4)})*(t-${a.t.toFixed(3)})/${span.toFixed(3)})`;
+    expr = `if(lt(t,${b.t.toFixed(3)}),${lerp},${expr})`;
+  }
+  const first = sorted[0];
+  return `if(lt(t,${first.t.toFixed(3)}),${first.value.toFixed(4)},${expr})`;
+}
+
+/** Nome do filtro xfade equivalente à transição escolhida. */
+function xfadeName(kind: TransitionKind, dir: TransitionDir = "left"): string {
+  if (kind === "fade") return "fade";
+  if (kind === "zoom") return "zoomin";
+  if (kind === "slide")
+    return dir === "right" ? "slideright" : dir === "up" ? "slideup" : dir === "down" ? "slidedown" : "slideleft";
+  if (kind === "wipe")
+    return dir === "right" ? "wiperight" : dir === "up" ? "wipeup" : dir === "down" ? "wipedown" : "wipeleft";
+  return "fade";
+}
+
 function atempoChain(speed: number): string {
   let remaining = speed;
   const parts: string[] = [];
