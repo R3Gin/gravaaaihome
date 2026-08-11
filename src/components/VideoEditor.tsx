@@ -144,13 +144,9 @@ const PANELS: { id: PanelId; label: string; Icon: typeof Upload }[] = [
   { id: "upload", label: "Upload", Icon: Upload },
   { id: "audio", label: "Áudio", Icon: Music },
   { id: "text", label: "Texto", Icon: Type },
-  { id: "elements", label: "Elementos", Icon: Shapes },
-  { id: "captions", label: "Legendas", Icon: Captions },
-  { id: "transcript", label: "Transcrição", Icon: FileText },
-  { id: "effects", label: "Efeitos", Icon: Sparkles },
   { id: "transitions", label: "Transições", Icon: Wand2 },
-  { id: "filters", label: "Filtros", Icon: SlidersHorizontal },
 ];
+
 
 const FILTER_PRESETS: { name: string; filters: Filters }[] = [
   { name: "Original", filters: { ...NEUTRAL } },
@@ -993,14 +989,31 @@ export function VideoEditor() {
   const hasMedia = Boolean(srcUrl);
 
   return (
-    <div
-      ref={shellRef}
-      className="flex h-screen flex-col overflow-hidden bg-[var(--background)] text-[var(--foreground)]"
-    >
+    <>
+
+      <div className="flex h-screen w-full items-center justify-center bg-[var(--background)] p-8 text-center md:hidden">
+        <div className="max-w-xs space-y-3">
+          <span className="mx-auto grid h-12 w-12 place-items-center rounded-2xl bg-[var(--brand)]/15 text-[var(--brand)]">
+            <Scissors className="h-6 w-6" />
+          </span>
+          <h1 className="font-display text-lg font-bold tracking-tight">
+            Use um dispositivo com tela maior para editar
+          </h1>
+          <p className="text-sm text-[var(--muted-foreground)]">
+            O Editor Simplificado precisa de pelo menos 768px de largura.
+          </p>
+        </div>
+      </div>
+
+      <div
+        ref={shellRef}
+        className="hidden h-screen w-full flex-col overflow-hidden bg-[var(--background)] text-[var(--foreground)] md:flex"
+      >
+
       <input ref={inputRef} type="file" accept="video/mp4,video/*" className="hidden" onChange={onPick} />
 
       {/* ---------- 1. BARRA SUPERIOR ---------- */}
-      <header className="flex h-14 shrink-0 items-center gap-3 border-b border-[var(--border)] bg-black/40 px-3">
+      <header className="flex h-14 shrink-0 flex-nowrap items-center gap-2 overflow-hidden border-b border-[var(--border)] bg-black/40 px-3">
         <div className="flex min-w-0 flex-1 items-center gap-2">
           <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-[var(--brand)]/15 text-[var(--brand)]">
             <Scissors className="h-4 w-4" />
@@ -1012,25 +1025,25 @@ export function VideoEditor() {
               onChange={(e) => setProjectName(e.target.value)}
               onBlur={() => setEditingName(false)}
               onKeyDown={(e) => e.key === "Enter" && setEditingName(false)}
-              className="w-52 rounded-md border border-[var(--brand)]/60 bg-[var(--surface-2)] px-2 py-1 text-sm font-semibold outline-none"
+              className="w-40 min-w-0 rounded-md border border-[var(--brand)]/60 bg-[var(--surface-2)] px-2 py-1 text-sm font-semibold outline-none"
             />
           ) : (
             <button
               onClick={() => setEditingName(true)}
               title="Clique para renomear"
-              className="truncate rounded-md px-2 py-1 text-sm font-semibold hover:bg-[var(--surface-2)]"
+              className="min-w-0 truncate rounded-md px-2 py-1 text-sm font-semibold hover:bg-[var(--surface-2)]"
             >
               {projectName}
             </button>
           )}
           {fileName ? (
-            <span className="hidden truncate text-xs text-[var(--muted-foreground)] lg:block">
+            <span className="hidden min-w-0 truncate text-xs text-[var(--muted-foreground)] xl:block">
               {fileName}
             </span>
           ) : null}
         </div>
 
-        <div className="flex items-center gap-1.5">
+        <div className="flex shrink-0 items-center gap-1.5">
           <IconBtn label="Reproduzir/Pausar" onClick={togglePlay} disabled={!hasMedia}>
             {playing ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
           </IconBtn>
@@ -1053,25 +1066,31 @@ export function VideoEditor() {
           </IconBtn>
         </div>
 
-        <div className="flex flex-1 items-center justify-end gap-2">
+        <div className="flex shrink-0 items-center gap-2">
           {resultUrl ? (
             <button
               onClick={downloadResult}
-              className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-[var(--border)] bg-[var(--surface-2)] px-3 text-xs font-semibold"
+              title="Baixar MP4"
+              className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-lg border border-[var(--border)] bg-[var(--surface-2)] px-3 text-xs font-semibold"
             >
-              <Download className="h-4 w-4" /> Baixar MP4
+              <Download className="h-4 w-4" />
+              <span className="hidden lg:inline">Baixar MP4</span>
             </button>
           ) : null}
           <button
             onClick={runExport}
             disabled={exporting || clips.length === 0}
-            className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-[var(--brand)] px-4 text-sm font-semibold text-white transition-transform active:scale-[0.96] disabled:opacity-50"
+            title="Exportar MP4"
+            className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-lg bg-[var(--brand)] px-3 text-sm font-semibold text-white transition-transform active:scale-[0.96] disabled:opacity-50"
           >
             {exporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
-            {exporting ? `Exportando… ${Math.round(progress * 100)}%` : "Exportar MP4"}
+            <span className="hidden whitespace-nowrap lg:inline">
+              {exporting ? `Exportando… ${Math.round(progress * 100)}%` : "Exportar MP4"}
+            </span>
           </button>
         </div>
       </header>
+
 
       {exporting ? (
         <div className="h-1 w-full bg-[var(--surface-2)]">
@@ -1082,15 +1101,16 @@ export function VideoEditor() {
         </div>
       ) : null}
 
-      <div className="flex min-h-0 flex-1">
+      <div className="flex min-h-0 flex-1 overflow-hidden">
         {/* ---------- 2. SIDEBAR ESQUERDA ---------- */}
-        <nav className="flex w-16 shrink-0 flex-col items-center gap-1 border-r border-[var(--border)] bg-black/30 py-2">
+        <nav className="flex w-16 shrink-0 flex-col items-center gap-1 overflow-y-auto border-r border-[var(--border)] bg-black/30 py-2">
           {PANELS.map((p) => (
             <button
               key={p.id}
+              title={p.label}
               onClick={() => setPanel((cur) => (cur === p.id ? null : p.id))}
               className={cn(
-                "flex w-14 flex-col items-center gap-1 rounded-lg py-2 text-[10px] font-medium transition-colors",
+                "flex w-14 shrink-0 flex-col items-center gap-1 rounded-lg py-2 text-[10px] font-medium transition-colors",
                 panel === p.id
                   ? "bg-[var(--brand)]/15 text-[var(--brand)]"
                   : "text-[var(--muted-foreground)] hover:bg-[var(--surface-2)] hover:text-[var(--foreground)]",
@@ -1102,37 +1122,45 @@ export function VideoEditor() {
           ))}
         </nav>
 
-        {panel ? (
-          <aside className="w-72 shrink-0 overflow-y-auto border-r border-[var(--border)] bg-[var(--surface)] p-3">
-            <SidePanel
-              panel={panel}
-              hasMedia={hasMedia}
-              fileName={fileName}
-              duration={duration}
-              thumb={thumbs[0]}
-              onUpload={() => inputRef.current?.click()}
-              onDropFile={onDrop}
-              onAddText={addText}
-              onApplyFilters={(f) => updateSelectedClip({ filters: f })}
-              onApplyTransition={(t) => updateSelectedClip({ transition: t })}
-              selectedClip={selectedClip}
-              transcript={transcript}
-              setTranscript={setTranscript}
-              time={time}
-            />
-          </aside>
-        ) : null}
-
         {/* ---------- 3. PREVIEW + 5. TIMELINE ---------- */}
-        <div className="flex min-w-0 flex-1 flex-col">
+        <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
           {error ? (
-            <div className="border-b border-[var(--brand)]/40 bg-[var(--brand)]/10 px-4 py-2 text-xs text-[var(--brand)]">
+            <div className="shrink-0 truncate border-b border-[var(--brand)]/40 bg-[var(--brand)]/10 px-4 py-2 text-xs text-[var(--brand)]">
               {error}
             </div>
           ) : null}
 
-          <section className="relative flex min-h-0 flex-1 items-center justify-center bg-black/40 p-4">
-            <div className="absolute left-4 top-4 z-10 flex items-center gap-1 rounded-lg border border-[var(--border)] bg-black/60 p-1">
+          <div className="relative flex min-h-0 min-w-0 flex-1 overflow-hidden">
+            {panel ? (
+              <aside className="absolute inset-y-0 left-0 z-30 w-64 overflow-y-auto border-r border-[var(--border)] bg-[var(--surface)] p-3 shadow-2xl">
+                <SidePanel
+                  panel={panel}
+                  hasMedia={hasMedia}
+                  fileName={fileName}
+                  duration={duration}
+                  thumb={thumbs[0]}
+                  onUpload={() => inputRef.current?.click()}
+                  onDropFile={onDrop}
+                  onAddText={addText}
+                  onApplyFilters={(f) => updateSelectedClip({ filters: f })}
+                  onApplyTransition={(t) => updateSelectedClip({ transition: t })}
+                  selectedClip={selectedClip}
+                  transcript={transcript}
+                  setTranscript={setTranscript}
+                  time={time}
+                />
+              </aside>
+            ) : null}
+
+            <section
+              className={cn(
+                "relative flex min-h-0 min-w-0 flex-1 items-center justify-center overflow-hidden bg-black/40 p-4",
+                panel && "pl-[17rem] xl:pl-4",
+              )}
+            >
+
+            <div className="absolute right-4 top-4 z-10 flex items-center gap-1 rounded-lg border border-[var(--border)] bg-black/60 p-1">
+
               {RATIOS.map((r) => (
                 <button
                   key={r.id}
@@ -1227,10 +1255,12 @@ export function VideoEditor() {
               </div>
             )}
           </section>
+          </div>
 
           {/* ---------- 5. TIMELINE ---------- */}
-          <section className="flex h-[340px] shrink-0 flex-col border-t border-[var(--border)] bg-[var(--surface)]">
-            <div className="flex items-center gap-1 border-b border-[var(--border)] px-2 py-1.5">
+          <section className="flex h-[260px] shrink-0 flex-col overflow-hidden border-t border-[var(--border)] bg-[var(--surface)] xl:h-[320px]">
+            <div className="flex shrink-0 items-center gap-1 overflow-x-auto border-b border-[var(--border)] px-2 py-1.5">
+
               <IconBtn label="Reproduzir/Pausar" onClick={togglePlay} disabled={!hasMedia}>
                 {playing ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
               </IconBtn>
@@ -1495,19 +1525,17 @@ export function VideoEditor() {
 
         {/* ---------- 4. PAINEL DIREITO ---------- */}
         {selectedClip || selectedText ? (
-          <aside className="w-80 shrink-0 overflow-y-auto border-l border-[var(--border)] bg-[var(--surface)] p-4">
+          <aside className="w-72 shrink-0 overflow-y-auto overflow-x-hidden border-l border-[var(--border)] bg-[var(--surface)] p-4">
             {selectedClip ? (
               <>
                 <div className="mb-3 flex flex-wrap gap-1">
                   {(
                     [
                       ["basic", "Básico"],
-                      ["bg", "Remover fundo"],
-                      ["audio", "Áudio"],
-                      ["anim", "Animação"],
                       ["speed", "Velocidade"],
                     ] as const
                   ).map(([id, label]) => (
+
                     <button
                       key={id}
                       onClick={() => setInspectorTab(id)}
@@ -1609,82 +1637,6 @@ export function VideoEditor() {
                   </div>
                 ) : null}
 
-                {inspectorTab === "bg" ? (
-                  <p className="text-xs leading-relaxed text-[var(--muted-foreground)]">
-                    Remoção de fundo por IA ainda não está disponível neste editor local. Para gravações
-                    de tela com webcam, use a bolha redonda da câmera — ela já isola o enquadramento.
-                  </p>
-                ) : null}
-
-                {inspectorTab === "audio" ? (
-                  <div className="space-y-3">
-                    <Slider
-                      label="Volume"
-                      value={selectedClip.volume}
-                      min={0}
-                      max={1}
-                      step={0.01}
-                      onChange={(v) => updateSelectedClip({ volume: v }, false)}
-                    />
-                    <Slider
-                      label="Fade in (s)"
-                      value={selectedClip.fadeIn}
-                      min={0}
-                      max={3}
-                      step={0.1}
-                      onChange={(v) => updateSelectedClip({ fadeIn: v }, false)}
-                    />
-                    <Slider
-                      label="Fade out (s)"
-                      value={selectedClip.fadeOut}
-                      min={0}
-                      max={3}
-                      step={0.1}
-                      onChange={(v) => updateSelectedClip({ fadeOut: v }, false)}
-                    />
-                    <button
-                      onClick={() => setMuted((m) => !m)}
-                      className="w-full rounded-lg border border-[var(--border)] bg-[var(--surface-2)] px-3 py-2 text-xs font-semibold"
-                    >
-                      {muted ? "Ativar áudio da faixa" : "Silenciar faixa de áudio"}
-                    </button>
-                  </div>
-                ) : null}
-
-                {inspectorTab === "anim" ? (
-                  <div className="space-y-3">
-                    <Select
-                      label="Transição de entrada"
-                      value={selectedClip.transition}
-                      options={[
-                        ["none", "Corte seco"],
-                        ["fade", "Fade"],
-                        ["slide", "Slide"],
-                      ]}
-                      onChange={(v) => updateSelectedClip({ transition: v as TransitionKind })}
-                    />
-                    <Select
-                      label="Animação de entrada"
-                      value={selectedClip.animIn}
-                      options={[
-                        ["none", "Nenhuma"],
-                        ["fade", "Fade"],
-                        ["slide", "Slide"],
-                      ]}
-                      onChange={(v) => updateSelectedClip({ animIn: v as Clip["animIn"] })}
-                    />
-                    <Select
-                      label="Animação de saída"
-                      value={selectedClip.animOut}
-                      options={[
-                        ["none", "Nenhuma"],
-                        ["fade", "Fade"],
-                        ["slide", "Slide"],
-                      ]}
-                      onChange={(v) => updateSelectedClip({ animOut: v as Clip["animOut"] })}
-                    />
-                  </div>
-                ) : null}
 
                 {inspectorTab === "speed" ? (
                   <div className="space-y-3">
@@ -1775,8 +1727,10 @@ export function VideoEditor() {
           </aside>
         ) : null}
       </div>
-    </div>
+      </div>
+    </>
   );
+
 }
 
 /* ---------------- subcomponentes ---------------- */
