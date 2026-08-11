@@ -270,7 +270,8 @@ export async function exportEditedMp4(
  * keyframes, transições, ajustes de imagem e camadas de texto).
  * ------------------------------------------------------------------ */
 
-export type TransitionKind = "none" | "fade" | "slide";
+export type TransitionKind = "none" | "fade" | "slide" | "zoom" | "wipe";
+export type TransitionDir = "left" | "right" | "up" | "down";
 
 export interface ZoomKey {
   /** segundos, relativo ao início do clipe já com a velocidade aplicada */
@@ -279,15 +280,29 @@ export interface ZoomKey {
   scale: number;
 }
 
+/** keyframe genérico de um valor animado (rotação em graus) */
+export interface ValueKey {
+  t: number;
+  value: number;
+}
+
 export interface TimelineClip {
   srcStart: number;
   srcEnd: number;
   speed: number;
   filters: EditFilters;
   transition: TransitionKind;
+  transitionDuration?: number;
+  transitionDir?: TransitionDir;
   zoomKeys: ZoomKey[];
+  /** rotação animada (graus) */
+  rotateKeys?: ValueKey[];
   /** redução de ruído de fundo (afftdn) */
   denoise?: boolean;
+  /** volume linear (1 = original) */
+  volume?: number;
+  fadeIn?: number;
+  fadeOut?: number;
 }
 
 export interface TextOverlayImage {
