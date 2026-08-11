@@ -24,6 +24,7 @@ import {
   CameraOff,
   PictureInPicture2,
   ExternalLink,
+  Pen,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -37,6 +38,8 @@ export interface FloatingRecorderPanelProps {
   hasScreenAudio: boolean;
   hasMic: boolean;
   hasCamera: boolean;
+  penOn?: boolean;
+  onTogglePen?: () => void;
   onPauseResume: () => void;
   onStop: () => void;
   onToggleScreenAudio: () => void;
@@ -292,6 +295,22 @@ export const FloatingRecorderPanel = forwardRef<
           MutedIcon={CameraOff}
           onClick={props.onToggleCamera}
         />
+        {props.onTogglePen && (
+          <button
+            type="button"
+            onClick={props.onTogglePen}
+            title={props.penOn ? "Caneta ativa — clique para desativar" : "Desenhar na tela"}
+            aria-label="Caneta"
+            className={cn(
+              "flex h-8 w-8 items-center justify-center rounded-full border transition-all duration-150 active:scale-[0.98]",
+              props.penOn
+                ? "border-[var(--recording-btn-danger-to)] bg-[var(--recording-btn-danger-to)]/25 text-white"
+                : "border-[var(--recording-btn-neutral-border)] bg-[var(--recording-btn-neutral-bg)] text-white/90 hover:bg-[var(--recording-btn-neutral-bg-hover)]",
+            )}
+          >
+            <Pen className="h-3.5 w-3.5" />
+          </button>
+        )}
       </div>
 
       {supportsDocumentPip() && (

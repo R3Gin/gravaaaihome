@@ -12,6 +12,12 @@ import {
 } from "./CameraPip";
 import { Button } from "@/components/ui/button";
 import {
+  DrawingCanvas,
+  DrawingToolbar,
+  drawStrokes,
+  useDrawing,
+} from "./DrawingLayer";
+import {
   FloatingRecorderPanel,
   type FloatingRecorderPanelHandle,
 } from "./FloatingRecorderPanel";
@@ -37,6 +43,13 @@ function ScissorsIcon() {
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4">
       <circle cx="6" cy="6" r="3" /><circle cx="6" cy="18" r="3" />
       <path d="M20 4 8.12 15.88" /><path d="M14.47 14.48 20 20" /><path d="M8.12 8.12 12 12" />
+    </svg>
+  );
+}
+function PenIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4">
+      <path d="M12 19l7-7-4-4-7 7-1 5z" /><path d="m16 5 3 3" />
     </svg>
   );
 }
@@ -110,6 +123,8 @@ export function ScreenRecorder() {
   const compositeRafRef = useRef<number>(0);
 
   const camera = useCameraPip({ initial: { x: 16, y: 16, size: 140 } });
+  const drawing = useDrawing();
+  const drawStrokesRef = drawing.strokesRef;
   const panelRef = useRef<FloatingRecorderPanelHandle | null>(null);
   const bubbleRef = useRef(camera.bubble);
   useEffect(() => {
@@ -305,6 +320,14 @@ export function ScreenRecorder() {
         const bs = b.size * Math.min(sx, sy);
         drawCameraPipCircle(ctx, camSource, bx, by, bs);
       }
+      // Traços da caneta (mesma escala do container do preview) — vão para o MP4.
+      if (drawStrokesRef.current.length > 0) {
+        const container = previewContainerRef.current;
+        const rect = container?.getBoundingClientRect();
+        const sx = rect && rect.width > 0 ? canvas!.width / rect.width : 1;
+        const sy = rect && rect.height > 0 ? canvas!.height / rect.height : 1;
+        drawStrokes(ctx, drawStrokesRef.current, sx, sy);
+      }
       compositeRafRef.current = requestAnimationFrame(drawFrame);
     };
     compositeRafRef.current = requestAnimationFrame(drawFrame);
@@ -312,7 +335,7 @@ export function ScreenRecorder() {
     const stream = canvas.captureStream(30);
     compositeStreamRef.current = stream;
     return stream.getVideoTracks()[0] ?? null;
-  }, [camera]);
+  }, [camera, drawStrokesRef]);
 
   const startCapture = useCallback(async () => {
     setError(null);
@@ -724,6 +747,8 @@ export function ScreenRecorder() {
         onToggleScreenAudio={toggleScreenAudioMute}
         onToggleMic={toggleMicMute}
         onToggleCamera={toggleCameraFromPanel}
+        penOn={drawing.active}
+        onTogglePen={() => drawing.setActive(!drawing.active)}
       />
       {/* Preview */}
       <div
@@ -742,6 +767,7 @@ export function ScreenRecorder() {
         />
         {/* Bolha PiP da câmera sobreposta ao preview e gravada no MP4. */}
         <CameraPipBubble controller={camera} containerRef={previewContainerRef} />
+        <DrawingCanvas controller={drawing} containerRef={previewContainerRef} />
         {status === "idle" && (
           <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center gap-3 text-[var(--muted-foreground)]">
             <div className="grid h-14 w-14 place-items-center rounded-full border border-white/15 bg-white/[0.04]">
@@ -774,6 +800,21 @@ export function ScreenRecorder() {
           {camera.error}
         </div>
       )}
+
+      {/* Caneta */}
+      <div className="flex flex-wrap items-center gap-3">
+        <ActionButton
+          tone={drawing.active ? "record" : "neutral"}
+          icon={<PenIcon />}
+          onClick={() => drawing.setActive(!drawing.active)}
+        >
+          {drawing.active ? "Desenho ativo" : "Caneta"}
+        </ActionButton>
+        <span className="text-xs text-[var(--muted-foreground)]">
+          Desenhe sobre o preview — os traços entram na gravação e continuam na tela até você limpar.
+        </span>
+      </div>
+      <DrawingToolbar controller={drawing} />
 
       {/* Toggles */}
       <div className="grid gap-3 sm:grid-cols-3">
