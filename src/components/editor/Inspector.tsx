@@ -1,6 +1,12 @@
 import { useEffect, useRef, useState } from "react";
-import { Pause, Play } from "lucide-react";
-import { findClip, useEditor } from "@/state/editor-store";
+import { ChevronLeft, ChevronRight, Diamond, Pause, Play } from "lucide-react";
+import { findClip, useEditor, type Clip } from "@/state/editor-store";
+import {
+  animatablePropsFor,
+  resolveClip,
+  type AnimProp,
+  type KeyValue,
+} from "@/lib/keyframes";
 import { playAudioPreview } from "@/lib/audio-tools";
 import { cn } from "@/lib/utils";
 
@@ -110,6 +116,132 @@ function Slider({
   );
 }
 
+/* ------------------------------------------------------------------ *
+ * Linha de propriedade animável: cronômetro (losango) + navegação
+ * entre keyframes + controle do valor.
+ * ------------------------------------------------------------------ */
+function AnimRow({ clip, prop }: { clip: Clip; prop: AnimProp }) {
+  const currentTime = useEditor((s) => s.currentTime);
+  const setCurrentTime = useEditor((s) => s.setCurrentTime);
+  const setPropValue = useEditor((s) => s.setPropValue);
+  const toggle = useEditor((s) => s.togglePropertyAnimation);
+
+  const keys = clip.keyframes?.[prop.key] ?? [];
+  const animated = keys.length > 0;
+  const local = currentTime - clip.startTime;
+  const onKey = animated && keys.some((k) => Math.abs(k.time - local) <= 0.03);
+  const live = resolveClip(clip, currentTime);
+  const value = prop.get(live);
+
+  const jump = (dir: -1 | 1) => {
+    const target =
+      dir < 0
+        ? [...keys].reverse().find((k) => k.time < local - 0.01)
+        : keys.find((k) => k.time > local + 0.01);
+    if (target) setCurrentTime(clip.startTime + target.time);
+  };
+
+  const change = (v: KeyValue) => setPropValue(clip.id, prop.key, v);
+
+  return (
+    <div className="space-y-1.5">
+      <div className="flex items-center gap-1.5">
+        <button
+          onClick={() => toggle(clip.id, prop.key)}
+          title={animated ? "Remover todos os keyframes desta propriedade" : "Animar esta propriedade"}
+          aria-label={`Animar ${prop.label}`}
+          data-kf-toggle={prop.key}
+          className={cn(
+            "grid h-5 w-5 shrink-0 place-items-center rounded",
+            animated ? "text-[var(--brand)]" : "text-[var(--muted-foreground)] hover:text-[var(--foreground)]",
+          )}
+        >
+          <Diamond className={cn("h-3 w-3", animated && onKey && "fill-[var(--brand)]")} />
+        </button>
+        {animated ? (
+          <>
+            <button
+              onClick={() => jump(-1)}
+              title="Keyframe anterior"
+              className="grid h-5 w-4 place-items-center text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
+            >
+              <ChevronLeft className="h-3.5 w-3.5" />
+            </button>
+            <button
+              onClick={() => jump(1)}
+              title="Próximo keyframe"
+              className="grid h-5 w-4 place-items-center text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
+            >
+              <ChevronRight className="h-3.5 w-3.5" />
+            </button>
+          </>
+        ) : null}
+        <span className="text-[11px] font-semibold text-[var(--muted-foreground)]">{prop.label}</span>
+        {animated ? (
+          <span className="ml-auto text-[10px] tabular-nums text-[var(--brand)]">{keys.length} kf</span>
+        ) : null}
+      </div>
+
+      {prop.kind === "point" ? (
+        <div className="space-y-1 pl-6">
+          {(["x", "y"] as const).map((axis) => {
+            const point = typeof value === "number" ? { x: value, y: value } : value;
+            return (
+              <div key={axis} className="flex items-center gap-2">
+                <span className="w-3 text-[10px] uppercase text-[var(--muted-foreground)]">{axis}</span>
+                <Slider
+                  value={point[axis]}
+                  min={prop.min}
+                  max={prop.max}
+                  step={prop.step}
+                  onChange={(v) => change({ ...point, [axis]: v })}
+                />
+              </div>
+            );
+          })}
+        </div>
+      ) : (
+        <div className="pl-6">
+          <Slider
+            value={typeof value === "number" ? value : 0}
+            min={prop.min}
+            max={prop.max}
+            step={prop.step}
+            onChange={(v) => change(v)}
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function AnimSection({ clip }: { clip: Clip }) {
+  const props = animatablePropsFor(clip).filter((p) =>
+    clip.type === "overlay" && p.key === "strength"
+      ? true
+      : clip.type === "overlay" && p.key === "position"
+        ? false
+        : true,
+  );
+  return (
+    <div className="space-y-3 rounded-lg border border-[var(--border)] p-3">
+      <div className="flex items-center justify-between">
+        <span className="text-[11px] font-bold uppercase tracking-wide text-[var(--muted-foreground)]">
+          Propriedades animáveis
+        </span>
+        <kbd className="rounded border border-[var(--border)] px-1 text-[10px] font-bold">U</kbd>
+      </div>
+      {props.map((p) => (
+        <AnimRow key={p.key} clip={clip} prop={p} />
+      ))}
+      <p className="text-[10px] leading-relaxed text-[var(--muted-foreground)]">
+        Clique no losango para ativar a animação: um keyframe é criado no playhead e cada mudança
+        de valor gera (ou atualiza) um keyframe. Pressione U para ver os keyframes na timeline.
+      </p>
+    </div>
+  );
+}
+
 export function Inspector() {
   const tracks = useEditor((s) => s.tracks);
   const selectedClipId = useEditor((s) => s.selectedClipId);
@@ -129,37 +261,12 @@ export function Inspector() {
           <p className="text-xs text-[var(--muted-foreground)]">
             Selecione um clipe na timeline para editar suas propriedades.
           </p>
-        ) : null}
+        ) : (
+          <AnimSection clip={clip} />
+        )}
 
         {clip?.type === "video" ? (
           <>
-            <Row label="Brilho">
-              <Slider
-                value={clip.brightness ?? 0}
-                min={-0.5}
-                max={0.5}
-                step={0.01}
-                onChange={(v) => updateClip(clip.id, { brightness: v })}
-              />
-            </Row>
-            <Row label="Contraste">
-              <Slider
-                value={clip.contrast ?? 1}
-                min={0.5}
-                max={2}
-                step={0.01}
-                onChange={(v) => updateClip(clip.id, { contrast: v })}
-              />
-            </Row>
-            <Row label="Saturação">
-              <Slider
-                value={clip.saturation ?? 1}
-                min={0}
-                max={2.5}
-                step={0.01}
-                onChange={(v) => updateClip(clip.id, { saturation: v })}
-              />
-            </Row>
             <Row label="Velocidade">
               <Slider
                 value={clip.speed ?? 1}
@@ -174,15 +281,6 @@ export function Inspector() {
               />
             </Row>
             <AudioSection clipId={clip.id} />
-            <Row label="Volume">
-              <Slider
-                value={clip.volume ?? 1}
-                min={0}
-                max={1}
-                step={0.05}
-                onChange={(v) => updateClip(clip.id, { volume: v })}
-              />
-            </Row>
             <Row label="Transição de entrada">
               <div className="flex gap-1.5">
                 {(["none", "fade", "slide"] as const).map((k) => (
@@ -255,15 +353,6 @@ export function Inspector() {
                 className="w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-2 py-1.5 text-sm"
               />
             </Row>
-            <Row label="Tamanho da fonte">
-              <Slider
-                value={clip.fontSize ?? 48}
-                min={16}
-                max={140}
-                step={1}
-                onChange={(v) => updateClip(clip.id, { fontSize: v })}
-              />
-            </Row>
             <Row label="Cor">
               <input
                 type="color"
@@ -285,22 +374,11 @@ export function Inspector() {
         ) : null}
 
         {clip?.type === "overlay" ? (
-          <>
-            <p className="text-xs text-[var(--muted-foreground)]">
-              {clip.overlayKind === "blur"
-                ? "Arraste e redimensione a área desfocada no preview."
-                : "Arraste o destaque no preview para escolher a área iluminada."}
-            </p>
-            <Row label={clip.overlayKind === "blur" ? "Intensidade do blur" : "Escurecimento"}>
-              <Slider
-                value={clip.strength ?? (clip.overlayKind === "blur" ? 12 : 0.7)}
-                min={clip.overlayKind === "blur" ? 2 : 0.1}
-                max={clip.overlayKind === "blur" ? 40 : 0.95}
-                step={clip.overlayKind === "blur" ? 1 : 0.05}
-                onChange={(v) => updateClip(clip.id, { strength: v })}
-              />
-            </Row>
-          </>
+          <p className="text-xs text-[var(--muted-foreground)]">
+            {clip.overlayKind === "blur"
+              ? "Arraste e redimensione a área desfocada no preview."
+              : "Arraste o destaque no preview para escolher a área iluminada."}
+          </p>
         ) : null}
       </div>
     </aside>

@@ -1,4 +1,14 @@
 import { create } from "zustand";
+import {
+  newKeyframe,
+  propByKey,
+  sortKeys,
+  upsertKeyframe,
+  type Easing,
+  type KeyValue,
+  type KeyframeMap,
+} from "@/lib/keyframes";
+
 
 /* ------------------------------------------------------------------ *
  * Estado central do editor. Toda interação (cortar, arrastar, trim,
@@ -35,6 +45,13 @@ export interface Clip {
   denoise?: boolean;
   zoomKeyframes?: ZoomKeyframe[];
   position?: { x: number; y: number };
+  // transformações animáveis
+  opacity?: number;
+  scale?: number;
+  rotation?: number;
+  /** keyframes por nome de propriedade (tempo relativo ao clipe) */
+  keyframes?: KeyframeMap;
+
   // texto
   textContent?: string;
   fontSize?: number;
@@ -101,7 +118,12 @@ export interface EditorState {
   /** trechos silenciosos detectados — só interface, não faz parte do projeto */
   silences: SilenceRange[];
   captionStyle: CaptionStyle;
+  /** exibição das sub-linhas de keyframes na timeline (atalho U / UU) */
+  kfExpanded: "none" | "animated" | "all";
+  /** keyframes selecionados na timeline (permite mover/deletar em conjunto) */
+  selectedKeyframes: { prop: string; kfId: string }[];
 }
+
 
 export interface EditorActions {
   loadSource: (url: string, duration: number, size?: { width: number; height: number }, name?: string) => void;
@@ -132,10 +154,23 @@ export interface EditorActions {
   addCaptionClips: (segments: { start: number; end: number; text: string }[]) => void;
   setCaptionStyle: (patch: Partial<CaptionStyle>) => void;
   clearCaptions: () => void;
+  /* --- keyframes --- */
+  /** liga/desliga a animação de uma propriedade (cronômetro) */
+  togglePropertyAnimation: (clipId: string, prop: string) => void;
+  /** altera o valor: cria/atualiza keyframe se animada, senão valor estático */
+  setPropValue: (clipId: string, prop: string, value: KeyValue, live?: boolean) => void;
+  moveKeyframes: (clipId: string, moves: { prop: string; kfId: string; time: number }[], live?: boolean) => void;
+  setKeyframeEasing: (clipId: string, prop: string, kfId: string, easing: Easing) => void;
+  removeKeyframe: (clipId: string, prop: string, kfId: string) => void;
+  removeSelectedKeyframes: () => void;
+  selectKeyframe: (prop: string, kfId: string, additive?: boolean) => void;
+  clearKeyframeSelection: () => void;
+  cycleKeyframeRows: (all?: boolean) => void;
   undo: () => void;
   redo: () => void;
   commit: () => void;
 }
+
 
 export const MIN_CLIP = 0.12;
 const uid = () => Math.random().toString(36).slice(2, 10);
@@ -219,6 +254,9 @@ export const useEditor = create<EditorState & EditorActions>((set, get) => {
     sourceBlob: null,
     silences: [],
     captionStyle: DEFAULT_CAPTION_STYLE,
+    kfExpanded: "none",
+    selectedKeyframes: [],
+
 
     loadSource: (url, duration, size, name) => {
       const tracks = emptyTracks();
@@ -277,7 +315,7 @@ export const useEditor = create<EditorState & EditorActions>((set, get) => {
     setZoom: (z) => set({ zoom: Math.min(400, Math.max(10, z)) }),
     setAspect: (aspect) => set({ aspect }),
     setTool: (tool) => set({ tool }),
-    select: (selectedClipId) => set({ selectedClipId }),
+    select: (selectedClipId) => set({ selectedClipId, selectedKeyframes: [] }),
 
     updateClip: (id, patch) =>
       write((tracks) =>
@@ -566,6 +604,115 @@ export const useEditor = create<EditorState & EditorActions>((set, get) => {
     clearCaptions: () =>
       write((tracks) => mapTracks(tracks, (clips) => clips.filter((c) => !c.isCaption))),
 
+    /* ---------------------- keyframes ---------------------- */
+
+    togglePropertyAnimation: (clipId, prop) => {
+      const clip = findClip(get().tracks, clipId);
+      const meta = propByKey(prop);
+      if (!clip || !meta) return;
+      const map: KeyframeMap = { ...(clip.keyframes ?? {}) };
+      if ((map[prop]?.length ?? 0) > 0) {
+        // desliga: congela o valor atual e remove todos os keyframes
+        delete map[prop];
+        get().updateClip(clipId, { keyframes: map, ...meta.set(meta.get(clip)) });
+      } else {
+        const local = Math.max(0, Math.min(clip.duration, get().currentTime - clip.startTime));
+        map[prop] = [newKeyframe(local, meta.get(clip))];
+        get().updateClip(clipId, { keyframes: map });
+      }
+      set({ selectedKeyframes: [] });
+    },
+
+    setPropValue: (clipId, prop, value, live) => {
+      const clip = findClip(get().tracks, clipId);
+      const meta = propByKey(prop);
+      if (!clip || !meta) return;
+      const apply = live ? get().updateClipLive : get().updateClip;
+      const keys = clip.keyframes?.[prop];
+      if (!keys || keys.length === 0) {
+        apply(clipId, meta.set(value));
+        return;
+      }
+      const local = Math.max(0, Math.min(clip.duration, get().currentTime - clip.startTime));
+      const map: KeyframeMap = { ...(clip.keyframes ?? {}), [prop]: upsertKeyframe(keys, local, value) };
+      apply(clipId, { keyframes: map, ...meta.set(value) });
+    },
+
+    moveKeyframes: (clipId, moves, live) => {
+      const clip = findClip(get().tracks, clipId);
+      if (!clip || moves.length === 0) return;
+      const map: KeyframeMap = { ...(clip.keyframes ?? {}) };
+      for (const m of moves) {
+        const keys = map[m.prop];
+        if (!keys) continue;
+        map[m.prop] = sortKeys(
+          keys.map((k) =>
+            k.id === m.kfId
+              ? { ...k, time: Math.max(0, Math.min(clip.duration, m.time)) }
+              : k,
+          ),
+        );
+      }
+      (live ? get().updateClipLive : get().updateClip)(clipId, { keyframes: map });
+    },
+
+    setKeyframeEasing: (clipId, prop, kfId, easing) => {
+      const clip = findClip(get().tracks, clipId);
+      if (!clip?.keyframes?.[prop]) return;
+      const map: KeyframeMap = {
+        ...clip.keyframes,
+        [prop]: clip.keyframes[prop].map((k) => (k.id === kfId ? { ...k, easing } : k)),
+      };
+      get().updateClip(clipId, { keyframes: map });
+    },
+
+    removeKeyframe: (clipId, prop, kfId) => {
+      const clip = findClip(get().tracks, clipId);
+      if (!clip?.keyframes?.[prop]) return;
+      const map: KeyframeMap = { ...clip.keyframes };
+      const rest = map[prop].filter((k) => k.id !== kfId);
+      if (rest.length === 0) delete map[prop];
+      else map[prop] = rest;
+      get().updateClip(clipId, { keyframes: map });
+      set((s) => ({ selectedKeyframes: s.selectedKeyframes.filter((k) => k.kfId !== kfId) }));
+    },
+
+    removeSelectedKeyframes: () => {
+      const { selectedClipId, selectedKeyframes } = get();
+      const clip = findClip(get().tracks, selectedClipId);
+      if (!clip || selectedKeyframes.length === 0) return;
+      const map: KeyframeMap = { ...(clip.keyframes ?? {}) };
+      for (const sel of selectedKeyframes) {
+        const keys = map[sel.prop];
+        if (!keys) continue;
+        const rest = keys.filter((k) => k.id !== sel.kfId);
+        if (rest.length === 0) delete map[sel.prop];
+        else map[sel.prop] = rest;
+      }
+      get().updateClip(clip.id, { keyframes: map });
+      set({ selectedKeyframes: [] });
+    },
+
+    selectKeyframe: (prop, kfId, additive) =>
+      set((s) => {
+        const has = s.selectedKeyframes.some((k) => k.kfId === kfId);
+        if (!additive) return { selectedKeyframes: [{ prop, kfId }] };
+        return {
+          selectedKeyframes: has
+            ? s.selectedKeyframes.filter((k) => k.kfId !== kfId)
+            : [...s.selectedKeyframes, { prop, kfId }],
+        };
+      }),
+
+    clearKeyframeSelection: () => set({ selectedKeyframes: [] }),
+
+    cycleKeyframeRows: (all) =>
+      set((s) => {
+        const target = all ? "all" : "animated";
+        return { kfExpanded: s.kfExpanded === target ? "none" : target };
+      }),
+
+
     undo: () =>
       set((s) => {
         const prev = s.past[s.past.length - 1];
@@ -632,4 +779,9 @@ export function zoomAt(clip: Clip, localTime: number) {
     }
   }
   return last;
+}
+
+/* Exposto apenas em desenvolvimento para depuração/testes automatizados. */
+if (import.meta.env.DEV && typeof window !== "undefined") {
+  (window as unknown as { __editor?: typeof useEditor }).__editor = useEditor;
 }

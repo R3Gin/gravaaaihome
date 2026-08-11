@@ -1,11 +1,19 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AudioLines, Copy, Scissors, Trash2, ZoomIn, ZoomOut } from "lucide-react";
-import { MIN_CLIP, useEditor, type Clip, type Track } from "@/state/editor-store";
+import { MIN_CLIP, findClip, useEditor, type Clip, type Track } from "@/state/editor-store";
+import {
+  EASINGS,
+  animatedProps,
+  modifiedProps,
+  type AnimProp,
+  type Easing,
+} from "@/lib/keyframes";
 import { getPeaks, type Peaks } from "@/lib/waveform";
 import { cn } from "@/lib/utils";
 
 const LABEL_W = 96;
 const LANE_H = 56;
+const KF_H = 22;
 
 function fmt(t: number) {
   const m = Math.floor(t / 60);
@@ -14,6 +22,108 @@ function fmt(t: number) {
 }
 
 type Ghost = { start: number; duration: number } | null;
+type KfMenu = { x: number; y: number; prop: string; kfId: string } | null;
+
+/** Sub-linha com os keyframes de uma propriedade do clipe selecionado. */
+function KeyframeLane({
+  clip,
+  prop,
+  onMenu,
+}: {
+  clip: Clip;
+  prop: AnimProp;
+  onMenu: (menu: KfMenu) => void;
+}) {
+  const zoom = useEditor((s) => s.zoom);
+  const selected = useEditor((s) => s.selectedKeyframes);
+  const selectKeyframe = useEditor((s) => s.selectKeyframe);
+  const moveKeyframes = useEditor((s) => s.moveKeyframes);
+  const keys = clip.keyframes?.[prop.key] ?? [];
+
+  const startDrag = (kfId: string) => (e: React.PointerEvent) => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const additive = e.shiftKey;
+    const already = useEditor.getState().selectedKeyframes.some((k) => k.kfId === kfId);
+    if (!already || additive) selectKeyframe(prop.key, kfId, additive);
+
+    const lane = document.getElementById("tl-scroll");
+    const startTime = keys.find((k) => k.id === kfId)?.time ?? 0;
+    const timeAt = (clientX: number) => {
+      if (!lane) return 0;
+      const box = lane.getBoundingClientRect();
+      return Math.max(0, (clientX - box.left + lane.scrollLeft) / zoom) - clip.startTime;
+    };
+    const grab = timeAt(e.clientX) - startTime;
+    const group = useEditor.getState().selectedKeyframes;
+    const batch =
+      group.length > 1 && group.some((k) => k.kfId === kfId)
+        ? group
+        : [{ prop: prop.key, kfId }];
+    const origins = batch.map((sel) => {
+      const list = clip.keyframes?.[sel.prop] ?? [];
+      return { ...sel, time: list.find((k) => k.id === sel.kfId)?.time ?? 0 };
+    });
+    let delta = 0;
+    let moved = false;
+
+    const move = (ev: PointerEvent) => {
+      moved = true;
+      delta = timeAt(ev.clientX) - grab - startTime;
+      moveKeyframes(
+        clip.id,
+        origins.map((o) => ({ prop: o.prop, kfId: o.kfId, time: o.time + delta })),
+        true,
+      );
+    };
+    const up = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      if (moved)
+        moveKeyframes(
+          clip.id,
+          origins.map((o) => ({ prop: o.prop, kfId: o.kfId, time: o.time + delta })),
+        );
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+  };
+
+  return (
+    <div className="relative border-b border-[var(--border)]/60 bg-[var(--surface-2)]" style={{ height: KF_H }}>
+      <span
+        className="absolute inset-y-0 left-0 border-l-2 border-[var(--brand)]/30"
+        style={{ left: clip.startTime * zoom, width: Math.max(4, clip.duration * zoom) }}
+      />
+      {keys.map((k) => {
+        const isSel = selected.some((s) => s.kfId === k.id);
+        return (
+          <span
+            key={k.id}
+            data-kf-id={k.id}
+            title={`${prop.label} · ${k.time.toFixed(2)}s · ${k.easing}`}
+            onPointerDown={startDrag(k.id)}
+            onDoubleClick={(e) => onMenu({ x: e.clientX, y: e.clientY, prop: prop.key, kfId: k.id })}
+            onContextMenu={(e) => {
+              e.preventDefault();
+              onMenu({ x: e.clientX, y: e.clientY, prop: prop.key, kfId: k.id });
+            }}
+            className={cn(
+              "absolute top-1/2 h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rotate-45 cursor-ew-resize border",
+              isSel
+                ? "border-white bg-white"
+                : "border-[var(--brand)] bg-[var(--brand)]",
+              k.easing === "hold" && "rounded-none",
+            )}
+            style={{ left: (clip.startTime + k.time) * zoom }}
+          />
+        );
+      })}
+    </div>
+  );
+}
+
 
 /** Waveform do áudio do vídeo, desenhada na faixa "Áudio". */
 function AudioWaveform({ width }: { width: number }) {
@@ -298,6 +408,30 @@ export function Timeline() {
     };
   }, [scrubbing, setCurrentTime, timeFromClientX]);
 
+  /* --- sub-linhas de keyframes (atalho U / UU) --- */
+  const kfExpanded = useEditor((s) => s.kfExpanded);
+  const setKeyframeEasing = useEditor((s) => s.setKeyframeEasing);
+  const removeKeyframe = useEditor((s) => s.removeKeyframe);
+  const cycleKeyframeRows = useEditor((s) => s.cycleKeyframeRows);
+  const [menu, setMenu] = useState<KfMenu>(null);
+
+  const selectedClip = findClip(tracks, selectedClipId);
+  const kfRows: AnimProp[] = useMemo(() => {
+    if (!selectedClip || kfExpanded === "none") return [];
+    return kfExpanded === "all" ? modifiedProps(selectedClip) : animatedProps(selectedClip);
+  }, [kfExpanded, selectedClip]);
+
+  useEffect(() => {
+    if (!menu) return;
+    const close = () => setMenu(null);
+    window.addEventListener("pointerdown", close);
+    return () => window.removeEventListener("pointerdown", close);
+  }, [menu]);
+
+  const lanesHeight = tracks.length * LANE_H + kfRows.length * KF_H;
+
+
+
 
   return (
     <div className="flex h-[280px] shrink-0 flex-col border-t border-[var(--border)] bg-[var(--surface-2)]">
@@ -364,12 +498,26 @@ export function Timeline() {
           <div className="h-7 border-b border-[var(--border)]" />
           <div className="overflow-hidden">
             {tracks.map((t) => (
-              <div
-                key={t.id}
-                className="flex items-center border-b border-[var(--border)] px-3 text-[11px] font-semibold text-[var(--muted-foreground)]"
-                style={{ height: LANE_H }}
-              >
-                {t.label}
+              <div key={t.id}>
+                <div
+                  className="flex items-center border-b border-[var(--border)] px-3 text-[11px] font-semibold text-[var(--muted-foreground)]"
+                  style={{ height: LANE_H }}
+                >
+                  {t.label}
+                </div>
+                {selectedClip?.trackId === t.id
+                  ? kfRows.map((p) => (
+                      <div
+                        key={p.key}
+                        title={p.label}
+                        className="flex items-center gap-1 border-b border-[var(--border)]/60 pl-5 pr-2 text-[10px] text-[var(--brand)]"
+                        style={{ height: KF_H }}
+                      >
+                        <span className="h-1.5 w-1.5 rotate-45 bg-[var(--brand)]" />
+                        <span className="truncate">{p.label}</span>
+                      </div>
+                    ))
+                  : null}
               </div>
             ))}
           </div>
@@ -397,7 +545,7 @@ export function Timeline() {
             {silences.length > 0 ? (
               <div
                 className="pointer-events-none absolute left-0 z-20"
-                style={{ top: 28, height: tracks.length * LANE_H, width }}
+                style={{ top: 28, height: lanesHeight, width }}
               >
                 {silences.map((s, i) => (
                   <span
@@ -411,16 +559,22 @@ export function Timeline() {
 
             <div onPointerDown={(e) => e.target === e.currentTarget && select(null)}>
               {tracks.map((track) => (
-                <div
-                  key={track.id}
-                  onPointerDown={(e) => e.target === e.currentTarget && select(null)}
-                  className="relative border-b border-[var(--border)]"
-                  style={{ height: LANE_H }}
-                >
-                  {track.type === "audio" ? <AudioWaveform width={width} /> : null}
-                  {track.clips.map((clip) => (
-                    <ClipBox key={clip.id} clip={clip} track={track} />
-                  ))}
+                <div key={track.id}>
+                  <div
+                    onPointerDown={(e) => e.target === e.currentTarget && select(null)}
+                    className="relative border-b border-[var(--border)]"
+                    style={{ height: LANE_H }}
+                  >
+                    {track.type === "audio" ? <AudioWaveform width={width} /> : null}
+                    {track.clips.map((clip) => (
+                      <ClipBox key={clip.id} clip={clip} track={track} />
+                    ))}
+                  </div>
+                  {selectedClip?.trackId === track.id
+                    ? kfRows.map((p) => (
+                        <KeyframeLane key={p.key} clip={selectedClip} prop={p} onMenu={setMenu} />
+                      ))
+                    : null}
                 </div>
               ))}
             </div>
@@ -430,7 +584,7 @@ export function Timeline() {
             <div
               onPointerDown={startScrub}
               className="absolute top-0 z-40 w-px cursor-ew-resize bg-[var(--brand)]"
-              style={{ left: currentTime * zoom, height: 28 + tracks.length * LANE_H }}
+              style={{ left: currentTime * zoom, height: 28 + lanesHeight }}
             >
               <span className="absolute -left-2 -top-1 h-4 w-4 cursor-ew-resize rounded-sm bg-[var(--brand)]" />
               <span className="absolute -left-2 top-0 h-full w-4" />
@@ -439,7 +593,44 @@ export function Timeline() {
         </div>
       </div>
 
-      <span className="hidden">{MIN_CLIP}</span>
+      {/* menu do keyframe (duplo clique ou botão direito) */}
+      {menu && selectedClip ? (
+        <div
+          onPointerDown={(e) => e.stopPropagation()}
+          className="fixed z-50 w-52 overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--surface-2)] py-1 text-xs shadow-xl"
+          style={{ left: menu.x, top: Math.max(8, menu.y - 180) }}
+        >
+          <span className="block px-3 py-1 text-[10px] font-bold uppercase tracking-wide text-[var(--muted-foreground)]">
+            Interpolação
+          </span>
+          {EASINGS.map((e) => (
+            <button
+              key={e.id}
+              onClick={() => {
+                setKeyframeEasing(selectedClip.id, menu.prop, menu.kfId, e.id as Easing);
+                setMenu(null);
+              }}
+              className="block w-full px-3 py-1.5 text-left hover:bg-[var(--brand)]/15"
+            >
+              {e.label}
+            </button>
+          ))}
+          <button
+            onClick={() => {
+              removeKeyframe(selectedClip.id, menu.prop, menu.kfId);
+              setMenu(null);
+            }}
+            className="mt-1 block w-full border-t border-[var(--border)] px-3 py-1.5 text-left text-[var(--brand)] hover:bg-[var(--brand)]/15"
+          >
+            Deletar keyframe
+          </button>
+        </div>
+      ) : null}
+
+      <button className="hidden" onClick={() => cycleKeyframeRows()}>
+        {MIN_CLIP}
+      </button>
     </div>
+
   );
 }

@@ -116,6 +116,8 @@ export function VideoEditor() {
     return () => window.removeEventListener("editor:open-panel", open);
   }, []);
 
+  const lastU = useRef(0);
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement | null;
@@ -137,17 +139,32 @@ export function VideoEditor() {
         e.preventDefault();
         useEditor.getState().splitPlayhead();
       }
+      // U: mostra apenas propriedades com keyframes. UU (duplo rápido): todas as modificadas.
+      if (!e.metaKey && !e.ctrlKey && !e.altKey && e.key.toLowerCase() === "u") {
+        e.preventDefault();
+        const now = Date.now();
+        const double = now - lastU.current < 350;
+        lastU.current = now;
+        useEditor.getState().cycleKeyframeRows(double);
+      }
       if (e.key === "Delete" || e.key === "Backspace") {
-        const id = useEditor.getState().selectedClipId;
+        const state = useEditor.getState();
+        if (state.selectedKeyframes.length > 0) {
+          e.preventDefault();
+          state.removeSelectedKeyframes();
+          return;
+        }
+        const id = state.selectedClipId;
         if (id) {
           e.preventDefault();
-          useEditor.getState().removeClip(id);
+          state.removeClip(id);
         }
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [redo, setPlaying, undo]);
+
 
 
   const onExport = async () => {

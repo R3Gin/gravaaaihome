@@ -7,6 +7,7 @@ import {
   type AspectRatio,
   type Clip,
 } from "@/state/editor-store";
+import { resolveClip } from "@/lib/keyframes";
 import { cn } from "@/lib/utils";
 
 const ASPECTS: { id: AspectRatio; label: string; ratio: number }[] = [
@@ -37,9 +38,10 @@ export function Preview({ videoRef }: Props) {
   const rafRef = useRef<number | null>(null);
   const dragRef = useRef<{ id: string; kind: "move" | "resize" } | null>(null);
 
-  const videoClip = clipAt(tracks, "video", currentTime);
-  const textClips = clipsAt(tracks, "text", currentTime);
-  const overlayClips = clipsAt(tracks, "overlay", currentTime);
+  const rawVideoClip = clipAt(tracks, "video", currentTime);
+  const videoClip = rawVideoClip ? resolveClip(rawVideoClip, currentTime) : null;
+  const textClips = clipsAt(tracks, "text", currentTime).map((c) => resolveClip(c, currentTime));
+  const overlayClips = clipsAt(tracks, "overlay", currentTime).map((c) => resolveClip(c, currentTime));
 
   /* --- seek quando o playhead muda fora da reprodução --- */
   useEffect(() => {
@@ -185,8 +187,16 @@ export function Preview({ videoRef }: Props) {
   const zoomStyle = (clip: Clip | null) => {
     if (!clip) return undefined;
     const z = zoomAt(clip, currentTime - clip.startTime);
-    if (z.scale === 1 && z.x === 0 && z.y === 0) return undefined;
-    return { transform: `scale(${z.scale}) translate(${z.x * 100}%, ${z.y * 100}%)` };
+    const scale = z.scale * (clip.scale ?? 1);
+    const rotation = clip.rotation ?? 0;
+    const parts: string[] = [];
+    if (scale !== 1) parts.push(`scale(${scale})`);
+    if (rotation) parts.push(`rotate(${rotation}deg)`);
+    if (z.x || z.y) parts.push(`translate(${z.x * 100}%, ${z.y * 100}%)`);
+    return {
+      transform: parts.length ? parts.join(" ") : undefined,
+      opacity: clip.opacity ?? 1,
+    };
   };
 
   const filterStyle = videoClip
@@ -254,6 +264,7 @@ export function Preview({ videoRef }: Props) {
                 )}
                 style={{
                   ...base,
+                  opacity: clip.opacity ?? 1,
                   backdropFilter:
                     clip.overlayKind === "blur" ? `blur(${clip.strength ?? 12}px)` : undefined,
                   borderRadius: clip.overlayKind === "spotlight" ? "9999px" : undefined,
@@ -294,6 +305,8 @@ export function Preview({ videoRef }: Props) {
                 style={{
                   left: `${(clip.position?.x ?? 0.5) * 100}%`,
                   top: `${(clip.position?.y ?? 0.82) * 100}%`,
+                  opacity: clip.opacity ?? 1,
+                  rotate: `${clip.rotation ?? 0}deg`,
                   color: clip.color ?? "#fff",
                   fontSize: `${((clip.fontSize ?? 48) / 720) * 100}cqh`,
                 }}
