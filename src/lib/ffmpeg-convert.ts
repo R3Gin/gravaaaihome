@@ -408,6 +408,7 @@ export async function exportTimeline(
             "asetpts=PTS-STARTPTS",
           ];
           if (Math.abs(speed - 1) > 0.001) achain.push(atempoChain(speed));
+          if (clip.denoise) achain.push("highpass=f=90", "afftdn=nf=-25", "dynaudnorm=p=0.9:m=8");
           achain.push("aformat=sample_rates=48000:channel_layouts=stereo");
           parts.push(`[0:a]${achain.join(",")}[ca${i}]`);
         }
