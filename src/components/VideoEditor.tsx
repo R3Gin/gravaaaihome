@@ -1533,11 +1533,14 @@ export function VideoEditor() {
                   onUpload={() => inputRef.current?.click()}
                   onDropFile={onDrop}
                   onAddText={addText}
+                  onAddShape={addShape}
                   onApplyFilters={(f) => updateSelectedClip({ filters: f })}
                   onApplyTransition={(t) => updateSelectedClip({ transition: t })}
                   selectedClip={selectedClip}
-                  transcript={transcript}
-                  setTranscript={setTranscript}
+                  onGenerateCaptions={generateCaptions}
+                  captionsBusy={captionsBusy}
+                  captionStyle={captionStyle}
+                  onCaptionStyle={applyCaptionStyle}
                   time={time}
                 />
               </aside>
