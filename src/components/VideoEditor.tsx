@@ -1760,6 +1760,18 @@ export function VideoEditor() {
               >
                 <FlipHorizontal2 className="h-4 w-4" />
               </IconBtn>
+              <IconBtn
+                label="Detectar silêncios"
+                active={silenceOpen}
+                onClick={() => (silenceOpen ? setSilenceOpen(false) : void runSilenceDetection())}
+                disabled={!hasMedia || silenceBusy}
+              >
+                {silenceBusy ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <AudioLines className="h-4 w-4" />
+                )}
+              </IconBtn>
               <div className="relative">
                 <IconBtn label="Mais opções" onClick={() => setMoreOpen((o) => !o)}>
                   <MoreHorizontal className="h-4 w-4" />
