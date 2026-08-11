@@ -465,6 +465,8 @@ export function Timeline() {
   const removeKeyframe = useEditor((s) => s.removeKeyframe);
   const cycleKeyframeRows = useEditor((s) => s.cycleKeyframeRows);
   const [menu, setMenu] = useState<KfMenu>(null);
+  const [speedTarget, setSpeedTarget] = useState<KfSpeed>(null);
+
 
   const selectedClip = findClip(tracks, selectedClipId);
   const kfRows: AnimProp[] = useMemo(() => {
