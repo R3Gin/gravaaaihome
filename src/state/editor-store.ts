@@ -226,7 +226,16 @@ export interface EditorActions {
   ) => void;
   setCaptionStyle: (patch: Partial<CaptionStyle>) => void;
   clearCaptions: () => void;
+  /** transição de entrada de um clipe (módulo de Transições) */
+  setTransition: (
+    clipId: string,
+    patch: { kind?: TransitionKind; duration?: number; dir?: TransitionDir },
+  ) => void;
   /* --- keyframes --- */
+  /** cria/atualiza um keyframe no playhead com o valor atual da propriedade */
+  addKeyframeAt: (clipId: string, prop: string) => void;
+  /** altera o valor de um keyframe existente */
+  setKeyframeValue: (clipId: string, prop: string, kfId: string, value: KeyValue, live?: boolean) => void;
   /** liga/desliga a animação de uma propriedade (cronômetro) */
   togglePropertyAnimation: (clipId: string, prop: string) => void;
   /** altera o valor: cria/atualiza keyframe se animada, senão valor estático */
