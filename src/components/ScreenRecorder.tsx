@@ -12,6 +12,12 @@ import {
 } from "./CameraPip";
 import { Button } from "@/components/ui/button";
 import {
+  DrawingCanvas,
+  DrawingToolbar,
+  drawStrokes,
+  useDrawing,
+} from "./DrawingLayer";
+import {
   FloatingRecorderPanel,
   type FloatingRecorderPanelHandle,
 } from "./FloatingRecorderPanel";
@@ -110,6 +116,8 @@ export function ScreenRecorder() {
   const compositeRafRef = useRef<number>(0);
 
   const camera = useCameraPip({ initial: { x: 16, y: 16, size: 140 } });
+  const drawing = useDrawing();
+  const drawStrokesRef = drawing.strokesRef;
   const panelRef = useRef<FloatingRecorderPanelHandle | null>(null);
   const bubbleRef = useRef(camera.bubble);
   useEffect(() => {
@@ -305,6 +313,14 @@ export function ScreenRecorder() {
         const bs = b.size * Math.min(sx, sy);
         drawCameraPipCircle(ctx, camSource, bx, by, bs);
       }
+      // Traços da caneta (mesma escala do container do preview) — vão para o MP4.
+      if (drawStrokesRef.current.length > 0) {
+        const container = previewContainerRef.current;
+        const rect = container?.getBoundingClientRect();
+        const sx = rect && rect.width > 0 ? canvas!.width / rect.width : 1;
+        const sy = rect && rect.height > 0 ? canvas!.height / rect.height : 1;
+        drawStrokes(ctx, drawStrokesRef.current, sx, sy);
+      }
       compositeRafRef.current = requestAnimationFrame(drawFrame);
     };
     compositeRafRef.current = requestAnimationFrame(drawFrame);
@@ -312,7 +328,7 @@ export function ScreenRecorder() {
     const stream = canvas.captureStream(30);
     compositeStreamRef.current = stream;
     return stream.getVideoTracks()[0] ?? null;
-  }, [camera]);
+  }, [camera, drawStrokesRef]);
 
   const startCapture = useCallback(async () => {
     setError(null);
@@ -724,6 +740,8 @@ export function ScreenRecorder() {
         onToggleScreenAudio={toggleScreenAudioMute}
         onToggleMic={toggleMicMute}
         onToggleCamera={toggleCameraFromPanel}
+        penOn={drawing.active}
+        onTogglePen={() => drawing.setActive(!drawing.active)}
       />
       {/* Preview */}
       <div
@@ -742,6 +760,7 @@ export function ScreenRecorder() {
         />
         {/* Bolha PiP da câmera sobreposta ao preview e gravada no MP4. */}
         <CameraPipBubble controller={camera} containerRef={previewContainerRef} />
+        <DrawingCanvas controller={drawing} containerRef={previewContainerRef} />
         {status === "idle" && (
           <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center gap-3 text-[var(--muted-foreground)]">
             <div className="grid h-14 w-14 place-items-center rounded-full border border-white/15 bg-white/[0.04]">
