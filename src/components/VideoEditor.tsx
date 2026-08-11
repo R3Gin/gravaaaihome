@@ -82,6 +82,7 @@ interface Clip {
   fadeOut: number;
   animIn: "none" | "fade" | "slide";
   animOut: "none" | "fade" | "slide";
+  denoise: boolean;
 }
 
 interface TextLayer {
@@ -94,26 +95,42 @@ interface TextLayer {
   y: number;
   size: number;
   color: string;
+  bg: string; // "" = sem fundo
+  font: string;
   align: "left" | "center" | "right";
   animIn: "none" | "fade" | "slide";
   animOut: "none" | "fade" | "slide";
+  caption?: boolean;
 }
 
-type Selection = { kind: "clip" | "text"; id: string } | null;
-type PanelId =
-  | "upload"
-  | "audio"
-  | "text"
-  | "elements"
-  | "captions"
-  | "transcript"
-  | "effects"
-  | "transitions"
-  | "filters";
+/** Camada retangular sobre o preview: blur ou spotlight. */
+interface ShapeLayer {
+  id: string;
+  kind: "blur" | "spotlight";
+  start: number;
+  end: number;
+  /** frações do quadro (0..1) */
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  /** blur: intensidade do desfoque; spotlight: escurecimento ao redor */
+  strength: number;
+  color: string;
+}
+
+interface SilenceMark extends Segment {
+  id: string;
+  status: "pending" | "ignored";
+}
+
+type Selection = { kind: "clip" | "text" | "shape"; id: string } | null;
+type PanelId = "upload" | "audio" | "text" | "elements" | "captions" | "transitions";
 
 interface Snapshot {
   clips: Clip[];
   texts: TextLayer[];
+  shapes: ShapeLayer[];
 }
 
 const uid = () => Math.random().toString(36).slice(2, 9);
