@@ -55,6 +55,7 @@
     "embla-carousel-react": "^8.6.0",
     "fix-webm-duration": "^1.0.6",
     "input-otp": "^1.4.2",
+    "jspdf": "^4.2.1",
     "jszip": "^3.10.1",
     "lucide-react": "^0.575.0",
     "pdfjs-dist": "4.8.69",
