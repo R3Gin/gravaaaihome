@@ -498,12 +498,26 @@ export function Timeline() {
           <div className="h-7 border-b border-[var(--border)]" />
           <div className="overflow-hidden">
             {tracks.map((t) => (
-              <div
-                key={t.id}
-                className="flex items-center border-b border-[var(--border)] px-3 text-[11px] font-semibold text-[var(--muted-foreground)]"
-                style={{ height: LANE_H }}
-              >
-                {t.label}
+              <div key={t.id}>
+                <div
+                  className="flex items-center border-b border-[var(--border)] px-3 text-[11px] font-semibold text-[var(--muted-foreground)]"
+                  style={{ height: LANE_H }}
+                >
+                  {t.label}
+                </div>
+                {selectedClip?.trackId === t.id
+                  ? kfRows.map((p) => (
+                      <div
+                        key={p.key}
+                        title={p.label}
+                        className="flex items-center gap-1 border-b border-[var(--border)]/60 pl-5 pr-2 text-[10px] text-[var(--brand)]"
+                        style={{ height: KF_H }}
+                      >
+                        <span className="h-1.5 w-1.5 rotate-45 bg-[var(--brand)]" />
+                        <span className="truncate">{p.label}</span>
+                      </div>
+                    ))
+                  : null}
               </div>
             ))}
           </div>
@@ -531,7 +545,7 @@ export function Timeline() {
             {silences.length > 0 ? (
               <div
                 className="pointer-events-none absolute left-0 z-20"
-                style={{ top: 28, height: tracks.length * LANE_H, width }}
+                style={{ top: 28, height: lanesHeight, width }}
               >
                 {silences.map((s, i) => (
                   <span
@@ -545,16 +559,22 @@ export function Timeline() {
 
             <div onPointerDown={(e) => e.target === e.currentTarget && select(null)}>
               {tracks.map((track) => (
-                <div
-                  key={track.id}
-                  onPointerDown={(e) => e.target === e.currentTarget && select(null)}
-                  className="relative border-b border-[var(--border)]"
-                  style={{ height: LANE_H }}
-                >
-                  {track.type === "audio" ? <AudioWaveform width={width} /> : null}
-                  {track.clips.map((clip) => (
-                    <ClipBox key={clip.id} clip={clip} track={track} />
-                  ))}
+                <div key={track.id}>
+                  <div
+                    onPointerDown={(e) => e.target === e.currentTarget && select(null)}
+                    className="relative border-b border-[var(--border)]"
+                    style={{ height: LANE_H }}
+                  >
+                    {track.type === "audio" ? <AudioWaveform width={width} /> : null}
+                    {track.clips.map((clip) => (
+                      <ClipBox key={clip.id} clip={clip} track={track} />
+                    ))}
+                  </div>
+                  {selectedClip?.trackId === track.id
+                    ? kfRows.map((p) => (
+                        <KeyframeLane key={p.key} clip={selectedClip} prop={p} onMenu={setMenu} />
+                      ))
+                    : null}
                 </div>
               ))}
             </div>
@@ -564,7 +584,7 @@ export function Timeline() {
             <div
               onPointerDown={startScrub}
               className="absolute top-0 z-40 w-px cursor-ew-resize bg-[var(--brand)]"
-              style={{ left: currentTime * zoom, height: 28 + tracks.length * LANE_H }}
+              style={{ left: currentTime * zoom, height: 28 + lanesHeight }}
             >
               <span className="absolute -left-2 -top-1 h-4 w-4 cursor-ew-resize rounded-sm bg-[var(--brand)]" />
               <span className="absolute -left-2 top-0 h-full w-4" />
@@ -573,7 +593,44 @@ export function Timeline() {
         </div>
       </div>
 
-      <span className="hidden">{MIN_CLIP}</span>
+      {/* menu do keyframe (duplo clique ou botão direito) */}
+      {menu && selectedClip ? (
+        <div
+          onPointerDown={(e) => e.stopPropagation()}
+          className="fixed z-50 w-52 overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--surface-2)] py-1 text-xs shadow-xl"
+          style={{ left: menu.x, top: Math.max(8, menu.y - 180) }}
+        >
+          <span className="block px-3 py-1 text-[10px] font-bold uppercase tracking-wide text-[var(--muted-foreground)]">
+            Interpolação
+          </span>
+          {EASINGS.map((e) => (
+            <button
+              key={e.id}
+              onClick={() => {
+                setKeyframeEasing(selectedClip.id, menu.prop, menu.kfId, e.id as Easing);
+                setMenu(null);
+              }}
+              className="block w-full px-3 py-1.5 text-left hover:bg-[var(--brand)]/15"
+            >
+              {e.label}
+            </button>
+          ))}
+          <button
+            onClick={() => {
+              removeKeyframe(selectedClip.id, menu.prop, menu.kfId);
+              setMenu(null);
+            }}
+            className="mt-1 block w-full border-t border-[var(--border)] px-3 py-1.5 text-left text-[var(--brand)] hover:bg-[var(--brand)]/15"
+          >
+            Deletar keyframe
+          </button>
+        </div>
+      ) : null}
+
+      <button className="hidden" onClick={() => cycleKeyframeRows()}>
+        {MIN_CLIP}
+      </button>
     </div>
+
   );
 }
