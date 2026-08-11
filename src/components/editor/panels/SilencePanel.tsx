@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Loader2, Scissors } from "lucide-react";
+import { toast } from "sonner";
 import { detectSilences } from "@/lib/audio-tools";
 import { useEditor } from "@/state/editor-store";
 
