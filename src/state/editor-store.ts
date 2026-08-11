@@ -184,6 +184,21 @@ export interface EditorActions {
   setPropValue: (clipId: string, prop: string, value: KeyValue, live?: boolean) => void;
   moveKeyframes: (clipId: string, moves: { prop: string; kfId: string; time: number }[], live?: boolean) => void;
   setKeyframeEasing: (clipId: string, prop: string, kfId: string, easing: Easing) => void;
+  /** modal "Velocidade do quadro-chave" (tangentes de Bezier) */
+  setKeyframeSpeed: (
+    clipId: string,
+    prop: string,
+    kfId: string,
+    patch: {
+      incomingSpeed?: Partial<TangentSpeed>;
+      outgoingSpeed?: Partial<TangentSpeed>;
+      continuous?: boolean;
+    },
+    live?: boolean,
+  ) => void;
+  /** presets de animação de entrada/saída de texto */
+  setTextPreset: (clipId: string, side: "in" | "out", cfg: Partial<PresetConfig>) => void;
+
   removeKeyframe: (clipId: string, prop: string, kfId: string) => void;
   removeSelectedKeyframes: () => void;
   selectKeyframe: (prop: string, kfId: string, additive?: boolean) => void;
