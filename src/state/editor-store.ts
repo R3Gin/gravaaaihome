@@ -160,6 +160,8 @@ export interface EditorState {
   sourceBlob: Blob | null;
   /** trechos silenciosos detectados — só interface, não faz parte do projeto */
   silences: SilenceRange[];
+  /** trechos já removidos do vídeo (tempo original) — usados para remapear legendas */
+  removedRanges: SilenceRange[];
   captionStyle: CaptionStyle;
   /** exibição das sub-linhas de keyframes na timeline (atalho U / UU) */
   kfExpanded: "none" | "animated" | "all";
