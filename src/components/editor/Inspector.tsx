@@ -7,8 +7,15 @@ import {
   type AnimProp,
   type KeyValue,
 } from "@/lib/keyframes";
+import {
+  DEFAULT_PRESET,
+  TEXT_PRESETS,
+  type PresetConfig,
+  type PresetId,
+} from "@/lib/text-presets";
 import { playAudioPreview } from "@/lib/audio-tools";
 import { cn } from "@/lib/utils";
+
 
 function AudioSection({ clipId }: { clipId: string }) {
   const tracks = useEditor((s) => s.tracks);
