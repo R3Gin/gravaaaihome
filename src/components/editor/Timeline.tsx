@@ -1,12 +1,4 @@
-import { useCallback, useMemo, useRef } from "react";
-import {
-  DndContext,
-  PointerSensor,
-  useDraggable,
-  useSensor,
-  useSensors,
-  type DragEndEvent,
-} from "@dnd-kit/core";
+import { useMemo, useRef, useState } from "react";
 import { Copy, Scissors, Trash2, ZoomIn, ZoomOut } from "lucide-react";
 import { MIN_CLIP, useEditor, type Clip, type Track } from "@/state/editor-store";
 import { cn } from "@/lib/utils";
@@ -20,6 +12,8 @@ function fmt(t: number) {
   return `${m}:${String(s).padStart(2, "0")}`;
 }
 
+type Ghost = { start: number; duration: number } | null;
+
 function ClipBox({ clip, track }: { clip: Clip; track: Track }) {
   const zoom = useEditor((s) => s.zoom);
   const tool = useEditor((s) => s.tool);
@@ -27,36 +21,76 @@ function ClipBox({ clip, track }: { clip: Clip; track: Track }) {
   const select = useEditor((s) => s.select);
   const splitAt = useEditor((s) => s.splitAt);
   const trimClip = useEditor((s) => s.trimClip);
+  const moveClip = useEditor((s) => s.moveClip);
 
-  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
-    id: clip.id,
-    disabled: tool === "blade",
-  });
+  const [ghost, setGhost] = useState<Ghost>(null);
+  const [dragging, setDragging] = useState(false);
+  const clipRef = useRef(clip);
+  clipRef.current = clip;
 
-  const trimRef = useRef<{ side: "start" | "end" } | null>(null);
-
-  const onTrimMove = useCallback(
-    (e: PointerEvent) => {
-      const side = trimRef.current?.side;
-      if (!side) return;
-      const lane = document.getElementById("tl-scroll");
-      if (!lane) return;
-      const box = lane.getBoundingClientRect();
-      const t = (e.clientX - box.left + lane.scrollLeft) / zoom;
-      trimClip(clip.id, side, Math.max(0, t));
-    },
-    [clip.id, trimClip, zoom],
-  );
+  const timeAt = (clientX: number) => {
+    const lane = document.getElementById("tl-scroll");
+    if (!lane) return 0;
+    const box = lane.getBoundingClientRect();
+    return Math.max(0, (clientX - box.left + lane.scrollLeft) / zoom);
+  };
 
   const startTrim = (side: "start" | "end") => (e: React.PointerEvent) => {
     e.stopPropagation();
-    trimRef.current = { side };
-    const up = () => {
-      trimRef.current = null;
-      window.removeEventListener("pointermove", onTrimMove);
-      window.removeEventListener("pointerup", up);
+    e.preventDefault();
+    select(clip.id);
+    setDragging(true);
+    let last = side === "start" ? clip.startTime : clip.startTime + clip.duration;
+    const move = (ev: PointerEvent) => {
+      const c = clipRef.current;
+      const t = timeAt(ev.clientX);
+      last = t;
+      if (side === "start") {
+        const start = Math.min(t, c.startTime + c.duration - MIN_CLIP);
+        setGhost({ start: Math.max(0, start), duration: c.startTime + c.duration - Math.max(0, start) });
+      } else {
+        setGhost({ start: c.startTime, duration: Math.max(MIN_CLIP, t - c.startTime) });
+      }
     };
-    window.addEventListener("pointermove", onTrimMove);
+    const up = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      setGhost(null);
+      setDragging(false);
+      trimClip(clipRef.current.id, side, Math.max(0, last));
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+  };
+
+  const onPointerDown = (e: React.PointerEvent) => {
+    if (e.button !== 0) return;
+    if (tool === "blade") {
+      e.stopPropagation();
+      splitAt(clip.id, timeAt(e.clientX));
+      return;
+    }
+    e.stopPropagation();
+    select(clip.id);
+
+    const grabOffset = timeAt(e.clientX) - clip.startTime;
+    let moved = false;
+    let last = clip.startTime;
+    const move = (ev: PointerEvent) => {
+      moved = true;
+      setDragging(true);
+      const start = Math.max(0, timeAt(ev.clientX) - grabOffset);
+      last = start;
+      setGhost({ start, duration: clipRef.current.duration });
+    };
+    const up = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      setGhost(null);
+      setDragging(false);
+      if (moved) moveClip(clipRef.current.id, last);
+    };
+    window.addEventListener("pointermove", move);
     window.addEventListener("pointerup", up);
   };
 
@@ -69,55 +103,45 @@ function ClipBox({ clip, track }: { clip: Clip; track: Track }) {
           ? "from-amber-500/40 to-amber-500/15 border-amber-400/50"
           : "from-emerald-500/40 to-emerald-500/15 border-emerald-400/50";
 
+  const start = ghost?.start ?? clip.startTime;
+  const dur = ghost?.duration ?? clip.duration;
+
   return (
     <div
-      ref={setNodeRef}
-      {...attributes}
-      {...listeners}
       data-clip-id={clip.id}
-      onPointerDown={(e) => {
-        if (tool === "blade") {
-          e.stopPropagation();
-          const lane = document.getElementById("tl-scroll");
-          if (!lane) return;
-          const box = lane.getBoundingClientRect();
-          splitAt(clip.id, (e.clientX - box.left + lane.scrollLeft) / zoom);
-          return;
-        }
-        select(clip.id);
-      }}
+      onPointerDown={onPointerDown}
       className={cn(
-        "absolute top-1 flex h-[calc(100%-8px)] select-none items-center overflow-hidden rounded-md border bg-gradient-to-b px-2 text-[11px] font-semibold text-white",
+        "absolute top-1 flex h-[calc(100%-8px)] touch-none select-none items-center overflow-hidden rounded-md border bg-gradient-to-b px-2 text-[11px] font-semibold text-white",
         color,
-        tool === "blade" ? "cursor-crosshair" : "cursor-grab",
+        tool === "blade" ? "cursor-crosshair" : dragging ? "cursor-grabbing" : "cursor-grab",
         selected && "ring-2 ring-[var(--brand)] ring-offset-1 ring-offset-[var(--surface-2)]",
-        isDragging && "opacity-70",
+        dragging && "opacity-80",
       )}
       style={{
-        left: clip.startTime * zoom + 1,
-        width: Math.max(6, clip.duration * zoom - 2),
-        transform: transform ? `translateX(${transform.x}px)` : undefined,
-        zIndex: isDragging ? 20 : selected ? 10 : 1,
+        left: start * zoom + 1,
+        width: Math.max(6, dur * zoom - 2),
+        zIndex: dragging ? 20 : selected ? 10 : 1,
       }}
     >
       <span className="pointer-events-none truncate">
         {clip.type === "text" ? clip.textContent : clip.overlayKind ?? track.label}
       </span>
-      {selected ? (
+      {selected && tool !== "blade" ? (
         <>
           <span
             onPointerDown={startTrim("start")}
-            className="absolute inset-y-0 left-0 w-2 cursor-ew-resize bg-white/70"
+            className="absolute inset-y-0 left-0 w-2.5 cursor-ew-resize bg-white/70"
           />
           <span
             onPointerDown={startTrim("end")}
-            className="absolute inset-y-0 right-0 w-2 cursor-ew-resize bg-white/70"
+            className="absolute inset-y-0 right-0 w-2.5 cursor-ew-resize bg-white/70"
           />
         </>
       ) : null}
     </div>
   );
 }
+
 
 export function Timeline() {
   const tracks = useEditor((s) => s.tracks);
@@ -130,7 +154,6 @@ export function Timeline() {
   const setCurrentTime = useEditor((s) => s.setCurrentTime);
   const setTool = useEditor((s) => s.setTool);
   const select = useEditor((s) => s.select);
-  const moveClip = useEditor((s) => s.moveClip);
   const removeClip = useEditor((s) => s.removeClip);
   const duplicateClip = useEditor((s) => s.duplicateClip);
   const splitPlayhead = useEditor((s) => s.splitPlayhead);
@@ -145,14 +168,6 @@ export function Timeline() {
     return out;
   }, [duration, zoom]);
 
-  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 4 } }));
-
-  const onDragEnd = (e: DragEndEvent) => {
-    const id = String(e.active.id);
-    const clip = tracks.flatMap((t) => t.clips).find((c) => c.id === id);
-    if (!clip) return;
-    moveClip(id, Math.max(0, clip.startTime + e.delta.x / zoom));
-  };
 
   const seekFromEvent = (e: React.PointerEvent) => {
     const lane = scrollRef.current;
@@ -245,22 +260,21 @@ export function Timeline() {
               ))}
             </div>
 
-            <DndContext sensors={sensors} onDragEnd={onDragEnd}>
-              <div onPointerDown={(e) => e.target === e.currentTarget && select(null)}>
-                {tracks.map((track) => (
-                  <div
-                    key={track.id}
-                    onPointerDown={(e) => e.target === e.currentTarget && select(null)}
-                    className="relative border-b border-[var(--border)]"
-                    style={{ height: LANE_H }}
-                  >
-                    {track.clips.map((clip) => (
-                      <ClipBox key={clip.id} clip={clip} track={track} />
-                    ))}
-                  </div>
-                ))}
-              </div>
-            </DndContext>
+            <div onPointerDown={(e) => e.target === e.currentTarget && select(null)}>
+              {tracks.map((track) => (
+                <div
+                  key={track.id}
+                  onPointerDown={(e) => e.target === e.currentTarget && select(null)}
+                  className="relative border-b border-[var(--border)]"
+                  style={{ height: LANE_H }}
+                >
+                  {track.clips.map((clip) => (
+                    <ClipBox key={clip.id} clip={clip} track={track} />
+                  ))}
+                </div>
+              ))}
+            </div>
+
 
             {/* playhead */}
             <div
