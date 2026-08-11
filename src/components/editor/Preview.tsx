@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   clipAt,
   clipsAt,
@@ -8,7 +8,12 @@ import {
   type Clip,
 } from "@/state/editor-store";
 import { resolveClip } from "@/lib/keyframes";
-import { renderCaptionWords, typewriterText } from "@/lib/caption-styles";
+import {
+  renderCaptionWords,
+  typewriterText,
+  toSeconds,
+  CAPTION_END_BUFFER,
+} from "@/lib/caption-styles";
 import { cn } from "@/lib/utils";
 
 /** #rrggbb + alpha => rgba() */
