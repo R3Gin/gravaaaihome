@@ -1,12 +1,13 @@
 import { Link } from "@tanstack/react-router";
-import { Monitor, Scissors, FileText, ArrowRight } from "lucide-react";
+import { Monitor, Scissors, FileText, Film, ArrowRight } from "lucide-react";
 import type { ComponentType, SVGProps } from "react";
 
 type MosaicoHref =
   | "/slides-camera"
   | "/mosaicos/gdocs-presentation"
   | "/mosaicos/editor"
-  | "/mosaicos/teleprompter";
+  | "/mosaicos/teleprompter"
+  | "/mosaicos/video-para-gif";
 
 interface MosaicoDef {
   title: string;
@@ -36,6 +37,13 @@ const mosaicos: MosaicoDef[] = [
       "Leia seu roteiro na tela enquanto grava, sem aparecer no vídeo final.",
     href: "/mosaicos/teleprompter",
     Icon: FileText,
+  },
+  {
+    title: "Vídeo para GIF",
+    description:
+      "Transforme um trecho da sua gravação em GIF, direto no navegador.",
+    href: "/mosaicos/video-para-gif",
+    Icon: Film,
   },
 
 ];

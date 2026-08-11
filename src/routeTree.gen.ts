@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as SlidesCameraRouteImport } from './routes/slides-camera'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as MosaicosVideoParaGifRouteImport } from './routes/mosaicos.video-para-gif'
 import { Route as MosaicosTeleprompterRouteImport } from './routes/mosaicos.teleprompter'
 import { Route as MosaicosGdocsPresentationRouteImport } from './routes/mosaicos.gdocs-presentation'
 import { Route as MosaicosEditorRouteImport } from './routes/mosaicos.editor'
@@ -23,6 +24,11 @@ const SlidesCameraRoute = SlidesCameraRouteImport.update({
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const MosaicosVideoParaGifRoute = MosaicosVideoParaGifRouteImport.update({
+  id: '/mosaicos/video-para-gif',
+  path: '/mosaicos/video-para-gif',
   getParentRoute: () => rootRouteImport,
 } as any)
 const MosaicosTeleprompterRoute = MosaicosTeleprompterRouteImport.update({
@@ -48,6 +54,7 @@ export interface FileRoutesByFullPath {
   '/mosaicos/editor': typeof MosaicosEditorRoute
   '/mosaicos/gdocs-presentation': typeof MosaicosGdocsPresentationRoute
   '/mosaicos/teleprompter': typeof MosaicosTeleprompterRoute
+  '/mosaicos/video-para-gif': typeof MosaicosVideoParaGifRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -55,6 +62,7 @@ export interface FileRoutesByTo {
   '/mosaicos/editor': typeof MosaicosEditorRoute
   '/mosaicos/gdocs-presentation': typeof MosaicosGdocsPresentationRoute
   '/mosaicos/teleprompter': typeof MosaicosTeleprompterRoute
+  '/mosaicos/video-para-gif': typeof MosaicosVideoParaGifRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -63,6 +71,7 @@ export interface FileRoutesById {
   '/mosaicos/editor': typeof MosaicosEditorRoute
   '/mosaicos/gdocs-presentation': typeof MosaicosGdocsPresentationRoute
   '/mosaicos/teleprompter': typeof MosaicosTeleprompterRoute
+  '/mosaicos/video-para-gif': typeof MosaicosVideoParaGifRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -72,6 +81,7 @@ export interface FileRouteTypes {
     | '/mosaicos/editor'
     | '/mosaicos/gdocs-presentation'
     | '/mosaicos/teleprompter'
+    | '/mosaicos/video-para-gif'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -79,6 +89,7 @@ export interface FileRouteTypes {
     | '/mosaicos/editor'
     | '/mosaicos/gdocs-presentation'
     | '/mosaicos/teleprompter'
+    | '/mosaicos/video-para-gif'
   id:
     | '__root__'
     | '/'
@@ -86,6 +97,7 @@ export interface FileRouteTypes {
     | '/mosaicos/editor'
     | '/mosaicos/gdocs-presentation'
     | '/mosaicos/teleprompter'
+    | '/mosaicos/video-para-gif'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -94,6 +106,7 @@ export interface RootRouteChildren {
   MosaicosEditorRoute: typeof MosaicosEditorRoute
   MosaicosGdocsPresentationRoute: typeof MosaicosGdocsPresentationRoute
   MosaicosTeleprompterRoute: typeof MosaicosTeleprompterRoute
+  MosaicosVideoParaGifRoute: typeof MosaicosVideoParaGifRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -110,6 +123,13 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/mosaicos/video-para-gif': {
+      id: '/mosaicos/video-para-gif'
+      path: '/mosaicos/video-para-gif'
+      fullPath: '/mosaicos/video-para-gif'
+      preLoaderRoute: typeof MosaicosVideoParaGifRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/mosaicos/teleprompter': {
@@ -142,17 +162,8 @@ const rootRouteChildren: RootRouteChildren = {
   MosaicosEditorRoute: MosaicosEditorRoute,
   MosaicosGdocsPresentationRoute: MosaicosGdocsPresentationRoute,
   MosaicosTeleprompterRoute: MosaicosTeleprompterRoute,
+  MosaicosVideoParaGifRoute: MosaicosVideoParaGifRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
-
-import type { getRouter } from './router.tsx'
-import type { startInstance } from './start.ts'
-declare module '@tanstack/react-start' {
-  interface Register {
-    ssr: true
-    router: Awaited<ReturnType<typeof getRouter>>
-    config: Awaited<ReturnType<typeof startInstance.getOptions>>
-  }
-}
