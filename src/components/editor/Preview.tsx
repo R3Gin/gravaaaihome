@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import {
   clipAt,
   clipsAt,
@@ -8,13 +8,9 @@ import {
   type Clip,
 } from "@/state/editor-store";
 import { resolveClip } from "@/lib/keyframes";
-import {
-  renderCaptionWords,
-  typewriterText,
-  toSeconds,
-  CAPTION_END_BUFFER,
-} from "@/lib/caption-styles";
+import { CaptionOverlay } from "./CaptionOverlay";
 import { cn } from "@/lib/utils";
+
 
 /** #rrggbb + alpha => rgba() */
 function withAlpha(hex: string, alpha: number) {
@@ -41,7 +37,7 @@ export function Preview({ videoRef }: Props) {
   const currentTime = useEditor((s) => s.currentTime);
   const playing = useEditor((s) => s.playing);
   const aspect = useEditor((s) => s.aspect);
-  const captionStyle = useEditor((s) => s.captionStyle);
+  
 
   const selectedClipId = useEditor((s) => s.selectedClipId);
   const setAspect = useEditor((s) => s.setAspect);
@@ -55,9 +51,6 @@ export function Preview({ videoRef }: Props) {
   const rafRef = useRef<number | null>(null);
   const dragRef = useRef<{ id: string; kind: "move" | "resize" } | null>(null);
 
-  const [mediaTime, setMediaTime] = useState(0);
-  const [ended, setEnded] = useState(false);
-
   const rawVideoClip = clipAt(tracks, "video", currentTime);
   const videoClip = rawVideoClip ? resolveClip(rawVideoClip, currentTime) : null;
   const textClips = clipsAt(tracks, "text", currentTime)
@@ -65,44 +58,7 @@ export function Preview({ videoRef }: Props) {
     .map((c) => resolveClip(c, currentTime));
   const overlayClips = clipsAt(tracks, "overlay", currentTime).map((c) => resolveClip(c, currentTime));
 
-  /* --- sincronia das legendas: fonte da verdade é o <video> (timeupdate/seek) --- */
-  useEffect(() => {
-    const v = videoRef.current;
-    if (!v) return;
-    const sync = () => {
-      setEnded(false);
-      const s = useEditor.getState();
-      const clip = clipAt(s.tracks, "video", s.currentTime);
-      setMediaTime(
-        clip
-          ? clip.startTime + (v.currentTime - clip.sourceInStart) / (clip.speed ?? 1)
-          : s.currentTime,
-      );
-    };
-    const onEnded = () => setEnded(true);
-    const events = ["timeupdate", "seeked", "seeking", "play", "pause", "loadedmetadata"];
-    events.forEach((e) => v.addEventListener(e, sync));
-    v.addEventListener("ended", onEnded);
-    sync();
-    return () => {
-      events.forEach((e) => v.removeEventListener(e, sync));
-      v.removeEventListener("ended", onEnded);
-    };
-  }, [videoRef, sourceUrl]);
 
-  /* legenda ativa: apenas o segmento que contém o tempo atual */
-  const captionTime = playing ? mediaTime : currentTime;
-  const activeCaption = ended
-    ? null
-    : (tracks
-        .flatMap((t) => t.clips)
-        .filter((c) => c.isCaption)
-        .sort((a, b) => toSeconds(a.startTime) - toSeconds(b.startTime))
-        .find((c) => {
-          const start = toSeconds(c.startTime);
-          const end = start + toSeconds(c.duration) + CAPTION_END_BUFFER;
-          return captionTime >= start && captionTime <= end;
-        }) ?? null);
 
 
 
@@ -352,79 +308,14 @@ export function Preview({ videoRef }: Props) {
             );
           })}
 
-          {/* --- camada de legenda (um único segmento ativo) --- */}
-          {activeCaption
-            ? (() => {
-                const clip = activeCaption;
-                const start = toSeconds(clip.startTime);
-                const dur = Math.max(0.01, toSeconds(clip.duration));
-                const progress = Math.max(0, Math.min(1, (captionTime - start) / dur));
-                const full = clip.textContent ?? "";
-                const cs = captionStyle;
-                const selected = clip.id === selectedClipId;
-                const words =
-                  cs.anim === "typewriter"
-                    ? null
-                    : renderCaptionWords(cs.anim, full, progress, {
-                        color: cs.color,
-                        highlight: cs.highlight,
-                        wordByWord: cs.wordByWord,
-                      });
-                return (
-                  <div
-                    className="pointer-events-none absolute inset-0"
-                    style={{ zIndex: 20 }}
-                    aria-live="polite"
-                  >
-                    <div
-                      onPointerDown={(e) => {
-                        e.stopPropagation();
-                        select(clip.id);
-                        dragRef.current = { id: clip.id, kind: "move" };
-                      }}
-                      className={cn(
-                        "pointer-events-auto absolute -translate-x-1/2 -translate-y-1/2 cursor-move px-3 py-1",
-                        selected && "outline outline-2 outline-[var(--brand)]",
-                      )}
-                      style={{
-                        left: `${(clip.position?.x ?? 0.5) * 100}%`,
-                        top: `${(clip.position?.y ?? 0.85) * 100}%`,
-                        maxWidth: "88%",
-                        opacity: clip.opacity ?? 1,
-                        textAlign: cs.align,
-                        fontFamily: cs.fontFamily,
-                        fontWeight: cs.bold ? 800 : 500,
-                        fontStyle: cs.italic ? "italic" : "normal",
-                        color: cs.color,
-                        fontSize: `${(cs.fontSize / 720) * 100}cqh`,
-                        lineHeight: 1.2,
-                        borderRadius: "0.4em",
-                        background: cs.background
-                          ? withAlpha(cs.highlight, cs.bgOpacity)
-                          : undefined,
-                        WebkitTextStroke: cs.outline ? "0.03em rgba(0,0,0,0.85)" : undefined,
-                        textShadow: cs.outline ? "0 0.04em 0.12em rgba(0,0,0,0.7)" : undefined,
-                      }}
-                    >
-                      {words ? (
-                        <span className="inline-flex flex-wrap justify-center gap-[0.28em]">
-                          {words.map((w, i) => (
-                            <span
-                              key={`${clip.id}-${i}`}
-                              style={{ display: "inline-block", ...w.style }}
-                            >
-                              {w.text}
-                            </span>
-                          ))}
-                        </span>
-                      ) : (
-                        typewriterText(full, progress) || "\u200b"
-                      )}
-                    </div>
-                  </div>
-                );
-              })()
-            : null}
+          {/* --- camada de legenda isolada (rAF próprio, memoizada) --- */}
+          <CaptionOverlay
+            videoRef={videoRef}
+            onStartDrag={(id) => {
+              dragRef.current = { id, kind: "move" };
+            }}
+          />
+
 
           {textClips.map((clip) => {
             const selected = clip.id === selectedClipId;

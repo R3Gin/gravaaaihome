@@ -31,27 +31,31 @@ export interface WordRender {
   style: CSSProperties;
 }
 
-/**
- * Calcula o estado visual de cada palavra da legenda de forma determinística
- * (funciona ao arrastar o playhead, não só na reprodução).
- *
- * @param progress 0–1 dentro do clipe de legenda
- */
+/** passo de quantização do progresso (30fps) — evita recalcular por frame */
+const PROGRESS_STEP = 1 / 30;
+const wordCache = new Map<string, WordRender[]>();
+const CACHE_MAX = 400;
+
 export function renderCaptionWords(
   anim: CaptionAnim,
   text: string,
   progress: number,
   opts: { highlight: string; color: string; wordByWord: boolean },
 ): WordRender[] {
+  const p = clamp01(progress);
+  const q = Math.round(p / PROGRESS_STEP) * PROGRESS_STEP;
+  const key = `${anim}|${opts.color}|${opts.highlight}|${opts.wordByWord ? 1 : 0}|${q.toFixed(4)}|${text}`;
+  const hit = wordCache.get(key);
+  if (hit) return hit;
+
   const words = text.trim().split(/\s+/).filter(Boolean);
   const n = Math.max(1, words.length);
-  const p = clamp01(progress);
 
-  return words.map((w, i) => {
+  const out = words.map((w, i) => {
     // janela de entrada de cada palavra (metade inicial do clipe)
     const start = opts.wordByWord ? (i / n) * 0.55 : 0;
-    const local = easeOut(clamp01((p - start) / 0.28));
-    const activeIndex = Math.floor(p * n);
+    const local = easeOut(clamp01((q - start) / 0.28));
+    const activeIndex = Math.floor(q * n);
     const active = i === activeIndex;
     const passed = i <= activeIndex;
 
@@ -61,9 +65,8 @@ export function renderCaptionWords(
           text: w,
           style: {
             color: passed ? opts.highlight : opts.color,
-            transform: `scale(${active ? 1.08 : 1})`,
-            transition: "color 120ms linear",
-          },
+            transform: active ? "scale(1.08)" : "scale(1)",
+          } as CSSProperties,
         };
       case "slideUp":
         return {
@@ -71,7 +74,7 @@ export function renderCaptionWords(
           style: {
             opacity: local,
             transform: `translateY(${(1 - local) * 0.5}em)`,
-          },
+          } as CSSProperties,
         };
       case "glow":
         return {
@@ -79,10 +82,11 @@ export function renderCaptionWords(
           style: {
             opacity: local,
             color: active ? opts.highlight : opts.color,
-            textShadow: active
-              ? `0 0 0.35em ${opts.highlight}, 0 0 0.7em ${opts.highlight}`
+            // drop-shadow é acelerado por GPU (text-shadow força repaint de CPU)
+            filter: active
+              ? `drop-shadow(0 0 0.35em ${opts.highlight}) drop-shadow(0 0 0.7em ${opts.highlight})`
               : undefined,
-          },
+          } as CSSProperties,
         };
       case "shakeDrop": {
         const shake = local < 1 ? Math.sin(local * 28) * (1 - local) * 6 : 0;
@@ -91,17 +95,30 @@ export function renderCaptionWords(
           style: {
             opacity: local,
             transform: `translateY(${(local - 1) * 0.6}em) rotate(${shake}deg)`,
-          },
+          } as CSSProperties,
         };
       }
       case "wordPop":
       default: {
         const s = local < 1 ? 0.5 + local * 0.62 : 1;
-        return { text: w, style: { opacity: local, transform: `scale(${s})` } };
+        return {
+          text: w,
+          style: { opacity: local, transform: `scale(${s})` } as CSSProperties,
+        };
       }
     }
   });
+
+  if (wordCache.size > CACHE_MAX) wordCache.clear();
+  wordCache.set(key, out);
+  return out;
 }
+
+/** quantiza o progresso do mesmo modo que o cache interno */
+export function quantizeProgress(progress: number) {
+  return Math.round(clamp01(progress) / PROGRESS_STEP) * PROGRESS_STEP;
+}
+
 
 /** Typewriter é caractere a caractere: recorta o texto pelo progresso. */
 export function typewriterText(text: string, progress: number) {
