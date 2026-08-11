@@ -68,19 +68,35 @@ export async function exportProject(
   const W = Math.max(2, Math.round((videoSize.width || 1280) / 2) * 2);
   const H = Math.max(2, Math.round((videoSize.height || 720) / 2) * 2);
 
-  const timeline: TimelineClip[] = videoClips.map((c) => ({
-    srcStart: c.sourceInStart,
-    srcEnd: c.sourceInEnd,
-    speed: c.speed ?? 1,
-    filters: {
-      brightness: c.brightness ?? 0,
-      contrast: c.contrast ?? 1,
-      saturation: c.saturation ?? 1,
-    },
-    transition: c.transition ?? "none",
-    zoomKeys: (c.zoomKeyframes ?? []).map((k) => ({ t: k.time, scale: k.scale })),
-    denoise: c.denoise ?? false,
-  }));
+  const timeline: TimelineClip[] = videoClips.map((c) => {
+    const scaleKeys = (c.keyframes?.scale ?? []).filter((k) => typeof k.value === "number");
+    const rotKeys = (c.keyframes?.rotation ?? []).filter((k) => typeof k.value === "number");
+    const zoomKeys = (c.zoomKeyframes ?? []).map((k) => ({ t: k.time, scale: k.scale }));
+    // escala animada entra no mesmo caminho de zoom da exportação
+    for (const k of scaleKeys) {
+      zoomKeys.push({ t: k.time, scale: Math.max(0.05, k.value as number) });
+    }
+    zoomKeys.sort((a, b) => a.t - b.t);
+    return {
+      srcStart: c.sourceInStart,
+      srcEnd: c.sourceInEnd,
+      speed: c.speed ?? 1,
+      filters: {
+        brightness: c.brightness ?? 0,
+        contrast: c.contrast ?? 1,
+        saturation: c.saturation ?? 1,
+      },
+      transition: c.transition ?? "none",
+      transitionDuration: c.transitionDuration,
+      transitionDir: c.transitionDir,
+      zoomKeys,
+      rotateKeys: rotKeys.map((k) => ({ t: k.time, value: k.value as number })),
+      denoise: c.denoise ?? false,
+      volume: c.volume ?? 1,
+      fadeIn: c.fadeIn ?? 0,
+      fadeOut: c.fadeOut ?? 0,
+    };
+  });
 
   const textClips = tracks.find((t) => t.type === "text")?.clips ?? [];
   const texts: TextOverlayImage[] = [];

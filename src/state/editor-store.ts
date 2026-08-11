@@ -3,6 +3,7 @@ import {
   applyContinuity,
   newKeyframe,
   propByKey,
+  resolveClip,
   sortKeys,
   upsertKeyframe,
   type Easing,
@@ -38,7 +39,10 @@ import type { WordTiming } from "@/lib/captions";
  * ------------------------------------------------------------------ */
 
 export type TrackType = "video" | "audio" | "text" | "overlay";
-export type TransitionKind = "none" | "fade" | "slide";
+export type TransitionKind = "none" | "fade" | "slide" | "zoom" | "wipe";
+export type TransitionDir = "left" | "right" | "up" | "down";
+
+export const DEFAULT_TRANSITION_DURATION = 0.5;
 
 export interface ZoomKeyframe {
   time: number; // segundos, relativo ao início do clipe na timeline
@@ -62,8 +66,14 @@ export interface Clip {
   contrast?: number;
   saturation?: number;
   speed?: number;
+  /** transição de ENTRADA deste clipe (sobrepõe o fim do clipe anterior) */
   transition?: TransitionKind;
+  transitionDuration?: number;
+  transitionDir?: TransitionDir;
   denoise?: boolean;
+  /** fades de áudio em segundos */
+  fadeIn?: number;
+  fadeOut?: number;
   zoomKeyframes?: ZoomKeyframe[];
   position?: { x: number; y: number };
   // transformações animáveis
@@ -217,7 +227,16 @@ export interface EditorActions {
   ) => void;
   setCaptionStyle: (patch: Partial<CaptionStyle>) => void;
   clearCaptions: () => void;
+  /** transição de entrada de um clipe (módulo de Transições) */
+  setTransition: (
+    clipId: string,
+    patch: { kind?: TransitionKind; duration?: number; dir?: TransitionDir },
+  ) => void;
   /* --- keyframes --- */
+  /** cria/atualiza um keyframe no playhead com o valor atual da propriedade */
+  addKeyframeAt: (clipId: string, prop: string) => void;
+  /** altera o valor de um keyframe existente */
+  setKeyframeValue: (clipId: string, prop: string, kfId: string, value: KeyValue, live?: boolean) => void;
   /** liga/desliga a animação de uma propriedade (cronômetro) */
   togglePropertyAnimation: (clipId: string, prop: string) => void;
   /** altera o valor: cria/atualiza keyframe se animada, senão valor estático */
@@ -734,7 +753,42 @@ export const useEditor = create<EditorState & EditorActions>((set, get) => {
     clearCaptions: () =>
       write((tracks) => mapTracks(tracks, (clips) => clips.filter((c) => !c.isCaption))),
 
+    setTransition: (clipId, patch) => {
+      const clip = findClip(get().tracks, clipId);
+      if (!clip) return;
+      get().updateClip(clipId, {
+        transition: patch.kind ?? clip.transition ?? "none",
+        transitionDuration: Math.max(
+          0.1,
+          Math.min(2, patch.duration ?? clip.transitionDuration ?? DEFAULT_TRANSITION_DURATION),
+        ),
+        transitionDir: patch.dir ?? clip.transitionDir ?? "left",
+      });
+    },
+
     /* ---------------------- keyframes ---------------------- */
+
+    addKeyframeAt: (clipId, prop) => {
+      const clip = findClip(get().tracks, clipId);
+      const meta = propByKey(prop);
+      if (!clip || !meta) return;
+      const local = Math.max(0, Math.min(clip.duration, get().currentTime - clip.startTime));
+      const value = meta.get(resolveClip(clip, get().currentTime));
+      const keys = clip.keyframes?.[prop] ?? [];
+      const map: KeyframeMap = { ...(clip.keyframes ?? {}), [prop]: upsertKeyframe(keys, local, value) };
+      get().updateClip(clipId, { keyframes: map });
+    },
+
+    setKeyframeValue: (clipId, prop, kfId, value, live) => {
+      const clip = findClip(get().tracks, clipId);
+      if (!clip?.keyframes?.[prop]) return;
+      const map: KeyframeMap = {
+        ...clip.keyframes,
+        [prop]: clip.keyframes[prop].map((k) => (k.id === kfId ? { ...k, value } : k)),
+      };
+      (live ? get().updateClipLive : get().updateClip)(clipId, { keyframes: map });
+    },
+
 
     togglePropertyAnimation: (clipId, prop) => {
       const clip = findClip(get().tracks, clipId);

@@ -12,6 +12,8 @@ import {
   Type,
   Undo2,
   Upload,
+  Volume2,
+  Blend,
   X,
 } from "lucide-react";
 import { Preview } from "@/components/editor/Preview";
@@ -19,17 +21,29 @@ import { Timeline } from "@/components/editor/Timeline";
 import { Inspector } from "@/components/editor/Inspector";
 import { SilencePanel } from "@/components/editor/panels/SilencePanel";
 import { CaptionsPanel } from "@/components/editor/panels/CaptionsPanel";
+import { AudioPanel } from "@/components/editor/panels/AudioPanel";
+import { TransitionsPanel } from "@/components/editor/panels/TransitionsPanel";
 import { useEditor } from "@/state/editor-store";
 import { takeEditorHandoff } from "@/lib/editor-handoff";
 import { exportProject } from "@/lib/export-project";
 import { cn } from "@/lib/utils";
 
-type PanelId = "media" | "silence" | "captions" | "text" | "effects" | null;
+type PanelId =
+  | "media"
+  | "silence"
+  | "captions"
+  | "audio"
+  | "transitions"
+  | "text"
+  | "effects"
+  | null;
 
 const TOOLS: { id: Exclude<PanelId, null>; label: string; icon: typeof Upload }[] = [
   { id: "media", label: "Mídia", icon: Upload },
   { id: "silence", label: "Silêncio", icon: AudioLines },
   { id: "captions", label: "Legendas", icon: Captions },
+  { id: "audio", label: "Áudio", icon: Volume2 },
+  { id: "transitions", label: "Transições", icon: Blend },
   { id: "text", label: "Texto", icon: Type },
   { id: "effects", label: "Efeitos", icon: Shapes },
 ];
@@ -302,6 +316,12 @@ export function VideoEditor() {
               {panel === "silence" ? <SilencePanel onClose={() => setPanel(null)} /> : null}
 
               {panel === "captions" ? <CaptionsPanel /> : null}
+
+              {panel === "audio" ? <AudioPanel /> : null}
+
+              {panel === "transitions" ? <TransitionsPanel /> : null}
+
+
 
               {panel === "text" ? (
                 <button

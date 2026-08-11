@@ -1,5 +1,4 @@
-import { useEffect, useRef, useState } from "react";
-import { ChevronLeft, ChevronRight, Diamond, Pause, Play } from "lucide-react";
+import { ChevronLeft, ChevronRight, Diamond, Plus } from "lucide-react";
 import { findClip, useEditor, type Clip } from "@/state/editor-store";
 import {
   animatablePropsFor,
@@ -13,75 +12,8 @@ import {
   type PresetConfig,
   type PresetId,
 } from "@/lib/text-presets";
-import { playAudioPreview } from "@/lib/audio-tools";
 import { cn } from "@/lib/utils";
 
-
-function AudioSection({ clipId }: { clipId: string }) {
-  const tracks = useEditor((s) => s.tracks);
-  const sourceBlob = useEditor((s) => s.sourceBlob);
-  const updateClip = useEditor((s) => s.updateClip);
-  const clip = findClip(tracks, clipId);
-  const [playingMode, setPlayingMode] = useState<"raw" | "clean" | null>(null);
-  const stopRef = useRef<(() => void) | null>(null);
-
-  useEffect(() => () => stopRef.current?.(), []);
-
-  if (!clip) return null;
-
-  const preview = async (mode: "raw" | "clean") => {
-    stopRef.current?.();
-    if (playingMode === mode) {
-      setPlayingMode(null);
-      return;
-    }
-    if (!sourceBlob) return;
-    setPlayingMode(mode);
-    const start = clip.sourceInStart;
-    const end = Math.min(clip.sourceInEnd, start + 6);
-    stopRef.current = await playAudioPreview(sourceBlob, start, end, mode === "clean");
-    window.setTimeout(() => setPlayingMode(null), (end - start) * 1000 + 200);
-  };
-
-  return (
-    <div className="space-y-3 rounded-lg border border-[var(--border)] p-3">
-      <span className="text-[11px] font-bold uppercase tracking-wide text-[var(--muted-foreground)]">
-        Áudio
-      </span>
-      <label className="flex items-center gap-2 text-xs">
-        <input
-          type="checkbox"
-          checked={clip.denoise === true}
-          onChange={(e) => updateClip(clip.id, { denoise: e.target.checked })}
-          className="accent-[var(--brand)]"
-        />
-        Reduzir ruído de fundo
-      </label>
-      <div className="flex gap-1.5">
-        {(["raw", "clean"] as const).map((mode) => (
-          <button
-            key={mode}
-            onClick={() => void preview(mode)}
-            disabled={!sourceBlob}
-            className={cn(
-              "flex flex-1 items-center justify-center gap-1.5 rounded-md border px-2 py-1.5 text-[11px] font-semibold disabled:opacity-40",
-              playingMode === mode
-                ? "border-[var(--brand)] bg-[var(--brand)]/15 text-[var(--brand)]"
-                : "border-[var(--border)] text-[var(--muted-foreground)]",
-            )}
-          >
-            {playingMode === mode ? <Pause className="h-3 w-3" /> : <Play className="h-3 w-3" />}
-            {mode === "raw" ? "Antes" : "Depois"}
-          </button>
-        ))}
-      </div>
-      <p className="text-[10px] leading-relaxed text-[var(--muted-foreground)]">
-        Prévia dos primeiros 6 segundos do clipe. Na exportação é aplicado filtro passa-alta,
-        redução de ruído e normalização.
-      </p>
-    </div>
-  );
-}
 
 function Row({ label, children }: { label: string; children: React.ReactNode }) {
   return (
@@ -132,6 +64,7 @@ function AnimRow({ clip, prop }: { clip: Clip; prop: AnimProp }) {
   const setCurrentTime = useEditor((s) => s.setCurrentTime);
   const setPropValue = useEditor((s) => s.setPropValue);
   const toggle = useEditor((s) => s.togglePropertyAnimation);
+  const addKeyframeAt = useEditor((s) => s.addKeyframeAt);
 
   const keys = clip.keyframes?.[prop.key] ?? [];
   const animated = keys.length > 0;
@@ -184,8 +117,15 @@ function AnimRow({ clip, prop }: { clip: Clip; prop: AnimProp }) {
           </>
         ) : null}
         <span className="text-[11px] font-semibold text-[var(--muted-foreground)]">{prop.label}</span>
+        <button
+          onClick={() => addKeyframeAt(clip.id, prop.key)}
+          title="Adicionar keyframe no playhead com o valor atual"
+          className="ml-auto flex items-center gap-0.5 rounded border border-[var(--border)] px-1.5 py-0.5 text-[10px] font-semibold text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
+        >
+          <Plus className="h-2.5 w-2.5" /> Keyframe
+        </button>
         {animated ? (
-          <span className="ml-auto text-[10px] tabular-nums text-[var(--brand)]">{keys.length} kf</span>
+          <span className="text-[10px] tabular-nums text-[var(--brand)]">{keys.length}</span>
         ) : null}
       </div>
 
@@ -347,25 +287,10 @@ export function Inspector() {
                 }}
               />
             </Row>
-            <AudioSection clipId={clip.id} />
-            <Row label="Transição de entrada">
-              <div className="flex gap-1.5">
-                {(["none", "fade", "slide"] as const).map((k) => (
-                  <button
-                    key={k}
-                    onClick={() => updateClip(clip.id, { transition: k })}
-                    className={cn(
-                      "flex-1 rounded-md border px-2 py-1.5 text-[11px] font-semibold",
-                      (clip.transition ?? "none") === k
-                        ? "border-[var(--brand)] bg-[var(--brand)]/15 text-[var(--brand)]"
-                        : "border-[var(--border)] text-[var(--muted-foreground)]",
-                    )}
-                  >
-                    {k === "none" ? "Corte" : k === "fade" ? "Fade" : "Slide"}
-                  </button>
-                ))}
-              </div>
-            </Row>
+            <p className="rounded-lg border border-[var(--border)] p-3 text-[10px] leading-relaxed text-[var(--muted-foreground)]">
+              Volume, redução de ruído e fades ficam no módulo <strong>Áudio</strong>; efeitos de
+              troca entre clipes, no módulo <strong>Transições</strong> (sidebar esquerda).
+            </p>
             <div className="space-y-2 rounded-lg border border-[var(--border)] p-3">
               <div className="flex items-center justify-between">
                 <span className="text-[11px] font-semibold">Zoom com keyframes</span>

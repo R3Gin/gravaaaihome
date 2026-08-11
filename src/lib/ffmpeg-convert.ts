@@ -270,7 +270,8 @@ export async function exportEditedMp4(
  * keyframes, transições, ajustes de imagem e camadas de texto).
  * ------------------------------------------------------------------ */
 
-export type TransitionKind = "none" | "fade" | "slide";
+export type TransitionKind = "none" | "fade" | "slide" | "zoom" | "wipe";
+export type TransitionDir = "left" | "right" | "up" | "down";
 
 export interface ZoomKey {
   /** segundos, relativo ao início do clipe já com a velocidade aplicada */
@@ -279,15 +280,29 @@ export interface ZoomKey {
   scale: number;
 }
 
+/** keyframe genérico de um valor animado (rotação em graus) */
+export interface ValueKey {
+  t: number;
+  value: number;
+}
+
 export interface TimelineClip {
   srcStart: number;
   srcEnd: number;
   speed: number;
   filters: EditFilters;
   transition: TransitionKind;
+  transitionDuration?: number;
+  transitionDir?: TransitionDir;
   zoomKeys: ZoomKey[];
+  /** rotação animada (graus) */
+  rotateKeys?: ValueKey[];
   /** redução de ruído de fundo (afftdn) */
   denoise?: boolean;
+  /** volume linear (1 = original) */
+  volume?: number;
+  fadeIn?: number;
+  fadeOut?: number;
 }
 
 export interface TextOverlayImage {
@@ -337,6 +352,33 @@ function zoomExpr(keys: ZoomKey[]): string {
   }
   const first = sorted[0];
   return `if(lt(t,${first.t.toFixed(3)}),${first.scale.toFixed(3)},${expr})`;
+}
+
+/** Expressão ffmpeg que interpola linearmente uma lista de keyframes em `t`. */
+function valueExpr(keys: ValueKey[]): string {
+  const sorted = [...keys].sort((a, b) => a.t - b.t);
+  if (sorted.length === 1) return sorted[0].value.toFixed(4);
+  let expr = sorted[sorted.length - 1].value.toFixed(4);
+  for (let i = sorted.length - 2; i >= 0; i--) {
+    const a = sorted[i];
+    const b = sorted[i + 1];
+    const span = Math.max(0.001, b.t - a.t);
+    const lerp = `(${a.value.toFixed(4)}+(${(b.value - a.value).toFixed(4)})*(t-${a.t.toFixed(3)})/${span.toFixed(3)})`;
+    expr = `if(lt(t,${b.t.toFixed(3)}),${lerp},${expr})`;
+  }
+  const first = sorted[0];
+  return `if(lt(t,${first.t.toFixed(3)}),${first.value.toFixed(4)},${expr})`;
+}
+
+/** Nome do filtro xfade equivalente à transição escolhida. */
+function xfadeName(kind: TransitionKind, dir: TransitionDir = "left"): string {
+  if (kind === "fade") return "fade";
+  if (kind === "zoom") return "zoomin";
+  if (kind === "slide")
+    return dir === "right" ? "slideright" : dir === "up" ? "slideup" : dir === "down" ? "slidedown" : "slideleft";
+  if (kind === "wipe")
+    return dir === "right" ? "wiperight" : dir === "up" ? "wipeup" : dir === "down" ? "wipedown" : "wipeleft";
+  return "fade";
 }
 
 function atempoChain(speed: number): string {
@@ -400,6 +442,10 @@ export async function exportTimeline(
             `scale=${W}:${H}`,
           );
         }
+        if ((clip.rotateKeys?.length ?? 0) > 0) {
+          const r = valueExpr(clip.rotateKeys!);
+          chain.push(`rotate=a='(${r})*PI/180':ow=${W}:oh=${H}:c=black@0`, `scale=${W}:${H}`);
+        }
         chain.push(eqExpr(clip.filters), "setsar=1", "format=yuv420p");
         parts.push(`[0:v]${chain.join(",")}[cv${i}]`);
         if (withAudio) {
@@ -409,6 +455,14 @@ export async function exportTimeline(
           ];
           if (Math.abs(speed - 1) > 0.001) achain.push(atempoChain(speed));
           if (clip.denoise) achain.push("highpass=f=90", "afftdn=nf=-25", "dynaudnorm=p=0.9:m=8");
+          if (clip.volume !== undefined && Math.abs(clip.volume - 1) > 0.001)
+            achain.push(`volume=${Math.max(0, clip.volume).toFixed(3)}`);
+          if ((clip.fadeIn ?? 0) > 0.01)
+            achain.push(`afade=t=in:st=0:d=${Math.min(clip.fadeIn!, dur).toFixed(3)}`);
+          if ((clip.fadeOut ?? 0) > 0.01) {
+            const fo = Math.min(clip.fadeOut!, dur);
+            achain.push(`afade=t=out:st=${Math.max(0, dur - fo).toFixed(3)}:d=${fo.toFixed(3)}`);
+          }
           achain.push("aformat=sample_rates=48000:channel_layouts=stereo");
           parts.push(`[0:a]${achain.join(",")}[ca${i}]`);
         }
@@ -426,8 +480,12 @@ export async function exportTimeline(
           if (withAudio) parts.push(`[${aLabel}][ca${i}]concat=n=2:v=0:a=1[${outA}]`);
           acc += durations[i];
         } else {
-          const d = Math.min(TRANSITION_DURATION, durations[i - 1] / 2, durations[i] / 2);
-          const transition = kind === "slide" ? "slideleft" : "fade";
+          const d = Math.min(
+            clips[i].transitionDuration ?? TRANSITION_DURATION,
+            durations[i - 1] / 2,
+            durations[i] / 2,
+          );
+          const transition = xfadeName(kind, clips[i].transitionDir);
           parts.push(
             `[${vLabel}][cv${i}]xfade=transition=${transition}:duration=${d.toFixed(3)}:offset=${Math.max(0, acc - d).toFixed(3)}[${outV}]`,
           );
