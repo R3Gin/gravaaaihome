@@ -57,6 +57,15 @@ export interface Clip {
   fontSize?: number;
   color?: string;
   background?: boolean;
+  /** desfoque em px (animável) */
+  blur?: number;
+  /** revelação 0–1 (typewriter / wipe) */
+  reveal?: number;
+  revealMode?: "none" | "typewriter" | "wipe";
+  /** presets de animação de entrada/saída */
+  animIn?: PresetConfig;
+  animOut?: PresetConfig;
+
   // overlay
   overlayKind?: "blur" | "spotlight";
   /** legenda gerada automaticamente (permite estilizar todas de uma vez) */
