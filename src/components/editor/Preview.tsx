@@ -51,9 +51,6 @@ export function Preview({ videoRef }: Props) {
   const rafRef = useRef<number | null>(null);
   const dragRef = useRef<{ id: string; kind: "move" | "resize" } | null>(null);
 
-  const [mediaTime, setMediaTime] = useState(0);
-  const [ended, setEnded] = useState(false);
-
   const rawVideoClip = clipAt(tracks, "video", currentTime);
   const videoClip = rawVideoClip ? resolveClip(rawVideoClip, currentTime) : null;
   const textClips = clipsAt(tracks, "text", currentTime)
@@ -61,44 +58,7 @@ export function Preview({ videoRef }: Props) {
     .map((c) => resolveClip(c, currentTime));
   const overlayClips = clipsAt(tracks, "overlay", currentTime).map((c) => resolveClip(c, currentTime));
 
-  /* --- sincronia das legendas: fonte da verdade é o <video> (timeupdate/seek) --- */
-  useEffect(() => {
-    const v = videoRef.current;
-    if (!v) return;
-    const sync = () => {
-      setEnded(false);
-      const s = useEditor.getState();
-      const clip = clipAt(s.tracks, "video", s.currentTime);
-      setMediaTime(
-        clip
-          ? clip.startTime + (v.currentTime - clip.sourceInStart) / (clip.speed ?? 1)
-          : s.currentTime,
-      );
-    };
-    const onEnded = () => setEnded(true);
-    const events = ["timeupdate", "seeked", "seeking", "play", "pause", "loadedmetadata"];
-    events.forEach((e) => v.addEventListener(e, sync));
-    v.addEventListener("ended", onEnded);
-    sync();
-    return () => {
-      events.forEach((e) => v.removeEventListener(e, sync));
-      v.removeEventListener("ended", onEnded);
-    };
-  }, [videoRef, sourceUrl]);
 
-  /* legenda ativa: apenas o segmento que contém o tempo atual */
-  const captionTime = playing ? mediaTime : currentTime;
-  const activeCaption = ended
-    ? null
-    : (tracks
-        .flatMap((t) => t.clips)
-        .filter((c) => c.isCaption)
-        .sort((a, b) => toSeconds(a.startTime) - toSeconds(b.startTime))
-        .find((c) => {
-          const start = toSeconds(c.startTime);
-          const end = start + toSeconds(c.duration) + CAPTION_END_BUFFER;
-          return captionTime >= start && captionTime <= end;
-        }) ?? null);
 
 
 
