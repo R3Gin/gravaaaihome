@@ -1819,6 +1819,84 @@ export function VideoEditor() {
               </div>
             </div>
 
+            {silenceOpen ? (
+              <div className="shrink-0 space-y-2 border-b border-[var(--border)] bg-[var(--surface-2)] px-3 py-2">
+                <div className="flex flex-wrap items-center gap-2">
+                  <p className="text-xs font-semibold">
+                    {silences.filter((s) => s.status === "pending").length} trecho(s) de silêncio
+                    encontrado(s)
+                  </p>
+                  <label className="ml-auto flex items-center gap-2 text-[11px] text-[var(--muted-foreground)]">
+                    Pouco sensível
+                    <input
+                      type="range"
+                      min={0}
+                      max={1}
+                      step={0.05}
+                      value={sensitivity}
+                      onChange={(e) => {
+                        const v = Number(e.target.value);
+                        setSensitivity(v);
+                        void runSilenceDetection(v);
+                      }}
+                      className="w-32 accent-[var(--brand)]"
+                    />
+                    Muito sensível
+                  </label>
+                  <button
+                    onClick={() => removeSilences(silences)}
+                    disabled={silences.every((s) => s.status !== "pending")}
+                    className="rounded-lg bg-[var(--brand)] px-3 py-1.5 text-[11px] font-semibold text-white disabled:opacity-40"
+                  >
+                    Remover todos
+                  </button>
+                  <button
+                    onClick={() => {
+                      setSilenceOpen(false);
+                      setSilences([]);
+                    }}
+                    className="rounded-lg border border-[var(--border)] px-3 py-1.5 text-[11px] font-semibold"
+                  >
+                    Fechar
+                  </button>
+                </div>
+                <div className="flex max-h-20 flex-wrap gap-1.5 overflow-y-auto">
+                  {silences.map((s) => (
+                    <span
+                      key={s.id}
+                      className={cn(
+                        "inline-flex items-center gap-1 rounded-md border px-2 py-1 text-[11px] tabular-nums",
+                        s.status === "pending"
+                          ? "border-[var(--brand)]/50 text-[var(--foreground)]"
+                          : "border-white/10 text-[var(--muted-foreground)] line-through",
+                      )}
+                    >
+                      {short(s.start)} – {short(s.end)}
+                      <button
+                        title="Remover este trecho"
+                        onClick={() => removeSilences([s])}
+                        className="text-[var(--brand)]"
+                      >
+                        <Check className="h-3 w-3" />
+                      </button>
+                      <button
+                        title="Ignorar"
+                        onClick={() =>
+                          setSilences((cur) =>
+                            cur.map((m) => (m.id === s.id ? { ...m, status: "ignored" } : m)),
+                          )
+                        }
+                        className="text-[var(--muted-foreground)]"
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+
+
             <div
               ref={lanesRef}
               onPointerMove={onLanesPointerMove}
