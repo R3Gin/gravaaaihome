@@ -12,17 +12,20 @@ import {
 import {
   AudioLines,
   Captions,
+  Check,
   Copy,
   Crop,
   Download,
-  FileText,
+  Droplets,
   FlipHorizontal2,
+  Focus,
   Image as ImageIcon,
   Loader2,
   Maximize2,
   Minus,
   MoreHorizontal,
   MousePointer2,
+  Move,
   Music,
   Pause,
   Play,
@@ -31,8 +34,6 @@ import {
   RotateCcw,
   Scissors,
   Shapes,
-  SlidersHorizontal,
-  Sparkles,
   SplitSquareHorizontal,
   Trash2,
   Type,
@@ -42,15 +43,18 @@ import {
   Volume2,
   VolumeX,
   Wand2,
+  X,
   ZoomIn,
   ZoomOut,
 } from "lucide-react";
 import {
   exportTimeline,
+  type BlurRegion,
   type TimelineClip,
   type TransitionKind,
   type ZoomKey,
 } from "@/lib/ffmpeg-convert";
+import { detectSilences, detectSpeechBlocks, type Segment } from "@/lib/audio-tools";
 import { takeEditorHandoff } from "@/lib/editor-handoff";
 import { cn } from "@/lib/utils";
 
