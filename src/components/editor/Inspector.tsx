@@ -287,25 +287,10 @@ export function Inspector() {
                 }}
               />
             </Row>
-            <AudioSection clipId={clip.id} />
-            <Row label="Transição de entrada">
-              <div className="flex gap-1.5">
-                {(["none", "fade", "slide"] as const).map((k) => (
-                  <button
-                    key={k}
-                    onClick={() => updateClip(clip.id, { transition: k })}
-                    className={cn(
-                      "flex-1 rounded-md border px-2 py-1.5 text-[11px] font-semibold",
-                      (clip.transition ?? "none") === k
-                        ? "border-[var(--brand)] bg-[var(--brand)]/15 text-[var(--brand)]"
-                        : "border-[var(--border)] text-[var(--muted-foreground)]",
-                    )}
-                  >
-                    {k === "none" ? "Corte" : k === "fade" ? "Fade" : "Slide"}
-                  </button>
-                ))}
-              </div>
-            </Row>
+            <p className="rounded-lg border border-[var(--border)] p-3 text-[10px] leading-relaxed text-[var(--muted-foreground)]">
+              Volume, redução de ruído e fades ficam no módulo <strong>Áudio</strong>; efeitos de
+              troca entre clipes, no módulo <strong>Transições</strong> (sidebar esquerda).
+            </p>
             <div className="space-y-2 rounded-lg border border-[var(--border)] p-3">
               <div className="flex items-center justify-between">
                 <span className="text-[11px] font-semibold">Zoom com keyframes</span>
