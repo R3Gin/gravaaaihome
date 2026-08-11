@@ -1095,15 +1095,16 @@ export function VideoEditor() {
         </div>
       ) : null}
 
-      <div className="flex min-h-0 flex-1">
+      <div className="flex min-h-0 flex-1 overflow-hidden">
         {/* ---------- 2. SIDEBAR ESQUERDA ---------- */}
-        <nav className="flex w-16 shrink-0 flex-col items-center gap-1 border-r border-[var(--border)] bg-black/30 py-2">
+        <nav className="flex w-16 shrink-0 flex-col items-center gap-1 overflow-y-auto border-r border-[var(--border)] bg-black/30 py-2">
           {PANELS.map((p) => (
             <button
               key={p.id}
+              title={p.label}
               onClick={() => setPanel((cur) => (cur === p.id ? null : p.id))}
               className={cn(
-                "flex w-14 flex-col items-center gap-1 rounded-lg py-2 text-[10px] font-medium transition-colors",
+                "flex w-14 shrink-0 flex-col items-center gap-1 rounded-lg py-2 text-[10px] font-medium transition-colors",
                 panel === p.id
                   ? "bg-[var(--brand)]/15 text-[var(--brand)]"
                   : "text-[var(--muted-foreground)] hover:bg-[var(--surface-2)] hover:text-[var(--foreground)]",
@@ -1115,37 +1116,39 @@ export function VideoEditor() {
           ))}
         </nav>
 
-        {panel ? (
-          <aside className="w-72 shrink-0 overflow-y-auto border-r border-[var(--border)] bg-[var(--surface)] p-3">
-            <SidePanel
-              panel={panel}
-              hasMedia={hasMedia}
-              fileName={fileName}
-              duration={duration}
-              thumb={thumbs[0]}
-              onUpload={() => inputRef.current?.click()}
-              onDropFile={onDrop}
-              onAddText={addText}
-              onApplyFilters={(f) => updateSelectedClip({ filters: f })}
-              onApplyTransition={(t) => updateSelectedClip({ transition: t })}
-              selectedClip={selectedClip}
-              transcript={transcript}
-              setTranscript={setTranscript}
-              time={time}
-            />
-          </aside>
-        ) : null}
-
         {/* ---------- 3. PREVIEW + 5. TIMELINE ---------- */}
-        <div className="flex min-w-0 flex-1 flex-col">
+        <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
           {error ? (
-            <div className="border-b border-[var(--brand)]/40 bg-[var(--brand)]/10 px-4 py-2 text-xs text-[var(--brand)]">
+            <div className="shrink-0 truncate border-b border-[var(--brand)]/40 bg-[var(--brand)]/10 px-4 py-2 text-xs text-[var(--brand)]">
               {error}
             </div>
           ) : null}
 
-          <section className="relative flex min-h-0 flex-1 items-center justify-center bg-black/40 p-4">
-            <div className="absolute left-4 top-4 z-10 flex items-center gap-1 rounded-lg border border-[var(--border)] bg-black/60 p-1">
+          <div className="relative flex min-h-0 min-w-0 flex-1 overflow-hidden">
+            {panel ? (
+              <aside className="absolute inset-y-0 left-0 z-30 w-64 overflow-y-auto border-r border-[var(--border)] bg-[var(--surface)] p-3 shadow-2xl">
+                <SidePanel
+                  panel={panel}
+                  hasMedia={hasMedia}
+                  fileName={fileName}
+                  duration={duration}
+                  thumb={thumbs[0]}
+                  onUpload={() => inputRef.current?.click()}
+                  onDropFile={onDrop}
+                  onAddText={addText}
+                  onApplyFilters={(f) => updateSelectedClip({ filters: f })}
+                  onApplyTransition={(t) => updateSelectedClip({ transition: t })}
+                  selectedClip={selectedClip}
+                  transcript={transcript}
+                  setTranscript={setTranscript}
+                  time={time}
+                />
+              </aside>
+            ) : null}
+
+            <section className="relative flex min-h-0 min-w-0 flex-1 items-center justify-center overflow-hidden bg-black/40 p-4">
+            <div className="absolute right-4 top-4 z-10 flex items-center gap-1 rounded-lg border border-[var(--border)] bg-black/60 p-1">
+
               {RATIOS.map((r) => (
                 <button
                   key={r.id}
