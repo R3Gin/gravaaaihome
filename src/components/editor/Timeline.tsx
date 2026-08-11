@@ -687,7 +687,14 @@ export function Timeline() {
                   </div>
                   {selectedClip?.trackId === track.id
                     ? kfRows.map((p) => (
-                        <KeyframeLane key={p.key} clip={selectedClip} prop={p} onMenu={setMenu} />
+                        <KeyframeLane
+                          key={p.key}
+                          clip={selectedClip}
+                          prop={p}
+                          onMenu={setMenu}
+                          onSpeed={setSpeedTarget}
+                        />
+
                       ))
                     : null}
                 </div>
