@@ -225,6 +225,41 @@ export function Preview({ videoRef }: Props) {
       }
     : undefined;
 
+  /* --- transição de entrada do clipe atual (aproximação visual no preview) --- */
+  const transitionStyle = (() => {
+    const clip = rawVideoClip;
+    const kind = clip?.transition ?? "none";
+    if (!clip || kind === "none") return undefined;
+    const d = Math.max(0.1, Math.min(clip.transitionDuration ?? 0.5, clip.duration));
+    const p = (currentTime - clip.startTime) / d;
+    if (p < 0 || p > 1) return undefined;
+    const dir = clip.transitionDir ?? "left";
+    const off = (1 - p) * 100;
+    if (kind === "fade") return { opacity: p };
+    if (kind === "zoom") return { opacity: p, transform: `scale(${0.7 + 0.3 * p})` };
+    if (kind === "slide") {
+      const t =
+        dir === "right"
+          ? `translateX(${-off}%)`
+          : dir === "up"
+            ? `translateY(${off}%)`
+            : dir === "down"
+              ? `translateY(${-off}%)`
+              : `translateX(${off}%)`;
+      return { transform: t };
+    }
+    // wipe
+    const inset =
+      dir === "right"
+        ? `0 0 0 ${off}%`
+        : dir === "up"
+          ? `${off}% 0 0 0`
+          : dir === "down"
+            ? `0 0 ${off}% 0`
+            : `0 ${off}% 0 0`;
+    return { clipPath: `inset(${inset})` };
+  })();
+
   const ratio = ASPECTS.find((a) => a.id === aspect)?.ratio ?? 16 / 9;
 
   return (
