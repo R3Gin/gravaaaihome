@@ -4,6 +4,7 @@ import { Toggle } from "./Toggle";
 import { convertWebmToMp4, fixWebmSeekable, remuxMp4FastStart } from "@/lib/ffmpeg-convert";
 import { cn } from "@/lib/utils";
 import { setEditorHandoff } from "@/lib/editor-handoff";
+import { setGifHandoff } from "@/lib/gif-handoff";
 import { useNavigate } from "@tanstack/react-router";
 import {
   CameraPipBubble,
@@ -38,6 +39,18 @@ function DownloadIcon() {
     </svg>
   );
 }
+function GifIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-4 w-4" aria-hidden="true">
+      <rect x="2" y="4" width="20" height="16" rx="2" />
+      <path d="M11 9.5A2.5 2.5 0 1 0 11 15h1v-2" />
+      <path d="M15 9v6" />
+      <path d="M18 15V9h3" />
+      <path d="M18 12h2" />
+    </svg>
+  );
+}
+
 function ScissorsIcon() {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4">
@@ -706,6 +719,13 @@ export function ScreenRecorder() {
     void navigate({ to: "/mosaicos/editor" });
   }, [downloadExt, navigate]);
 
+  const sendToGif = useCallback(() => {
+    const finalBlob = downloadBlobRef.current;
+    if (!finalBlob) return;
+    setGifHandoff(finalBlob, `gravaai.${downloadExt}`);
+    void navigate({ to: "/mosaicos/video-para-gif" });
+  }, [downloadExt, navigate]);
+
 
   const isRecording = status === "recording";
   const isConverting = status === "converting";
@@ -923,6 +943,11 @@ export function ScreenRecorder() {
             onClick={sendToEditor}
           >
             Enviar para o editor
+          </ActionButton>
+        ) : null}
+        {downloadUrl && !isConverting ? (
+          <ActionButton tone="neutral" icon={<GifIcon />} onClick={sendToGif}>
+            Enviar para GIF
           </ActionButton>
         ) : null}
       </div>

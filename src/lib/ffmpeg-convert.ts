@@ -515,3 +515,76 @@ export async function exportTimeline(
     }
   }
 }
+
+export type GifQuality = "leve" | "media" | "alta";
+
+const GIF_PRESETS: Record<GifQuality, { width: number; fps: number }> = {
+  leve: { width: 320, fps: 8 },
+  media: { width: 480, fps: 12 },
+  alta: { width: 640, fps: 15 },
+};
+
+/**
+ * Gera um GIF animado de um trecho do vídeo, 100% local (ffmpeg.wasm),
+ * usando palettegen/paletteuse em duas passadas para boa qualidade de cor.
+ */
+export async function videoToGif(
+  source: Blob,
+  opts: {
+    start: number;
+    end: number;
+    speed: number;
+    quality: GifQuality;
+  },
+  onProgress?: (ratio: number) => void,
+): Promise<Blob> {
+  const ff = await getFFmpeg();
+  const { width, fps } = GIF_PRESETS[opts.quality];
+  const duration = Math.max(0.1, opts.end - opts.start);
+  const speed = opts.speed > 0 ? opts.speed : 1;
+
+  let phase = 0; // 0 = palette, 1 = gif
+  const progressHandler = ({ progress }: { progress: number }) => {
+    const p = Math.min(1, Math.max(0, progress));
+    onProgress?.(phase === 0 ? p * 0.3 : 0.3 + p * 0.7);
+  };
+  ff.on("progress", progressHandler);
+
+  const inputName = "gif-input";
+  try {
+    await ff.writeFile(inputName, await fetchFile(source));
+    const chain = `fps=${fps},scale=${width}:-1:flags=lanczos,setpts=PTS/${speed.toFixed(3)}`;
+
+    await ff.exec([
+      "-y",
+      "-ss", opts.start.toFixed(3),
+      "-t", duration.toFixed(3),
+      "-i", inputName,
+      "-vf", `${chain},palettegen=stats_mode=diff`,
+      "gif-palette.png",
+    ]);
+
+    phase = 1;
+    await ff.exec([
+      "-y",
+      "-ss", opts.start.toFixed(3),
+      "-t", duration.toFixed(3),
+      "-i", inputName,
+      "-i", "gif-palette.png",
+      "-lavfi", `${chain}[x];[x][1:v]paletteuse=dither=bayer:bayer_scale=3`,
+      "-loop", "0",
+      "gif-output.gif",
+    ]);
+
+    const data = (await ff.readFile("gif-output.gif")) as Uint8Array;
+    const buf = new ArrayBuffer(data.byteLength);
+    new Uint8Array(buf).set(data);
+    onProgress?.(1);
+    return new Blob([buf], { type: "image/gif" });
+  } finally {
+    ff.off("progress", progressHandler);
+    for (const f of [inputName, "gif-palette.png", "gif-output.gif"]) {
+      try { await ff.deleteFile(f); } catch { /* ignore */ }
+    }
+  }
+}
