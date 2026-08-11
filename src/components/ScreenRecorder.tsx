@@ -801,8 +801,8 @@ export function ScreenRecorder() {
         onToggleScreenAudio={toggleScreenAudioMute}
         onToggleMic={toggleMicMute}
         onToggleCamera={toggleCameraFromPanel}
-        penOn={drawing.active}
-        onTogglePen={() => drawing.setActive(!drawing.active)}
+        drawing={drawing}
+
       />
       {/* Preview */}
       <div
