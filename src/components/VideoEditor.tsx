@@ -2132,7 +2132,7 @@ export function VideoEditor() {
         </div>
 
         {/* ---------- 4. PAINEL DIREITO ---------- */}
-        {selectedClip || selectedText ? (
+        {selectedClip || selectedText || selectedShape ? (
           <aside className="w-72 shrink-0 overflow-y-auto overflow-x-hidden border-l border-[var(--border)] bg-[var(--surface)] p-4">
             {selectedClip ? (
               <>
@@ -2140,6 +2140,7 @@ export function VideoEditor() {
                   {(
                     [
                       ["basic", "Básico"],
+                      ["audio", "Áudio"],
                       ["speed", "Velocidade"],
                     ] as const
                   ).map(([id, label]) => (
