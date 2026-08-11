@@ -318,6 +318,7 @@ export const useEditor = create<EditorState & EditorActions>((set, get) => {
     future: [],
     sourceBlob: null,
     silences: [],
+    removedRanges: [],
     captionStyle: DEFAULT_CAPTION_STYLE,
     kfExpanded: "none",
     selectedKeyframes: [],
