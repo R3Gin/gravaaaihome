@@ -878,52 +878,32 @@ export function ScreenRecorder() {
           checked={micAudio}
           onChange={handleMicToggle}
         />
-        <Toggle
-          label="Câmera"
-          hint="Mostra sua webcam em uma bolha sobre a gravação."
-          checked={camera.active}
-          onChange={() => { camera.toggle().catch(() => {}); }}
-        />
+        <div className="relative">
+          <Toggle
+            label="Câmera"
+            hint="Mostra sua webcam em uma bolha sobre a gravação."
+            checked={camera.active}
+            onChange={() => { camera.toggle().catch(() => {}); }}
+          />
+          <button
+            type="button"
+            title="Configurar bolha da webcam"
+            aria-label="Configurar bolha da webcam"
+            onClick={() => setCameraSettingsOpen(true)}
+            className="absolute right-2 top-2 grid h-7 w-7 place-items-center rounded-md border border-white/10 bg-white/[0.04] text-white/70 transition hover:border-[var(--brand)]/60 hover:text-[var(--brand)]"
+          >
+            <GearIcon />
+          </button>
+        </div>
       </div>
 
-      {/* Controles adicionais da câmera quando ligada */}
-      {camera.active && (
-        <div className="flex flex-wrap items-center gap-3 rounded-lg border border-white/10 bg-white/[0.02] px-3 py-2">
-          <span className="text-xs text-white/50">
-            Arraste a bolha no preview para reposicionar.
-          </span>
-          <div className="ml-auto flex flex-wrap items-center gap-2">
-            <span className="text-xs text-white/60">Fundo:</span>
-            {(["none", "blur", "image"] as const).map((m) => (
-              <Button
-                key={m}
-                type="button"
-                size="sm"
-                variant={camera.effect === m ? "default" : "secondary"}
-                onClick={() => camera.setEffect(m)}
-              >
-                {m === "none" ? "Sem efeito" : m === "blur" ? "Desfocar" : "Imagem"}
-              </Button>
-            ))}
-            {camera.effect === "image" && (
-              <label className="cursor-pointer text-xs text-white/70 underline">
-                {camera.bgImageUrl ? "Trocar imagem" : "Selecionar imagem"}
-                <input
-                  type="file"
-                  accept="image/*"
-                  className="hidden"
-                  onChange={(e) => {
-                    const f = e.target.files?.[0];
-                    if (!f) return;
-                    const url = URL.createObjectURL(f);
-                    camera.setBgImageUrl(url);
-                  }}
-                />
-              </label>
-            )}
-          </div>
-        </div>
-      )}
+      <CameraSettingsDialog
+        open={cameraSettingsOpen}
+        onOpenChange={setCameraSettingsOpen}
+        controller={camera}
+        containerRef={previewContainerRef}
+      />
+
 
       {/* Actions */}
       <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap">
