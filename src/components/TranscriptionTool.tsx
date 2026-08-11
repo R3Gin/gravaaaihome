@@ -14,6 +14,7 @@ import { toast } from "sonner";
 import { transcribe, type CaptionSegment } from "@/lib/captions";
 import { takeTranscriptHandoff } from "@/lib/transcript-handoff";
 import { summarizeTranscript } from "@/lib/summarize.functions";
+import { downloadTranscriptPdf } from "@/lib/transcript-pdf";
 
 const MAX_SECONDS = 15 * 60;
 
@@ -175,6 +176,14 @@ export function TranscriptionTool() {
     if (summary) parts.push("", "RESUMO", "", summary);
     downloadText(`${baseName}-completo.txt`, parts.join("\n"));
   }, [baseName, fullText, summary]);
+
+  const downloadPdf = useCallback(() => {
+    downloadTranscriptPdf(`${baseName}.pdf`, {
+      title: "Transcrição e Resumo",
+      summary,
+      segments: (segments ?? []).map((s) => ({ start: s.start, text: s.text })),
+    });
+  }, [baseName, segments, summary]);
 
   return (
     <div className="min-h-screen bg-[var(--background)] text-[var(--foreground)]">
@@ -349,7 +358,13 @@ export function TranscriptionTool() {
                 onClick={downloadAll}
                 className="inline-flex items-center gap-2 rounded-lg bg-[var(--brand)] px-4 py-2 text-sm font-semibold text-white"
               >
-                <FileDown className="h-4 w-4" /> Baixar tudo
+                <FileDown className="h-4 w-4" /> Baixar tudo (.txt)
+              </button>
+              <button
+                onClick={downloadPdf}
+                className="inline-flex items-center gap-2 rounded-lg bg-[var(--brand)] px-4 py-2 text-sm font-semibold text-white"
+              >
+                <FileDown className="h-4 w-4" /> Baixar PDF
               </button>
               <button
                 onClick={() => {
