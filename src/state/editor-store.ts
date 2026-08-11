@@ -255,6 +255,9 @@ export const useEditor = create<EditorState & EditorActions>((set, get) => {
     sourceBlob: null,
     silences: [],
     captionStyle: DEFAULT_CAPTION_STYLE,
+    kfExpanded: "none",
+    selectedKeyframes: [],
+
 
     loadSource: (url, duration, size, name) => {
       const tracks = emptyTracks();
