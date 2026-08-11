@@ -317,6 +317,12 @@ export function VideoEditor() {
 
               {panel === "captions" ? <CaptionsPanel /> : null}
 
+              {panel === "audio" ? <AudioPanel /> : null}
+
+              {panel === "transitions" ? <TransitionsPanel /> : null}
+
+
+
               {panel === "text" ? (
                 <button
                   onClick={() => addTextClip()}
