@@ -605,6 +605,118 @@ export const useEditor = create<EditorState & EditorActions>((set, get) => {
     clearCaptions: () =>
       write((tracks) => mapTracks(tracks, (clips) => clips.filter((c) => !c.isCaption))),
 
+    /* ---------------------- keyframes ---------------------- */
+
+    togglePropertyAnimation: (clipId, prop) => {
+      const clip = findClip(get().tracks, clipId);
+      const meta = propByKey(prop);
+      if (!clip || !meta) return;
+      const map: KeyframeMap = { ...(clip.keyframes ?? {}) };
+      if ((map[prop]?.length ?? 0) > 0) {
+        // desliga: congela o valor atual e remove todos os keyframes
+        const local = get().currentTime - clip.startTime;
+        const frozen = (map[prop] ?? [])[0] ? meta.get(clip) : meta.get(clip);
+        delete map[prop];
+        get().updateClip(clipId, { keyframes: map, ...meta.set(frozen) });
+        void local;
+      } else {
+        const local = Math.max(0, Math.min(clip.duration, get().currentTime - clip.startTime));
+        map[prop] = [newKeyframe(local, meta.get(clip))];
+        get().updateClip(clipId, { keyframes: map });
+      }
+      set({ selectedKeyframes: [] });
+    },
+
+    setPropValue: (clipId, prop, value, live) => {
+      const clip = findClip(get().tracks, clipId);
+      const meta = propByKey(prop);
+      if (!clip || !meta) return;
+      const apply = live ? get().updateClipLive : get().updateClip;
+      const keys = clip.keyframes?.[prop];
+      if (!keys || keys.length === 0) {
+        apply(clipId, meta.set(value));
+        return;
+      }
+      const local = Math.max(0, Math.min(clip.duration, get().currentTime - clip.startTime));
+      const map: KeyframeMap = { ...(clip.keyframes ?? {}), [prop]: upsertKeyframe(keys, local, value) };
+      apply(clipId, { keyframes: map, ...meta.set(value) });
+    },
+
+    moveKeyframes: (clipId, moves, live) => {
+      const clip = findClip(get().tracks, clipId);
+      if (!clip || moves.length === 0) return;
+      const map: KeyframeMap = { ...(clip.keyframes ?? {}) };
+      for (const m of moves) {
+        const keys = map[m.prop];
+        if (!keys) continue;
+        map[m.prop] = sortKeys(
+          keys.map((k) =>
+            k.id === m.kfId
+              ? { ...k, time: Math.max(0, Math.min(clip.duration, m.time)) }
+              : k,
+          ),
+        );
+      }
+      (live ? get().updateClipLive : get().updateClip)(clipId, { keyframes: map });
+    },
+
+    setKeyframeEasing: (clipId, prop, kfId, easing) => {
+      const clip = findClip(get().tracks, clipId);
+      if (!clip?.keyframes?.[prop]) return;
+      const map: KeyframeMap = {
+        ...clip.keyframes,
+        [prop]: clip.keyframes[prop].map((k) => (k.id === kfId ? { ...k, easing } : k)),
+      };
+      get().updateClip(clipId, { keyframes: map });
+    },
+
+    removeKeyframe: (clipId, prop, kfId) => {
+      const clip = findClip(get().tracks, clipId);
+      if (!clip?.keyframes?.[prop]) return;
+      const map: KeyframeMap = { ...clip.keyframes };
+      const rest = map[prop].filter((k) => k.id !== kfId);
+      if (rest.length === 0) delete map[prop];
+      else map[prop] = rest;
+      get().updateClip(clipId, { keyframes: map });
+      set((s) => ({ selectedKeyframes: s.selectedKeyframes.filter((k) => k.kfId !== kfId) }));
+    },
+
+    removeSelectedKeyframes: () => {
+      const { selectedClipId, selectedKeyframes } = get();
+      const clip = findClip(get().tracks, selectedClipId);
+      if (!clip || selectedKeyframes.length === 0) return;
+      const map: KeyframeMap = { ...(clip.keyframes ?? {}) };
+      for (const sel of selectedKeyframes) {
+        const keys = map[sel.prop];
+        if (!keys) continue;
+        const rest = keys.filter((k) => k.id !== sel.kfId);
+        if (rest.length === 0) delete map[sel.prop];
+        else map[sel.prop] = rest;
+      }
+      get().updateClip(clip.id, { keyframes: map });
+      set({ selectedKeyframes: [] });
+    },
+
+    selectKeyframe: (prop, kfId, additive) =>
+      set((s) => {
+        const has = s.selectedKeyframes.some((k) => k.kfId === kfId);
+        if (!additive) return { selectedKeyframes: [{ prop, kfId }] };
+        return {
+          selectedKeyframes: has
+            ? s.selectedKeyframes.filter((k) => k.kfId !== kfId)
+            : [...s.selectedKeyframes, { prop, kfId }],
+        };
+      }),
+
+    clearKeyframeSelection: () => set({ selectedKeyframes: [] }),
+
+    cycleKeyframeRows: (all) =>
+      set((s) => {
+        const target = all ? "all" : "animated";
+        return { kfExpanded: s.kfExpanded === target ? "none" : target };
+      }),
+
+
     undo: () =>
       set((s) => {
         const prev = s.past[s.past.length - 1];
