@@ -1013,7 +1013,7 @@ export function VideoEditor() {
       <input ref={inputRef} type="file" accept="video/mp4,video/*" className="hidden" onChange={onPick} />
 
       {/* ---------- 1. BARRA SUPERIOR ---------- */}
-      <header className="flex h-14 shrink-0 items-center gap-3 border-b border-[var(--border)] bg-black/40 px-3">
+      <header className="flex h-14 shrink-0 flex-nowrap items-center gap-2 overflow-hidden border-b border-[var(--border)] bg-black/40 px-3">
         <div className="flex min-w-0 flex-1 items-center gap-2">
           <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-[var(--brand)]/15 text-[var(--brand)]">
             <Scissors className="h-4 w-4" />
@@ -1025,25 +1025,25 @@ export function VideoEditor() {
               onChange={(e) => setProjectName(e.target.value)}
               onBlur={() => setEditingName(false)}
               onKeyDown={(e) => e.key === "Enter" && setEditingName(false)}
-              className="w-52 rounded-md border border-[var(--brand)]/60 bg-[var(--surface-2)] px-2 py-1 text-sm font-semibold outline-none"
+              className="w-40 min-w-0 rounded-md border border-[var(--brand)]/60 bg-[var(--surface-2)] px-2 py-1 text-sm font-semibold outline-none"
             />
           ) : (
             <button
               onClick={() => setEditingName(true)}
               title="Clique para renomear"
-              className="truncate rounded-md px-2 py-1 text-sm font-semibold hover:bg-[var(--surface-2)]"
+              className="min-w-0 truncate rounded-md px-2 py-1 text-sm font-semibold hover:bg-[var(--surface-2)]"
             >
               {projectName}
             </button>
           )}
           {fileName ? (
-            <span className="hidden truncate text-xs text-[var(--muted-foreground)] lg:block">
+            <span className="hidden min-w-0 truncate text-xs text-[var(--muted-foreground)] xl:block">
               {fileName}
             </span>
           ) : null}
         </div>
 
-        <div className="flex items-center gap-1.5">
+        <div className="flex shrink-0 items-center gap-1.5">
           <IconBtn label="Reproduzir/Pausar" onClick={togglePlay} disabled={!hasMedia}>
             {playing ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
           </IconBtn>
@@ -1066,25 +1066,31 @@ export function VideoEditor() {
           </IconBtn>
         </div>
 
-        <div className="flex flex-1 items-center justify-end gap-2">
+        <div className="flex shrink-0 items-center gap-2">
           {resultUrl ? (
             <button
               onClick={downloadResult}
-              className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-[var(--border)] bg-[var(--surface-2)] px-3 text-xs font-semibold"
+              title="Baixar MP4"
+              className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-lg border border-[var(--border)] bg-[var(--surface-2)] px-3 text-xs font-semibold"
             >
-              <Download className="h-4 w-4" /> Baixar MP4
+              <Download className="h-4 w-4" />
+              <span className="hidden lg:inline">Baixar MP4</span>
             </button>
           ) : null}
           <button
             onClick={runExport}
             disabled={exporting || clips.length === 0}
-            className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-[var(--brand)] px-4 text-sm font-semibold text-white transition-transform active:scale-[0.96] disabled:opacity-50"
+            title="Exportar MP4"
+            className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-lg bg-[var(--brand)] px-3 text-sm font-semibold text-white transition-transform active:scale-[0.96] disabled:opacity-50"
           >
             {exporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
-            {exporting ? `Exportando… ${Math.round(progress * 100)}%` : "Exportar MP4"}
+            <span className="hidden whitespace-nowrap lg:inline">
+              {exporting ? `Exportando… ${Math.round(progress * 100)}%` : "Exportar MP4"}
+            </span>
           </button>
         </div>
       </header>
+
 
       {exporting ? (
         <div className="h-1 w-full bg-[var(--surface-2)]">
