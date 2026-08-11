@@ -148,9 +148,12 @@ function KeyframeLane({
           <span
             key={k.id}
             data-kf-id={k.id}
-            title={`${prop.label} · ${k.time.toFixed(2)}s · ${k.easing}`}
+            title={`${prop.label} · ${k.time.toFixed(2)}s · ${k.easing}\nDuplo clique: velocidade do quadro-chave · Alt+arrastar: tangentes`}
             onPointerDown={startDrag(k.id)}
-            onDoubleClick={(e) => onMenu({ x: e.clientX, y: e.clientY, prop: prop.key, kfId: k.id })}
+            onDoubleClick={(e) => {
+              e.stopPropagation();
+              onSpeed({ prop: prop.key, kfId: k.id });
+            }}
             onContextMenu={(e) => {
               e.preventDefault();
               onMenu({ x: e.clientX, y: e.clientY, prop: prop.key, kfId: k.id });
@@ -161,7 +164,9 @@ function KeyframeLane({
                 ? "border-white bg-white"
                 : "border-[var(--brand)] bg-[var(--brand)]",
               k.easing === "hold" && "rounded-none",
+              k.easing === "custom" && "ring-1 ring-sky-300",
             )}
+
             style={{ left: (clip.startTime + k.time) * zoom }}
           />
         );
