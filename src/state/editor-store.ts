@@ -18,6 +18,8 @@ import {
   type PresetConfig,
   type PresetId,
 } from "@/lib/text-presets";
+import type { CaptionAnim } from "@/lib/caption-styles";
+
 
 
 
