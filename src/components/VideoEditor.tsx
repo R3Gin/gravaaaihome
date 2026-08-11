@@ -2246,6 +2246,37 @@ export function VideoEditor() {
                   </div>
                 ) : null}
 
+                {inspectorTab === "audio" ? (
+                  <div className="space-y-3">
+                    <label className="flex items-center justify-between gap-2 rounded-lg border border-[var(--border)] bg-[var(--surface-2)] p-2 text-xs font-semibold">
+                      Reduzir ruído de fundo
+                      <input
+                        type="checkbox"
+                        checked={!!selectedClip.denoise}
+                        onChange={(e) => updateSelectedClip({ denoise: e.target.checked })}
+                        className="h-4 w-4 accent-[var(--brand)]"
+                      />
+                    </label>
+                    <p className="text-[11px] text-[var(--muted-foreground)]">
+                      Remove chiado, ventilador e ruídos constantes na exportação deste clipe.
+                    </p>
+                    <button
+                      disabled={!selectedClip.denoise}
+                      onClick={() => setBypassDenoise((b) => !b)}
+                      className="w-full rounded-lg border border-[var(--border)] px-3 py-2 text-xs font-semibold disabled:opacity-40"
+                    >
+                      {bypassDenoise ? "Ouvindo: antes (original)" : "Ouvindo: depois (com redução)"}
+                    </button>
+                    <Slider
+                      label="Volume"
+                      value={selectedClip.volume}
+                      min={0}
+                      max={1.5}
+                      step={0.05}
+                      onChange={(v) => updateSelectedClip({ volume: v }, false)}
+                    />
+                  </div>
+                ) : null}
 
                 {inspectorTab === "speed" ? (
                   <div className="space-y-3">
