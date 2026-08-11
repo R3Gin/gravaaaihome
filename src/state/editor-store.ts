@@ -181,13 +181,15 @@ const TEXT_TRACK = "track-text";
 const AUDIO_TRACK = "track-audio";
 
 function emptyTracks(): Track[] {
+  /* Ordem padrão: o áudio (waveform) fica logo abaixo do vídeo. */
   return [
     { id: VIDEO_TRACK, type: "video", label: "Vídeo", clips: [] },
+    { id: AUDIO_TRACK, type: "audio", label: "Áudio", clips: [] },
     { id: OVERLAY_TRACK, type: "overlay", label: "Efeitos", clips: [] },
     { id: TEXT_TRACK, type: "text", label: "Texto", clips: [] },
-    { id: AUDIO_TRACK, type: "audio", label: "Áudio", clips: [] },
   ];
 }
+
 
 export function allClips(tracks: Track[]): Clip[] {
   return tracks.flatMap((t) => t.clips);
