@@ -120,6 +120,9 @@ export function buildTranscriptPdf(opts: {
     const lines = doc.splitTextToSize(opts.summary.trim(), CONTENT_W) as string[];
     for (const line of lines) {
       ensure(17);
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(11);
+      doc.setTextColor(...TEXT);
       doc.text(line, M, y);
       y += 17;
     }
@@ -143,7 +146,12 @@ export function buildTranscriptPdf(opts: {
     const indent = 46;
     const lines = doc.splitTextToSize(text, CONTENT_W - indent) as string[];
     for (let i = 0; i < lines.length; i++) {
-      if (i > 0) ensure(16);
+      if (i > 0) {
+        ensure(16);
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(11);
+        doc.setTextColor(...TEXT);
+      }
       doc.text(lines[i], M + indent, y);
       y += 16;
     }
