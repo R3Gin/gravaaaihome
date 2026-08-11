@@ -1243,10 +1243,12 @@ export function VideoEditor() {
               </div>
             )}
           </section>
+          </div>
 
           {/* ---------- 5. TIMELINE ---------- */}
-          <section className="flex h-[340px] shrink-0 flex-col border-t border-[var(--border)] bg-[var(--surface)]">
-            <div className="flex items-center gap-1 border-b border-[var(--border)] px-2 py-1.5">
+          <section className="flex h-[260px] shrink-0 flex-col overflow-hidden border-t border-[var(--border)] bg-[var(--surface)] xl:h-[320px]">
+            <div className="flex shrink-0 items-center gap-1 overflow-x-auto border-b border-[var(--border)] px-2 py-1.5">
+
               <IconBtn label="Reproduzir/Pausar" onClick={togglePlay} disabled={!hasMedia}>
                 {playing ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
               </IconBtn>
