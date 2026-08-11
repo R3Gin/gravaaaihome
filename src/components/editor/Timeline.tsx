@@ -739,6 +739,15 @@ export function Timeline() {
           ))}
           <button
             onClick={() => {
+              setSpeedTarget({ prop: menu.prop, kfId: menu.kfId });
+              setMenu(null);
+            }}
+            className="mt-1 block w-full border-t border-[var(--border)] px-3 py-1.5 text-left hover:bg-[var(--brand)]/15"
+          >
+            Velocidade do quadro-chave…
+          </button>
+          <button
+            onClick={() => {
               removeKeyframe(selectedClip.id, menu.prop, menu.kfId);
               setMenu(null);
             }}
@@ -748,6 +757,17 @@ export function Timeline() {
           </button>
         </div>
       ) : null}
+
+      {speedTarget && selectedClip ? (
+        <KeyframeSpeedModal
+          clipId={selectedClip.id}
+          prop={speedTarget.prop}
+          kfId={speedTarget.kfId}
+          onClose={() => setSpeedTarget(null)}
+        />
+      ) : null}
+
+
 
       <button className="hidden" onClick={() => cycleKeyframeRows()}>
         {MIN_CLIP}
