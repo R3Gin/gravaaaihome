@@ -352,71 +352,84 @@ export function Preview({ videoRef }: Props) {
             );
           })}
 
+          {/* --- camada de legenda (um único segmento ativo) --- */}
+          {activeCaption
+            ? (() => {
+                const clip = activeCaption;
+                const start = toSeconds(clip.startTime);
+                const dur = Math.max(0.01, toSeconds(clip.duration));
+                const progress = Math.max(0, Math.min(1, (captionTime - start) / dur));
+                const full = clip.textContent ?? "";
+                const cs = captionStyle;
+                const selected = clip.id === selectedClipId;
+                const words =
+                  cs.anim === "typewriter"
+                    ? null
+                    : renderCaptionWords(cs.anim, full, progress, {
+                        color: cs.color,
+                        highlight: cs.highlight,
+                        wordByWord: cs.wordByWord,
+                      });
+                return (
+                  <div
+                    className="pointer-events-none absolute inset-0"
+                    style={{ zIndex: 20 }}
+                    aria-live="polite"
+                  >
+                    <div
+                      onPointerDown={(e) => {
+                        e.stopPropagation();
+                        select(clip.id);
+                        dragRef.current = { id: clip.id, kind: "move" };
+                      }}
+                      className={cn(
+                        "pointer-events-auto absolute -translate-x-1/2 -translate-y-1/2 cursor-move px-3 py-1",
+                        selected && "outline outline-2 outline-[var(--brand)]",
+                      )}
+                      style={{
+                        left: `${(clip.position?.x ?? 0.5) * 100}%`,
+                        top: `${(clip.position?.y ?? 0.85) * 100}%`,
+                        maxWidth: "88%",
+                        opacity: clip.opacity ?? 1,
+                        textAlign: cs.align,
+                        fontFamily: cs.fontFamily,
+                        fontWeight: cs.bold ? 800 : 500,
+                        fontStyle: cs.italic ? "italic" : "normal",
+                        color: cs.color,
+                        fontSize: `${(cs.fontSize / 720) * 100}cqh`,
+                        lineHeight: 1.2,
+                        borderRadius: "0.4em",
+                        background: cs.background
+                          ? withAlpha(cs.highlight, cs.bgOpacity)
+                          : undefined,
+                        WebkitTextStroke: cs.outline ? "0.03em rgba(0,0,0,0.85)" : undefined,
+                        textShadow: cs.outline ? "0 0.04em 0.12em rgba(0,0,0,0.7)" : undefined,
+                      }}
+                    >
+                      {words ? (
+                        <span className="inline-flex flex-wrap justify-center gap-[0.28em]">
+                          {words.map((w, i) => (
+                            <span
+                              key={`${clip.id}-${i}`}
+                              style={{ display: "inline-block", ...w.style }}
+                            >
+                              {w.text}
+                            </span>
+                          ))}
+                        </span>
+                      ) : (
+                        typewriterText(full, progress) || "\u200b"
+                      )}
+                    </div>
+                  </div>
+                );
+              })()
+            : null}
+
           {textClips.map((clip) => {
             const selected = clip.id === selectedClipId;
 
-            if (clip.isCaption) {
-              const progress = Math.max(
-                0,
-                Math.min(1, (currentTime - clip.startTime) / Math.max(0.01, clip.duration)),
-              );
-              const full = clip.textContent ?? "";
-              const cs = captionStyle;
-              const words =
-                cs.anim === "typewriter"
-                  ? null
-                  : renderCaptionWords(cs.anim, full, progress, {
-                      color: cs.color,
-                      highlight: cs.highlight,
-                      wordByWord: cs.wordByWord,
-                    });
-              return (
-                <div
-                  key={clip.id}
-                  onPointerDown={(e) => {
-                    e.stopPropagation();
-                    select(clip.id);
-                    dragRef.current = { id: clip.id, kind: "move" };
-                  }}
-                  className={cn(
-                    "absolute -translate-x-1/2 -translate-y-1/2 cursor-move px-3 py-1",
-                    selected && "outline outline-2 outline-[var(--brand)]",
-                  )}
-                  style={{
-                    left: `${(clip.position?.x ?? 0.5) * 100}%`,
-                    top: `${(clip.position?.y ?? 0.85) * 100}%`,
-                    maxWidth: "88%",
-                    opacity: clip.opacity ?? 1,
-                    textAlign: cs.align,
-                    fontFamily: cs.fontFamily,
-                    fontWeight: cs.bold ? 800 : 500,
-                    fontStyle: cs.italic ? "italic" : "normal",
-                    color: cs.color,
-                    fontSize: `${(cs.fontSize / 720) * 100}cqh`,
-                    lineHeight: 1.2,
-                    borderRadius: "0.4em",
-                    background: cs.background ? withAlpha(cs.highlight, cs.bgOpacity) : undefined,
-                    WebkitTextStroke: cs.outline ? "0.03em rgba(0,0,0,0.85)" : undefined,
-                    textShadow: cs.outline ? "0 0.04em 0.12em rgba(0,0,0,0.7)" : undefined,
-                  }}
-                >
-                  {words ? (
-                    <span className="inline-flex flex-wrap justify-center gap-[0.28em]">
-                      {words.map((w, i) => (
-                        <span
-                          key={`${clip.id}-${i}`}
-                          style={{ display: "inline-block", ...w.style }}
-                        >
-                          {w.text}
-                        </span>
-                      ))}
-                    </span>
-                  ) : (
-                    (typewriterText(full, progress) || "\u200b")
-                  )}
-                </div>
-              );
-            }
+
 
             const reveal = Math.max(0, Math.min(1, clip.reveal ?? 1));
             const mode = clip.revealMode ?? "none";
