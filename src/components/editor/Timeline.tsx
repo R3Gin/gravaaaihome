@@ -142,6 +142,19 @@ function KeyframeLane({
         className="absolute inset-y-0 left-0 border-l-2 border-[var(--brand)]/30"
         style={{ left: clip.startTime * zoom, width: Math.max(4, clip.duration * zoom) }}
       />
+      {/* linhas conectando keyframes consecutivos */}
+      {keys.slice(0, -1).map((k, i) => {
+        const next = keys[i + 1];
+        const x1 = (clip.startTime + k.time) * zoom;
+        const x2 = (clip.startTime + next.time) * zoom;
+        return (
+          <span
+            key={`ln-${k.id}`}
+            className="pointer-events-none absolute top-1/2 h-px bg-[var(--brand)]/60"
+            style={{ left: x1, width: Math.max(0, x2 - x1) }}
+          />
+        );
+      })}
       {keys.map((k) => {
         const isSel = selected.some((s) => s.kfId === k.id);
         return (
