@@ -8,7 +8,17 @@ import {
   type Clip,
 } from "@/state/editor-store";
 import { resolveClip } from "@/lib/keyframes";
+import { renderCaptionWords, typewriterText } from "@/lib/caption-styles";
 import { cn } from "@/lib/utils";
+
+/** #rrggbb + alpha => rgba() */
+function withAlpha(hex: string, alpha: number) {
+  const m = /^#?([\da-f]{6})$/i.exec(hex.trim());
+  if (!m) return hex;
+  const n = parseInt(m[1], 16);
+  return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${alpha})`;
+}
+
 
 const ASPECTS: { id: AspectRatio; label: string; ratio: number }[] = [
   { id: "16:9", label: "16:9", ratio: 16 / 9 },
