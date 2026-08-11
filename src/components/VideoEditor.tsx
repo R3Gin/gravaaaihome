@@ -2357,11 +2357,14 @@ function SidePanel({
   onUpload,
   onDropFile,
   onAddText,
+  onAddShape,
   onApplyFilters,
   onApplyTransition,
   selectedClip,
-  transcript,
-  setTranscript,
+  onGenerateCaptions,
+  captionsBusy,
+  captionStyle,
+  onCaptionStyle,
   time,
 }: {
   panel: PanelId;
@@ -2372,11 +2375,14 @@ function SidePanel({
   onUpload: () => void;
   onDropFile: (e: DragEvent<HTMLDivElement>) => void;
   onAddText: (preset?: Partial<TextLayer>, lane?: "text" | "overlay") => void;
+  onAddShape: (kind: "blur" | "spotlight") => void;
   onApplyFilters: (f: Filters) => void;
   onApplyTransition: (t: TransitionKind) => void;
   selectedClip: Clip | null;
-  transcript: string;
-  setTranscript: (v: string) => void;
+  onGenerateCaptions: () => void;
+  captionsBusy: boolean;
+  captionStyle: { font: string; size: number; color: string; bg: string; y: number };
+  onCaptionStyle: (patch: Partial<{ font: string; size: number; color: string; bg: string; y: number }>) => void;
   time: number;
 }) {
   const title = PANELS.find((p) => p.id === panel)?.label ?? "";
