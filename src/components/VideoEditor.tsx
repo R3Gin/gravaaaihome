@@ -763,6 +763,18 @@ export function VideoEditor() {
       (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
     };
 
+  const onShapePointerDown =
+    (layer: ShapeLayer, edge?: "start" | "end") => (e: ReactPointerEvent<HTMLDivElement>) => {
+      e.stopPropagation();
+      setSelection({ kind: "shape", id: layer.id });
+      commit();
+      const t = timeFromX(e.clientX);
+      dragRef.current = edge
+        ? { kind: "shape-edge", id: layer.id, edge }
+        : { kind: "shape", id: layer.id, grabOffset: t - layer.start };
+      (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    };
+
   const laneUnderPointer = (clientY: number, clientX: number): "text" | "overlay" | null => {
     const el = document.elementFromPoint(clientX, clientY) as HTMLElement | null;
     const lane = el?.closest("[data-lane]") as HTMLElement | null;
@@ -795,6 +807,24 @@ export function VideoEditor() {
           return drag.edge === "start"
             ? { ...l, start: Math.min(Math.max(0, t), l.end - 0.2) }
             : { ...l, end: Math.max(t, l.start + 0.2) };
+        }),
+      );
+    } else if (drag.kind === "shape") {
+      setShapes((cur) =>
+        cur.map((s) => {
+          if (s.id !== drag.id) return s;
+          const len = s.end - s.start;
+          const start = Math.max(0, t - drag.grabOffset);
+          return { ...s, start, end: start + len };
+        }),
+      );
+    } else if (drag.kind === "shape-edge") {
+      setShapes((cur) =>
+        cur.map((s) => {
+          if (s.id !== drag.id) return s;
+          return drag.edge === "start"
+            ? { ...s, start: Math.min(Math.max(0, t), s.end - 0.2) }
+            : { ...s, end: Math.max(t, s.start + 0.2) };
         }),
       );
     } else if (drag.kind === "playhead") {
