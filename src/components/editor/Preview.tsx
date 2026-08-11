@@ -168,7 +168,12 @@ export function Preview({ videoRef }: Props) {
             if (e.target === stageRef.current) select(null);
           }}
           className="relative max-h-full max-w-full overflow-hidden rounded-xl border border-[var(--border)] bg-black shadow-lg"
-          style={{ aspectRatio: String(ratio), width: ratio >= 1 ? "min(100%, 1100px)" : undefined, height: ratio < 1 ? "100%" : undefined }}
+          style={{
+            aspectRatio: String(ratio),
+            containerType: "size",
+            width: ratio >= 1 ? "min(100%, 1100px)" : undefined,
+            height: ratio < 1 ? "100%" : undefined,
+          }}
         >
           {sourceUrl ? (
             <video
