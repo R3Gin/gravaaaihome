@@ -1513,19 +1513,17 @@ export function VideoEditor() {
 
         {/* ---------- 4. PAINEL DIREITO ---------- */}
         {selectedClip || selectedText ? (
-          <aside className="w-80 shrink-0 overflow-y-auto border-l border-[var(--border)] bg-[var(--surface)] p-4">
+          <aside className="w-72 shrink-0 overflow-y-auto overflow-x-hidden border-l border-[var(--border)] bg-[var(--surface)] p-4">
             {selectedClip ? (
               <>
                 <div className="mb-3 flex flex-wrap gap-1">
                   {(
                     [
                       ["basic", "Básico"],
-                      ["bg", "Remover fundo"],
-                      ["audio", "Áudio"],
-                      ["anim", "Animação"],
                       ["speed", "Velocidade"],
                     ] as const
                   ).map(([id, label]) => (
+
                     <button
                       key={id}
                       onClick={() => setInspectorTab(id)}
