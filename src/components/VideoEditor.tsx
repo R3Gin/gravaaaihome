@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
+  AudioLines,
+  Captions,
   Download,
   Loader2,
-  Music,
   Pause,
   Play,
   Redo2,
@@ -16,16 +17,19 @@ import {
 import { Preview } from "@/components/editor/Preview";
 import { Timeline } from "@/components/editor/Timeline";
 import { Inspector } from "@/components/editor/Inspector";
+import { SilencePanel } from "@/components/editor/panels/SilencePanel";
+import { CaptionsPanel } from "@/components/editor/panels/CaptionsPanel";
 import { useEditor } from "@/state/editor-store";
 import { takeEditorHandoff } from "@/lib/editor-handoff";
 import { exportProject } from "@/lib/export-project";
 import { cn } from "@/lib/utils";
 
-type PanelId = "media" | "audio" | "text" | "effects" | null;
+type PanelId = "media" | "silence" | "captions" | "text" | "effects" | null;
 
 const TOOLS: { id: Exclude<PanelId, null>; label: string; icon: typeof Upload }[] = [
   { id: "media", label: "Mídia", icon: Upload },
-  { id: "audio", label: "Áudio", icon: Music },
+  { id: "silence", label: "Silêncio", icon: AudioLines },
+  { id: "captions", label: "Legendas", icon: Captions },
   { id: "text", label: "Texto", icon: Type },
   { id: "effects", label: "Efeitos", icon: Shapes },
 ];
@@ -83,6 +87,7 @@ export function VideoEditor() {
   const redo = useEditor((s) => s.redo);
   const addTextClip = useEditor((s) => s.addTextClip);
   const addOverlayClip = useEditor((s) => s.addOverlayClip);
+  const setStoreBlob = useEditor((s) => s.setSourceBlob);
 
   const load = useCallback(
     async (blob: Blob, name?: string) => {
@@ -93,16 +98,23 @@ export function VideoEditor() {
         return;
       }
       setSourceBlob(blob);
+      setStoreBlob(blob);
       loadSource(meta.url, meta.duration, { width: meta.width, height: meta.height }, name);
       setPanel(null);
     },
-    [loadSource, readMeta],
+    [loadSource, readMeta, setStoreBlob],
   );
 
   useEffect(() => {
     const handoff = takeEditorHandoff();
     if (handoff) void load(handoff.blob, handoff.name.replace(/\.[^.]+$/, ""));
   }, [load]);
+
+  useEffect(() => {
+    const open = (e: Event) => setPanel((e as CustomEvent<PanelId>).detail);
+    window.addEventListener("editor:open-panel", open);
+    return () => window.removeEventListener("editor:open-panel", open);
+  }, []);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -228,7 +240,7 @@ export function VideoEditor() {
 
           {/* drawer sobre o preview */}
           {panel ? (
-            <div className="absolute left-16 top-0 z-40 h-full w-72 border-r border-[var(--border)] bg-[var(--surface-2)] p-4 shadow-xl">
+            <div className="absolute left-16 top-0 z-40 flex h-full w-72 flex-col overflow-y-auto border-r border-[var(--border)] bg-[var(--surface-2)] p-4 shadow-xl">
               <div className="mb-3 flex items-center justify-between">
                 <h2 className="text-xs font-bold uppercase tracking-wide text-[var(--muted-foreground)]">
                   {TOOLS.find((t) => t.id === panel)?.label}
@@ -254,12 +266,9 @@ export function VideoEditor() {
                 </label>
               ) : null}
 
-              {panel === "audio" ? (
-                <p className="text-xs text-[var(--muted-foreground)]">
-                  Ajuste o volume do clipe selecionado no painel direito. Redução de ruído e
-                  cortador de silêncio chegam na próxima etapa.
-                </p>
-              ) : null}
+              {panel === "silence" ? <SilencePanel onClose={() => setPanel(null)} /> : null}
+
+              {panel === "captions" ? <CaptionsPanel /> : null}
 
               {panel === "text" ? (
                 <button
