@@ -146,8 +146,13 @@ export function DrawingCanvas({
     }
   };
 
-  // Mantém o canvas redesenhado quando a lista muda (limpar, borracha etc).
-  if (typeof window !== "undefined") queueMicrotask(repaint);
+  // Mantém o canvas redesenhado quando a lista muda (limpar, borracha, resize).
+  useEffect(() => {
+    repaint();
+    window.addEventListener("resize", repaint);
+    return () => window.removeEventListener("resize", repaint);
+  }, [repaint, strokesRef.current.length, controller.strokeCount, active]);
+
 
   return (
     <canvas
