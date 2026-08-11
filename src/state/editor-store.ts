@@ -752,7 +752,42 @@ export const useEditor = create<EditorState & EditorActions>((set, get) => {
     clearCaptions: () =>
       write((tracks) => mapTracks(tracks, (clips) => clips.filter((c) => !c.isCaption))),
 
+    setTransition: (clipId, patch) => {
+      const clip = findClip(get().tracks, clipId);
+      if (!clip) return;
+      get().updateClip(clipId, {
+        transition: patch.kind ?? clip.transition ?? "none",
+        transitionDuration: Math.max(
+          0.1,
+          Math.min(2, patch.duration ?? clip.transitionDuration ?? DEFAULT_TRANSITION_DURATION),
+        ),
+        transitionDir: patch.dir ?? clip.transitionDir ?? "left",
+      });
+    },
+
     /* ---------------------- keyframes ---------------------- */
+
+    addKeyframeAt: (clipId, prop) => {
+      const clip = findClip(get().tracks, clipId);
+      const meta = propByKey(prop);
+      if (!clip || !meta) return;
+      const local = Math.max(0, Math.min(clip.duration, get().currentTime - clip.startTime));
+      const value = meta.get(resolveClip(clip, get().currentTime));
+      const keys = clip.keyframes?.[prop] ?? [];
+      const map: KeyframeMap = { ...(clip.keyframes ?? {}), [prop]: upsertKeyframe(keys, local, value) };
+      get().updateClip(clipId, { keyframes: map });
+    },
+
+    setKeyframeValue: (clipId, prop, kfId, value, live) => {
+      const clip = findClip(get().tracks, clipId);
+      if (!clip?.keyframes?.[prop]) return;
+      const map: KeyframeMap = {
+        ...clip.keyframes,
+        [prop]: clip.keyframes[prop].map((k) => (k.id === kfId ? { ...k, value } : k)),
+      };
+      (live ? get().updateClipLive : get().updateClip)(clipId, { keyframes: map });
+    },
+
 
     togglePropertyAnimation: (clipId, prop) => {
       const clip = findClip(get().tracks, clipId);
