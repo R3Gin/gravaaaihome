@@ -3,6 +3,7 @@ import {
   applyContinuity,
   newKeyframe,
   propByKey,
+  resolveClip,
   sortKeys,
   upsertKeyframe,
   type Easing,
