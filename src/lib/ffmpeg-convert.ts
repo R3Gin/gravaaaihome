@@ -286,6 +286,8 @@ export interface TimelineClip {
   filters: EditFilters;
   transition: TransitionKind;
   zoomKeys: ZoomKey[];
+  /** redução de ruído de fundo (afftdn) */
+  denoise?: boolean;
 }
 
 export interface TextOverlayImage {
@@ -294,6 +296,30 @@ export interface TextOverlayImage {
   end: number;
   x: number;
   y: number;
+}
+
+/** Região retangular desfocada, em pixels do vídeo de origem. */
+export interface BlurRegion {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  strength: number;
+  start: number;
+  end: number;
+}
+
+export interface OutputFrame {
+  width: number;
+  height: number;
+  /** deslocamento do conteúdo dentro do quadro, -1..1 (0 = centralizado) */
+  offsetX: number;
+  offsetY: number;
+}
+
+export interface ExportOptions {
+  blurs?: BlurRegion[];
+  frame?: OutputFrame;
 }
 
 const TRANSITION_DURATION = 0.5;
