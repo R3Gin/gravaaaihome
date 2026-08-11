@@ -439,6 +439,8 @@ export function VideoEditor() {
       setThumbs([]);
       setPeaks([]);
       setTexts([]);
+      setShapes([]);
+      setSilences([]);
       setClips([]);
       setPast([]);
       setFuture([]);
