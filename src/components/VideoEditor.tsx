@@ -988,11 +988,26 @@ export function VideoEditor() {
 
   const hasMedia = Boolean(srcUrl);
 
-  return (
-    <div
-      ref={shellRef}
-      className="flex h-screen flex-col overflow-hidden bg-[var(--background)] text-[var(--foreground)]"
-    >
+    <>
+      <div className="flex h-screen w-full items-center justify-center bg-[var(--background)] p-8 text-center md:hidden">
+        <div className="max-w-xs space-y-3">
+          <span className="mx-auto grid h-12 w-12 place-items-center rounded-2xl bg-[var(--brand)]/15 text-[var(--brand)]">
+            <Scissors className="h-6 w-6" />
+          </span>
+          <h1 className="font-display text-lg font-bold tracking-tight">
+            Use um dispositivo com tela maior para editar
+          </h1>
+          <p className="text-sm text-[var(--muted-foreground)]">
+            O Editor Simplificado precisa de pelo menos 768px de largura.
+          </p>
+        </div>
+      </div>
+
+      <div
+        ref={shellRef}
+        className="hidden h-screen w-full flex-col overflow-hidden bg-[var(--background)] text-[var(--foreground)] md:flex"
+      >
+
       <input ref={inputRef} type="file" accept="video/mp4,video/*" className="hidden" onChange={onPick} />
 
       {/* ---------- 1. BARRA SUPERIOR ---------- */}
