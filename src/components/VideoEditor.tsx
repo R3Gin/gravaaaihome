@@ -217,6 +217,7 @@ export function VideoEditor() {
   const [duration, setDuration] = useState(0);
   const [clips, setClips] = useState<Clip[]>([]);
   const [texts, setTexts] = useState<TextLayer[]>([]);
+  const [shapes, setShapes] = useState<ShapeLayer[]>([]);
   const [selection, setSelection] = useState<Selection>(null);
   const [tool, setTool] = useState<"select" | "blade">("select");
   const [pxPerSec, setPxPerSec] = useState(60);
@@ -234,13 +235,30 @@ export function VideoEditor() {
   const [panel, setPanel] = useState<PanelId | null>("upload");
   const [previewZoom, setPreviewZoom] = useState(1);
   const [ratio, setRatio] = useState(RATIOS[0]);
-  const [inspectorTab, setInspectorTab] = useState<
-    "basic" | "bg" | "audio" | "anim" | "speed"
-  >("basic");
-  const [transcript, setTranscript] = useState("");
+  const [contentOffset, setContentOffset] = useState({ x: 0, y: 0 });
+  const [inspectorTab, setInspectorTab] = useState<"basic" | "audio" | "speed">("basic");
   const [past, setPast] = useState<Snapshot[]>([]);
   const [future, setFuture] = useState<Snapshot[]>([]);
   const [moreOpen, setMoreOpen] = useState(false);
+
+  // Cortador de silêncio
+  const [silences, setSilences] = useState<SilenceMark[]>([]);
+  const [silenceOpen, setSilenceOpen] = useState(false);
+  const [silenceBusy, setSilenceBusy] = useState(false);
+  const [sensitivity, setSensitivity] = useState(0.5);
+
+  // Legendas
+  const [captionsBusy, setCaptionsBusy] = useState(false);
+  const [captionStyle, setCaptionStyle] = useState({
+    font: "DM Sans",
+    size: 52,
+    color: "#ffffff",
+    bg: "#000000",
+    y: 0.86,
+  });
+
+  // Ruído de fundo (preview antes/depois)
+  const [bypassDenoise, setBypassDenoise] = useState(false);
 
   const sourceBlobRef = useRef<Blob | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -248,25 +266,35 @@ export function VideoEditor() {
   const inputRef = useRef<HTMLInputElement | null>(null);
   const lanesRef = useRef<HTMLDivElement | null>(null);
   const shellRef = useRef<HTMLDivElement | null>(null);
+  const stageRef = useRef<HTMLDivElement | null>(null);
   const timeRef = useRef(0);
   const playingRef = useRef(false);
-  const stateRef = useRef({ clips, texts, srcSize, selection });
-  stateRef.current = { clips, texts, srcSize, selection };
+  const stateRef = useRef({ clips, texts, shapes, srcSize, selection, ratio, contentOffset });
+  stateRef.current = { clips, texts, shapes, srcSize, selection, ratio, contentOffset };
   const dragRef = useRef<
     | { kind: "clip"; id: string; grabOffset: number }
     | { kind: "text"; id: string; grabOffset: number }
     | { kind: "text-edge"; id: string; edge: "start" | "end" }
+    | { kind: "shape"; id: string; grabOffset: number }
+    | { kind: "shape-edge"; id: string; edge: "start" | "end" }
     | { kind: "playhead" }
     | { kind: "sel"; edge: "start" | "end" }
     | null
   >(null);
-  const textDragRef = useRef(false);
+  const stageDragRef = useRef<
+    | { kind: "text" }
+    | { kind: "shape-move"; id: string; dx: number; dy: number }
+    | { kind: "shape-resize"; id: string }
+    | { kind: "frame"; x: number; y: number; ox: number; oy: number }
+    | null
+  >(null);
 
   const total = useMemo(() => {
     const a = clips.reduce((m, c) => Math.max(m, clipEnd(c)), 0);
     const b = texts.reduce((m, t) => Math.max(m, t.end), 0);
-    return Math.max(a, b, 1);
-  }, [clips, texts]);
+    const c = shapes.reduce((m, s) => Math.max(m, s.end), 0);
+    return Math.max(a, b, c, 1);
+  }, [clips, texts, shapes]);
 
   const selectedClip = useMemo(
     () => (selection?.kind === "clip" ? clips.find((c) => c.id === selection.id) ?? null : null),
@@ -276,6 +304,18 @@ export function VideoEditor() {
     () => (selection?.kind === "text" ? texts.find((t) => t.id === selection.id) ?? null : null),
     [selection, texts],
   );
+  const selectedShape = useMemo(
+    () => (selection?.kind === "shape" ? shapes.find((s) => s.id === selection.id) ?? null : null),
+    [selection, shapes],
+  );
+
+  /** Quadro de saída de acordo com a proporção escolhida. */
+  const frame = useMemo(() => {
+    const base = Math.max(srcSize.width, srcSize.height);
+    const h = ratio.value >= 1 ? Math.round(base / ratio.value) : base;
+    const w = Math.round(h * ratio.value);
+    return { width: Math.max(2, Math.round(w / 2) * 2), height: Math.max(2, Math.round(h / 2) * 2) };
+  }, [srcSize, ratio]);
 
   useEffect(() => {
     playingRef.current = playing;
