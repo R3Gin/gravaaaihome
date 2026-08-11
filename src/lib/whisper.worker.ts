@@ -73,24 +73,83 @@ self.onmessage = async (event: MessageEvent<InMsg>) => {
     post({ type: "stage", stage: "model" });
     const model = await ensureModel();
     post({ type: "stage", stage: "transcribe" });
-    const result = (await model(audio, {
-      return_timestamps: true,
+
+    const base = {
       chunk_length_s: 30,
       stride_length_s: 5,
       ...(language ? { language, task: "transcribe" } : {}),
-    })) as { text: string; chunks?: Chunk[] };
+    };
 
     const total = audio.length / 16000;
-    const segments = (result.chunks ?? [])
-      .map((c) => ({
-        start: c.timestamp[0] ?? 0,
-        end: c.timestamp[1] ?? Math.min(total, (c.timestamp[0] ?? 0) + 3),
-        text: c.text,
-      }))
-      .filter((s) => s.text.trim().length > 0);
+    let words: { word: string; start: number; end: number }[] = [];
+    let result: { text: string; chunks?: Chunk[] };
 
-    post({ type: "done", segments: segments.length ? segments : [{ start: 0, end: total, text: result.text }] });
+    try {
+      // 1ª tentativa: timestamps por PALAVRA (blocos curtos estilo CapCut)
+      result = (await model(audio, { ...base, return_timestamps: "word" })) as {
+        text: string;
+        chunks?: Chunk[];
+      };
+      words = (result.chunks ?? [])
+        .filter((c) => c.text.trim().length > 0 && typeof c.timestamp?.[0] === "number")
+        .map((c) => ({
+          word: c.text.trim(),
+          start: c.timestamp[0] ?? 0,
+          end: c.timestamp[1] ?? Math.min(total, (c.timestamp[0] ?? 0) + 0.3),
+        }));
+    } catch {
+      words = [];
+      result = { text: "" };
+    }
+
+    if (words.length === 0) {
+      // fallback: timestamps por frase
+      result = (await model(audio, { ...base, return_timestamps: true })) as {
+        text: string;
+        chunks?: Chunk[];
+      };
+    }
+
+    // segmentos por frase: das palavras (agrupando por pontuação forte) ou dos chunks
+    let segments: { start: number; end: number; text: string }[];
+    if (words.length) {
+      segments = [];
+      let buf: typeof words = [];
+      for (const w of words) {
+        buf.push(w);
+        if (/[.!?…]$/.test(w.word) || buf.length >= 18) {
+          segments.push({
+            start: buf[0].start,
+            end: buf[buf.length - 1].end,
+            text: buf.map((b) => b.word).join(" "),
+          });
+          buf = [];
+        }
+      }
+      if (buf.length) {
+        segments.push({
+          start: buf[0].start,
+          end: buf[buf.length - 1].end,
+          text: buf.map((b) => b.word).join(" "),
+        });
+      }
+    } else {
+      segments = (result.chunks ?? [])
+        .map((c) => ({
+          start: c.timestamp[0] ?? 0,
+          end: c.timestamp[1] ?? Math.min(total, (c.timestamp[0] ?? 0) + 3),
+          text: c.text,
+        }))
+        .filter((s) => s.text.trim().length > 0);
+    }
+
+    post({
+      type: "done",
+      segments: segments.length ? segments : [{ start: 0, end: total, text: result.text }],
+      words,
+    });
   } catch (err) {
     post({ type: "error", message: err instanceof Error ? err.message : "Falha na transcrição." });
   }
 };
+
