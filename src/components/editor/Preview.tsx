@@ -52,6 +52,28 @@ export function Preview({ videoRef }: Props) {
     if (Math.abs(v.currentTime - target) > 0.04) v.currentTime = target;
   }, [currentTime, playing, videoRef]);
 
+  /* --- diagnóstico de travamentos do elemento <video> --- */
+  useEffect(() => {
+    const v = videoRef.current;
+    if (!v) return;
+    const log = (e: Event) => {
+      if (e.type === "error") console.error("[editor] video error", v.error);
+      else if (import.meta.env.DEV) console.debug("[editor] video", e.type, v.currentTime);
+    };
+    const events = ["pause", "stalled", "waiting", "error", "ended", "suspend"];
+    events.forEach((t) => v.addEventListener(t, log));
+    return () => events.forEach((t) => v.removeEventListener(t, log));
+  }, [videoRef, sourceUrl]);
+
+  /* --- trocar de aba apenas pausa: o estado do editor é preservado --- */
+  useEffect(() => {
+    const onHidden = () => {
+      if (document.hidden && useEditor.getState().playing) setPlaying(false);
+    };
+    document.addEventListener("visibilitychange", onHidden);
+    return () => document.removeEventListener("visibilitychange", onHidden);
+  }, [setPlaying]);
+
   /* --- loop de reprodução: fonte da verdade é o <video> --- */
   useEffect(() => {
     const v = videoRef.current;
@@ -63,33 +85,52 @@ export function Preview({ videoRef }: Props) {
       return;
     }
     const state = useEditor.getState();
-    const startClip = clipAt(state.tracks, "video", state.currentTime);
+    const videoClips = () =>
+      [...(useEditor.getState().tracks.find((t) => t.type === "video")?.clips ?? [])].sort(
+        (a, b) => a.startTime - b.startTime,
+      );
+    const startClip =
+      clipAt(state.tracks, "video", state.currentTime) ??
+      videoClips().find((c) => c.startTime + c.duration > state.currentTime) ??
+      null;
     if (!startClip) {
       setPlaying(false);
       return;
     }
+    if (state.currentTime < startClip.startTime) setCurrentTime(startClip.startTime + 0.001);
     v.playbackRate = startClip.speed ?? 1;
     void v.play().catch(() => setPlaying(false));
 
+    let activeId = startClip.id;
+
     const tick = () => {
       const s = useEditor.getState();
-      const clip = clipAt(s.tracks, "video", s.currentTime);
+      const clips = videoClips();
+      const clip =
+        clipAt(s.tracks, "video", s.currentTime) ??
+        clips.find((c) => c.id === activeId) ??
+        clips.find((c) => c.startTime + c.duration > s.currentTime) ??
+        null;
       if (!clip) {
         setPlaying(false);
         return;
       }
+      activeId = clip.id;
       const speed = clip.speed ?? 1;
       if (v.playbackRate !== speed) v.playbackRate = speed;
+      // o navegador pode pausar sozinho (troca de aba, buffer): retoma
+      if (v.paused && !v.ended) void v.play().catch(() => undefined);
+
       if (v.currentTime >= clip.sourceInEnd - 0.02) {
-        const clips = [...(s.tracks.find((t) => t.type === "video")?.clips ?? [])].sort(
-          (a, b) => a.startTime - b.startTime,
+        const next = clips.find(
+          (c) => c.startTime >= clip.startTime + clip.duration - 0.01 && c.id !== clip.id,
         );
-        const next = clips.find((c) => c.startTime >= clip.startTime + clip.duration - 0.01 && c.id !== clip.id);
         if (!next) {
           setCurrentTime(clip.startTime + clip.duration);
           setPlaying(false);
           return;
         }
+        activeId = next.id;
         v.currentTime = next.sourceInStart;
         setCurrentTime(next.startTime + 0.001);
       } else {
@@ -103,6 +144,7 @@ export function Preview({ videoRef }: Props) {
       rafRef.current = null;
     };
   }, [playing, setCurrentTime, setPlaying, videoRef]);
+
 
   /* --- arraste de texto / overlay dentro do preview --- */
   const onPointerMove = useCallback(

@@ -66,7 +66,7 @@ function useVideoMeta() {
 export function VideoEditor() {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [panel, setPanel] = useState<PanelId>(null);
-  const [sourceBlob, setSourceBlob] = useState<Blob | null>(null);
+  const sourceBlob = useEditor((s) => s.sourceBlob);
   const [exporting, setExporting] = useState(false);
   const [progress, setProgress] = useState(0);
   const [error, setError] = useState<string | null>(null);
@@ -97,8 +97,8 @@ export function VideoEditor() {
         setError("Não consegui ler a duração desse arquivo.");
         return;
       }
-      setSourceBlob(blob);
       setStoreBlob(blob);
+
       loadSource(meta.url, meta.duration, { width: meta.width, height: meta.height }, name);
       setPanel(null);
     },
@@ -119,7 +119,11 @@ export function VideoEditor() {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement | null;
-      if (target && /input|textarea/i.test(target.tagName)) return;
+      if (
+        target &&
+        (/input|textarea|select/i.test(target.tagName) || target.isContentEditable)
+      )
+        return;
       if (e.code === "Space") {
         e.preventDefault();
         setPlaying(!useEditor.getState().playing);
@@ -129,10 +133,22 @@ export function VideoEditor() {
         if (e.shiftKey) redo();
         else undo();
       }
+      if (!e.metaKey && !e.ctrlKey && !e.altKey && e.key.toLowerCase() === "s") {
+        e.preventDefault();
+        useEditor.getState().splitPlayhead();
+      }
+      if (e.key === "Delete" || e.key === "Backspace") {
+        const id = useEditor.getState().selectedClipId;
+        if (id) {
+          e.preventDefault();
+          useEditor.getState().removeClip(id);
+        }
+      }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [redo, setPlaying, undo]);
+
 
   const onExport = async () => {
     if (!sourceBlob) return;
