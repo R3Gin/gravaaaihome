@@ -1959,6 +1959,41 @@ export function VideoEditor() {
                     ))}
                 </Lane>
 
+                {/* Faixa de efeitos (blur / spotlight) */}
+                <Lane icon={<Wand2 className="h-3.5 w-3.5" />} label="Efeitos">
+                  {shapes.length === 0 ? <Placeholder /> : null}
+                  {shapes.map((s) => (
+                    <div
+                      key={s.id}
+                      onPointerDown={onShapePointerDown(s)}
+                      style={{
+                        left: s.start * pxPerSec,
+                        width: Math.max(12, (s.end - s.start) * pxPerSec),
+                      }}
+                      className={cn(
+                        "absolute inset-y-2 cursor-grab overflow-hidden rounded-md border px-2 text-[10px] font-semibold leading-6",
+                        selectedShape?.id === s.id
+                          ? "border-[var(--brand)] bg-[var(--brand)]/20 text-white"
+                          : "border-white/15 bg-[var(--surface-2)] text-[var(--muted-foreground)]",
+                      )}
+                    >
+                      <span className="pointer-events-none truncate">
+                        {s.kind === "blur" ? "Blur" : "Spotlight"}
+                      </span>
+                      {(["start", "end"] as const).map((edge) => (
+                        <span
+                          key={edge}
+                          onPointerDown={onShapePointerDown(s, edge)}
+                          className={cn(
+                            "absolute inset-y-0 w-1.5 cursor-ew-resize bg-[var(--brand)]/70",
+                            edge === "start" ? "left-0" : "right-0",
+                          )}
+                        />
+                      ))}
+                    </div>
+                  ))}
+                </Lane>
+
                 {/* Faixa de áudio */}
                 <Lane
                   icon={
@@ -1987,6 +2022,22 @@ export function VideoEditor() {
                     >
                       <Waveform peaks={peaks} clip={c} duration={duration} />
                     </div>
+                  ))}
+                  {silences.map((s) => (
+                    <div
+                      key={s.id}
+                      title={`Silêncio ${short(s.start)} – ${short(s.end)}`}
+                      style={{
+                        left: s.start * pxPerSec,
+                        width: Math.max(2, (s.end - s.start) * pxPerSec),
+                      }}
+                      className={cn(
+                        "pointer-events-none absolute inset-y-2 rounded-sm border",
+                        s.status === "pending"
+                          ? "border-[var(--brand)] bg-[var(--brand)]/30"
+                          : "border-white/20 bg-white/5",
+                      )}
+                    />
                   ))}
                 </Lane>
 
