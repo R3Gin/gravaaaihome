@@ -19,7 +19,32 @@ export interface BubblePos {
   size: number;
 }
 
-export type CameraBgEffect = "none" | "blur" | "image";
+export type CameraBgEffect = "none" | "blur" | "image" | "color" | "transparent";
+
+export type CameraShape = "circle" | "rounded" | "square";
+
+export interface CameraStyle {
+  shape: CameraShape;
+  borderEnabled: boolean;
+  borderColor: string;
+  borderWidth: number;
+  bgColor: string;
+}
+
+export const DEFAULT_CAMERA_STYLE: CameraStyle = {
+  shape: "circle",
+  borderEnabled: false,
+  borderColor: "#ef4444",
+  borderWidth: 4,
+  bgColor: "#111827",
+};
+
+/** Raio (px) da bolha para um dado formato/tamanho. */
+export function shapeRadius(shape: CameraShape, size: number): number {
+  if (shape === "circle") return size / 2;
+  if (shape === "rounded") return Math.max(4, size * 0.18);
+  return 0;
+}
 
 export interface CameraPipController {
   active: boolean;
@@ -36,6 +61,10 @@ export interface CameraPipController {
   setEffect: (e: CameraBgEffect) => void;
   bgImageUrl: string | null;
   setBgImageUrl: (url: string | null) => void;
+  style: CameraStyle;
+  setStyle: React.Dispatch<React.SetStateAction<CameraStyle>>;
+  /** Volta formato, borda, tamanho, fundo e posição ao padrão. */
+  resetSettings: () => void;
   /** Canvas processado (com efeito). Só populado quando effect !== 'none'. */
   effectCanvasRef: RefObject<HTMLCanvasElement | null>;
 }
@@ -48,13 +77,15 @@ export interface UseCameraPipOptions {
 export function useCameraPip(opts: UseCameraPipOptions = {}): CameraPipController {
   const [active, setActive] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [bubble, setBubble] = useState<BubblePos>({
+  const defaultBubble = useRef<BubblePos>({
     x: opts.initial?.x ?? 24,
     y: opts.initial?.y ?? 24,
     size: opts.initial?.size ?? 180,
-  });
+  }).current;
+  const [bubble, setBubble] = useState<BubblePos>(defaultBubble);
   const [effect, setEffect] = useState<CameraBgEffect>("none");
   const [bgImageUrl, setBgImageUrl] = useState<string | null>(null);
+  const [style, setStyle] = useState<CameraStyle>(DEFAULT_CAMERA_STYLE);
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -125,6 +156,13 @@ export function useCameraPip(opts: UseCameraPipOptions = {}): CameraPipControlle
 
   useEffect(() => () => stop(), [stop]);
 
+  const resetSettings = useCallback(() => {
+    setStyle(DEFAULT_CAMERA_STYLE);
+    setEffect("none");
+    setBgImageUrl(null);
+    setBubble({ ...defaultBubble });
+  }, [defaultBubble]);
+
   return {
     active,
     start,
@@ -140,6 +178,9 @@ export function useCameraPip(opts: UseCameraPipOptions = {}): CameraPipControlle
     setEffect,
     bgImageUrl,
     setBgImageUrl,
+    style,
+    setStyle,
+    resetSettings,
     effectCanvasRef,
   };
 }
@@ -286,8 +327,9 @@ export function CameraPipBubble({
   className,
 }: CameraPipBubbleProps) {
   const dragRef = useRef<{ dx: number; dy: number } | null>(null);
-  const { active, bubble, setBubble, videoRef, effect, bgImageUrl, effectCanvasRef } =
+  const { active, bubble, setBubble, videoRef, effect, bgImageUrl, effectCanvasRef, style } =
     controller;
+  const bgColor = style.bgColor;
   const effectActive = active && effect !== "none";
   const [effectReady, setEffectReady] = useState(false);
   const [effectError, setEffectError] = useState<string | null>(null);
@@ -340,21 +382,28 @@ export function CameraPipBubble({
       ctx.drawImage(src, 0, 0, w, h);
 
       // 3) Fundo por trás (destination-over)
-      ctx.globalCompositeOperation = "destination-over";
-      if (effect === "blur") {
-        ctx.filter = "blur(14px)";
-        ctx.drawImage(src, -8, -8, w + 16, h + 16);
-        ctx.filter = "none";
-      } else if (effect === "image" && bgImg && bgImg.complete && bgImg.naturalWidth) {
-        const iw = bgImg.naturalWidth, ih = bgImg.naturalHeight;
-        // cover
-        const scale = Math.max(w / iw, h / ih);
-        const dw = iw * scale, dh = ih * scale;
-        const dx = (w - dw) / 2, dy = (h - dh) / 2;
-        ctx.drawImage(bgImg, dx, dy, dw, dh);
+      if (effect === "transparent") {
+        // Sem fundo: mantém só a pessoa recortada (alfa preservado).
       } else {
-        ctx.fillStyle = "#111";
-        ctx.fillRect(0, 0, w, h);
+        ctx.globalCompositeOperation = "destination-over";
+        if (effect === "blur") {
+          ctx.filter = "blur(14px)";
+          ctx.drawImage(src, -8, -8, w + 16, h + 16);
+          ctx.filter = "none";
+        } else if (effect === "image" && bgImg && bgImg.complete && bgImg.naturalWidth) {
+          const iw = bgImg.naturalWidth, ih = bgImg.naturalHeight;
+          // cover
+          const scale = Math.max(w / iw, h / ih);
+          const dw = iw * scale, dh = ih * scale;
+          const dx = (w - dw) / 2, dy = (h - dh) / 2;
+          ctx.drawImage(bgImg, dx, dy, dw, dh);
+        } else if (effect === "color") {
+          ctx.fillStyle = bgColor;
+          ctx.fillRect(0, 0, w, h);
+        } else {
+          ctx.fillStyle = "#111";
+          ctx.fillRect(0, 0, w, h);
+        }
       }
       ctx.restore();
     };
@@ -412,7 +461,7 @@ export function CameraPipBubble({
       if (raf) cancelAnimationFrame(raf);
       try { seg?.close?.(); } catch { /* noop */ }
     };
-  }, [effectActive, effect, bgImageUrl, videoRef, effectCanvasRef]);
+  }, [effectActive, effect, bgImageUrl, bgColor, videoRef, effectCanvasRef]);
 
   const onDown = (e: PointerEvent<HTMLDivElement>) => {
     (e.target as Element).setPointerCapture?.(e.pointerId);
@@ -435,6 +484,8 @@ export function CameraPipBubble({
     dragRef.current = null;
   };
 
+  const transparentBg = effect === "transparent";
+
   return (
     <div
       onPointerDown={active ? onDown : undefined}
@@ -447,9 +498,14 @@ export function CameraPipBubble({
         width: bubble.size,
         height: bubble.size,
         display: active ? undefined : "none",
+        borderRadius: shapeRadius(style.shape, bubble.size),
+        border: style.borderEnabled
+          ? `${style.borderWidth}px solid ${style.borderColor}`
+          : "none",
+        background: transparentBg ? "transparent" : "#000",
       }}
       className={cn(
-        "absolute z-20 cursor-grab overflow-hidden rounded-full border-2 border-white/80 bg-black shadow-2xl active:cursor-grabbing",
+        "absolute z-20 cursor-grab overflow-hidden shadow-2xl active:cursor-grabbing",
         className,
       )}
     >
@@ -490,9 +546,9 @@ export function CameraPipBubble({
 }
 
 /**
- * Desenha o frame atual do vídeo da câmera dentro de um círculo em um canvas
- * de destino, aplicando cover-crop centralizado + espelhamento (efeito
- * selfie) para replicar visualmente o preview HTML/CSS.
+ * Desenha o frame atual da câmera na forma configurada (círculo, quadrado
+ * arredondado ou quadrado reto) em um canvas de destino, com cover-crop
+ * centralizado + espelhamento (efeito selfie) e borda opcional.
  * Usado APENAS pelo pipeline de gravação — nunca para preview.
  */
 export function drawCameraPipCircle(
@@ -501,6 +557,7 @@ export function drawCameraPipCircle(
   x: number,
   y: number,
   size: number,
+  style: CameraStyle = DEFAULT_CAMERA_STYLE,
 ): void {
   const vw =
     (source as HTMLVideoElement).videoWidth ||
@@ -521,20 +578,35 @@ export function drawCameraPipCircle(
     sH = vw;
     sy = (vh - vw) / 2;
   }
+
+  const r = shapeRadius(style.shape, size);
+  const path = () => {
+    ctx.beginPath();
+    if (style.shape === "circle") {
+      ctx.arc(x + size / 2, y + size / 2, size / 2, 0, Math.PI * 2);
+    } else if (r > 0 && typeof ctx.roundRect === "function") {
+      ctx.roundRect(x, y, size, size, r);
+    } else {
+      ctx.rect(x, y, size, size);
+    }
+    ctx.closePath();
+  };
+
   ctx.save();
-  ctx.beginPath();
-  ctx.arc(x + size / 2, y + size / 2, size / 2, 0, Math.PI * 2);
-  ctx.closePath();
+  path();
   ctx.clip();
   // Espelhamento horizontal (efeito selfie)
   ctx.translate(x + size, y);
   ctx.scale(-1, 1);
   ctx.drawImage(source, sx, sy, sW, sH, 0, 0, size, size);
   ctx.restore();
-  // Borda
-  ctx.beginPath();
-  ctx.arc(x + size / 2, y + size / 2, size / 2, 0, Math.PI * 2);
-  ctx.lineWidth = 4;
-  ctx.strokeStyle = "rgba(255,255,255,0.9)";
-  ctx.stroke();
+
+  if (style.borderEnabled && style.borderWidth > 0) {
+    ctx.save();
+    path();
+    ctx.lineWidth = style.borderWidth;
+    ctx.strokeStyle = style.borderColor;
+    ctx.stroke();
+    ctx.restore();
+  }
 }
