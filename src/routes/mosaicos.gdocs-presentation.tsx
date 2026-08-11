@@ -1,16 +1,24 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { ClientOnly } from "@tanstack/react-router";
-import { GdocsPresentation } from "@/components/GdocsPresentation";
+import { LocalPresentation } from "@/components/LocalPresentation";
 
 export const Route = createFileRoute("/mosaicos/gdocs-presentation")({
   head: () => ({
     meta: [
-      { title: "Apresentação Google + Câmera — Gravaai" },
+      { title: "Apresentação + Câmera — Gravaai" },
       {
         name: "description",
         content:
-          "Grave slides do Google com bolha da webcam, efeitos de fundo e exporte em MP4.",
+          "Suba um PDF ou PPTX, apresente com a bolha da webcam por cima e grave tudo em MP4.",
       },
+      { property: "og:title", content: "Apresentação + Câmera — Gravaai" },
+      {
+        property: "og:description",
+        content:
+          "Suba um PDF ou PPTX, apresente com a bolha da webcam por cima e grave tudo em MP4.",
+      },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary_large_image" },
     ],
   }),
   component: GdocsPresentationRoute,
@@ -19,7 +27,7 @@ export const Route = createFileRoute("/mosaicos/gdocs-presentation")({
 function GdocsPresentationRoute() {
   return (
     <ClientOnly fallback={<div className="h-screen w-screen bg-black" />}>
-      <GdocsPresentation />
+      <LocalPresentation />
     </ClientOnly>
   );
 }
