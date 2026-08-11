@@ -327,8 +327,9 @@ export function CameraPipBubble({
   className,
 }: CameraPipBubbleProps) {
   const dragRef = useRef<{ dx: number; dy: number } | null>(null);
-  const { active, bubble, setBubble, videoRef, effect, bgImageUrl, effectCanvasRef } =
+  const { active, bubble, setBubble, videoRef, effect, bgImageUrl, effectCanvasRef, style } =
     controller;
+  const bgColor = style.bgColor;
   const effectActive = active && effect !== "none";
   const [effectReady, setEffectReady] = useState(false);
   const [effectError, setEffectError] = useState<string | null>(null);
