@@ -119,7 +119,12 @@ export interface EditorState {
   /** trechos silenciosos detectados — só interface, não faz parte do projeto */
   silences: SilenceRange[];
   captionStyle: CaptionStyle;
+  /** exibição das sub-linhas de keyframes na timeline (atalho U / UU) */
+  kfExpanded: "none" | "animated" | "all";
+  /** keyframes selecionados na timeline (permite mover/deletar em conjunto) */
+  selectedKeyframes: { prop: string; kfId: string }[];
 }
+
 
 export interface EditorActions {
   loadSource: (url: string, duration: number, size?: { width: number; height: number }, name?: string) => void;
