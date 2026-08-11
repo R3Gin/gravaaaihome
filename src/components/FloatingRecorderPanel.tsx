@@ -104,7 +104,7 @@ export const FloatingRecorderPanel = forwardRef<
   FloatingRecorderPanelHandle,
   FloatingRecorderPanelProps
 >(function FloatingRecorderPanel(props, ref) {
-  const { visible } = props;
+  const { visible, drawing } = props;
   const [pipWindow, setPipWindow] = useState<PipWindow | null>(null);
   const [pos, setPos] = useState({ x: 24, y: 24 });
   const dragRef = useRef<{ dx: number; dy: number } | null>(null);
@@ -124,10 +124,14 @@ export const FloatingRecorderPanel = forwardRef<
     if (!supportsDocumentPip()) return;
     if (pipWindow) return;
     try {
+      // Janela real do sistema operacional, sempre por cima de qualquer app,
+      // e desvinculada da aba de origem (o usuário pode navegar livremente).
       // @ts-expect-error - experimental API
       const w: PipWindow = await window.documentPictureInPicture.requestWindow({
-        width: 320,
-        height: 60,
+        width: 340,
+        height: 64,
+        disallowReturnToOpener: true,
+        preferInitialWindowPlacement: true,
       });
       copyStylesInto(w.document);
       w.addEventListener("pagehide", () => setPipWindow(null));
@@ -136,6 +140,17 @@ export const FloatingRecorderPanel = forwardRef<
       console.warn("[recorder-panel] Document PiP recusado:", err);
     }
   }, [pipWindow]);
+
+  // Cresce/encolhe a janela PiP conforme a barra de desenho abre/fecha.
+  useEffect(() => {
+    if (!pipWindow) return;
+    try {
+      pipWindow.resizeTo(360, drawing?.active ? 132 : 64);
+    } catch {
+      /* alguns navegadores bloqueiam resize */
+    }
+  }, [pipWindow, drawing?.active]);
+
 
   useImperativeHandle(
     ref,
