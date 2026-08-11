@@ -14,6 +14,16 @@ const FONTS = [
   { label: "Trebuchet", value: "'Trebuchet MS', sans-serif" },
 ];
 
+const LANGUAGES: { label: string; value: string }[] = [
+  { label: "Português (padrão)", value: "portuguese" },
+  { label: "Inglês", value: "english" },
+  { label: "Espanhol", value: "spanish" },
+  { label: "Francês", value: "french" },
+  { label: "Alemão", value: "german" },
+  { label: "Italiano", value: "italian" },
+  { label: "Detectar automaticamente", value: "auto" },
+];
+
 const fmt = (t: number) => {
   const m = Math.floor(t / 60);
   const s = Math.floor(t % 60);
