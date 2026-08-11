@@ -1,4 +1,15 @@
 import { create } from "zustand";
+import {
+  animatablePropsFor,
+  newKeyframe,
+  propByKey,
+  sortKeys,
+  upsertKeyframe,
+  type Easing,
+  type KeyValue,
+  type KeyframeMap,
+} from "@/lib/keyframes";
+
 
 /* ------------------------------------------------------------------ *
  * Estado central do editor. Toda interação (cortar, arrastar, trim,
