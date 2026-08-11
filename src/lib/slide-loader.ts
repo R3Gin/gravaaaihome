@@ -182,7 +182,6 @@ async function loadPptxDeck(
     ctx.fillStyle = "#ffffff";
     ctx.fillRect(0, 0, canvasW, canvasH);
 
-    console.log("[pptx-debug] layout", layoutPath, "ph", JSON.stringify([...phBoxes.entries()]));
     const root = doc.documentElement;
     const spTree = firstLocal(root, "spTree");
     if (spTree) {
