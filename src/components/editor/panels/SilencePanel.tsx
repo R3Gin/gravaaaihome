@@ -93,7 +93,8 @@ export function SilencePanel({ onClose }: { onClose: () => void }) {
         <button
           disabled={busy || silences.length === 0}
           onClick={() => {
-            cutRanges(silences);
+            const remapped = cutRanges(silences);
+            if (remapped > 0) toast.success("Legendas sincronizadas com os cortes");
             onClose();
           }}
           className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-[var(--brand)] px-3 py-2 text-xs font-semibold text-white disabled:opacity-40"
