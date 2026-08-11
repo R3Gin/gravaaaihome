@@ -25,7 +25,6 @@ function GearIcon() {
 }
 import {
   DrawingCanvas,
-  DrawingToolbar,
   drawStrokes,
   useDrawing,
 } from "./DrawingLayer";
@@ -78,13 +77,6 @@ function ScissorsIcon() {
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4">
       <circle cx="6" cy="6" r="3" /><circle cx="6" cy="18" r="3" />
       <path d="M20 4 8.12 15.88" /><path d="M14.47 14.48 20 20" /><path d="M8.12 8.12 12 12" />
-    </svg>
-  );
-}
-function PenIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4">
-      <path d="M12 19l7-7-4-4-7 7-1 5z" /><path d="m16 5 3 3" />
     </svg>
   );
 }
@@ -801,8 +793,8 @@ export function ScreenRecorder() {
         onToggleScreenAudio={toggleScreenAudioMute}
         onToggleMic={toggleMicMute}
         onToggleCamera={toggleCameraFromPanel}
-        penOn={drawing.active}
-        onTogglePen={() => drawing.setActive(!drawing.active)}
+        drawing={drawing}
+
       />
       {/* Preview */}
       <div
@@ -855,20 +847,8 @@ export function ScreenRecorder() {
         </div>
       )}
 
-      {/* Caneta */}
-      <div className="flex flex-wrap items-center gap-3">
-        <ActionButton
-          tone={drawing.active ? "record" : "neutral"}
-          icon={<PenIcon />}
-          onClick={() => drawing.setActive(!drawing.active)}
-        >
-          {drawing.active ? "Desenho ativo" : "Caneta"}
-        </ActionButton>
-        <span className="text-xs text-[var(--muted-foreground)]">
-          Desenhe sobre o preview — os traços entram na gravação e continuam na tela até você limpar.
-        </span>
-      </div>
-      <DrawingToolbar controller={drawing} />
+      {/* Caneta: controles vivem no painel flutuante de gravação. */}
+
 
       {/* Toggles */}
       <div className="grid gap-3 sm:grid-cols-3">

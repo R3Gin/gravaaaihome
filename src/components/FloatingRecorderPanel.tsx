@@ -27,6 +27,8 @@ import {
   Pen,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { PEN_COLORS, type DrawingController } from "./DrawingLayer";
+import { Eraser, Trash2 } from "lucide-react";
 
 export interface FloatingRecorderPanelProps {
   visible: boolean;
@@ -38,8 +40,7 @@ export interface FloatingRecorderPanelProps {
   hasScreenAudio: boolean;
   hasMic: boolean;
   hasCamera: boolean;
-  penOn?: boolean;
-  onTogglePen?: () => void;
+  drawing?: DrawingController;
   onPauseResume: () => void;
   onStop: () => void;
   onToggleScreenAudio: () => void;
@@ -52,6 +53,7 @@ export interface FloatingRecorderPanelHandle {
   closePip: () => void;
   isPipSupported: () => boolean;
 }
+
 
 function fmt(sec: number) {
   const h = Math.floor(sec / 3600).toString().padStart(2, "0");
@@ -102,7 +104,7 @@ export const FloatingRecorderPanel = forwardRef<
   FloatingRecorderPanelHandle,
   FloatingRecorderPanelProps
 >(function FloatingRecorderPanel(props, ref) {
-  const { visible } = props;
+  const { visible, drawing } = props;
   const [pipWindow, setPipWindow] = useState<PipWindow | null>(null);
   const [pos, setPos] = useState({ x: 24, y: 24 });
   const dragRef = useRef<{ dx: number; dy: number } | null>(null);
@@ -122,10 +124,14 @@ export const FloatingRecorderPanel = forwardRef<
     if (!supportsDocumentPip()) return;
     if (pipWindow) return;
     try {
+      // Janela real do sistema operacional, sempre por cima de qualquer app,
+      // e desvinculada da aba de origem (o usuário pode navegar livremente).
       // @ts-expect-error - experimental API
       const w: PipWindow = await window.documentPictureInPicture.requestWindow({
-        width: 320,
-        height: 60,
+        width: 340,
+        height: 64,
+        disallowReturnToOpener: true,
+        preferInitialWindowPlacement: true,
       });
       copyStylesInto(w.document);
       w.addEventListener("pagehide", () => setPipWindow(null));
@@ -134,6 +140,17 @@ export const FloatingRecorderPanel = forwardRef<
       console.warn("[recorder-panel] Document PiP recusado:", err);
     }
   }, [pipWindow]);
+
+  // Cresce/encolhe a janela PiP conforme a barra de desenho abre/fecha.
+  useEffect(() => {
+    if (!pipWindow) return;
+    try {
+      pipWindow.resizeTo(360, drawing?.active ? 132 : 64);
+    } catch {
+      /* alguns navegadores bloqueiam resize */
+    }
+  }, [pipWindow, drawing?.active]);
+
 
   useImperativeHandle(
     ref,
@@ -295,22 +312,23 @@ export const FloatingRecorderPanel = forwardRef<
           MutedIcon={CameraOff}
           onClick={props.onToggleCamera}
         />
-        {props.onTogglePen && (
+        {drawing && (
           <button
             type="button"
-            onClick={props.onTogglePen}
-            title={props.penOn ? "Caneta ativa — clique para desativar" : "Desenhar na tela"}
+            onClick={() => drawing.setActive(!drawing.active)}
+            title={drawing.active ? "Caneta ativa — clique para desativar" : "Desenhar na tela"}
             aria-label="Caneta"
             className={cn(
               "flex h-8 w-8 items-center justify-center rounded-full border transition-all duration-150 active:scale-[0.98]",
-              props.penOn
-                ? "border-[var(--recording-btn-danger-to)] bg-[var(--recording-btn-danger-to)]/25 text-white"
+              drawing.active
+                ? "border-[var(--recording-btn-danger-to)] bg-[var(--recording-btn-danger-to)]/25 text-white shadow-[0_0_10px_-2px_var(--recording-btn-danger-glow)]"
                 : "border-[var(--recording-btn-neutral-border)] bg-[var(--recording-btn-neutral-bg)] text-white/90 hover:bg-[var(--recording-btn-neutral-bg-hover)]",
             )}
           >
             <Pen className="h-3.5 w-3.5" />
           </button>
         )}
+
       </div>
 
       {supportsDocumentPip() && (
@@ -337,10 +355,104 @@ export const FloatingRecorderPanel = forwardRef<
     </div>
   );
 
+  const Shell = (
+    <div className={cn("flex flex-col", pipWindow ? "h-full w-full" : "w-fit")}>
+      {Panel}
+      {drawing?.active && (
+        <div
+          className={cn(
+            "flex flex-wrap items-center gap-2 px-3 py-2 text-white",
+            pipWindow
+              ? "bg-[var(--recording-panel-bg)]"
+              : "mt-2 rounded-2xl border border-[var(--recording-panel-border)] bg-[var(--recording-panel-bg)] backdrop-blur-xl shadow-[0_10px_30px_-10px_rgba(0,0,0,0.7)]",
+          )}
+        >
+          <div className="flex items-center gap-1.5">
+            {PEN_COLORS.map((c) => (
+              <button
+                key={c}
+                type="button"
+                title={`Cor ${c}`}
+                aria-label={`Cor ${c}`}
+                onClick={() => {
+                  drawing.setColor(c);
+                  drawing.setEraser(false);
+                }}
+                className={cn(
+                  "h-5 w-5 rounded-full border transition-transform",
+                  drawing.color === c && !drawing.eraser
+                    ? "scale-110 border-white"
+                    : "border-white/20",
+                )}
+                style={{ backgroundColor: c }}
+              />
+            ))}
+            <input
+              type="color"
+              value={drawing.color}
+              onChange={(e) => {
+                drawing.setColor(e.target.value);
+                drawing.setEraser(false);
+              }}
+              title="Cor personalizada"
+              className="h-5 w-6 cursor-pointer rounded border border-white/20 bg-transparent p-0"
+            />
+          </div>
+          <input
+            type="range"
+            min={2}
+            max={24}
+            value={drawing.size}
+            onChange={(e) => drawing.setSize(Number(e.target.value))}
+            title="Espessura"
+            className="h-1.5 w-20 cursor-pointer appearance-none rounded-full bg-white/15 accent-[var(--recording-btn-danger-to)]"
+          />
+          <span className="w-4 font-mono text-[11px] text-white/80">{drawing.size}</span>
+          <button
+            type="button"
+            onClick={() => drawing.setEraser(!drawing.eraser)}
+            title="Borracha"
+            aria-label="Borracha"
+            className={cn(
+              "flex h-7 w-7 items-center justify-center rounded-full border transition-colors",
+              drawing.eraser
+                ? "border-[var(--recording-btn-danger-to)] bg-[var(--recording-btn-danger-to)]/25 text-white"
+                : "border-[var(--recording-btn-neutral-border)] bg-[var(--recording-btn-neutral-bg)] text-white/90 hover:bg-[var(--recording-btn-neutral-bg-hover)]",
+            )}
+          >
+            <Eraser className="h-3.5 w-3.5" />
+          </button>
+          <button
+            type="button"
+            onClick={drawing.clear}
+            disabled={drawing.strokeCount === 0}
+            title="Limpar tudo"
+            aria-label="Limpar tudo"
+            className="flex h-7 w-7 items-center justify-center rounded-full border border-[var(--recording-btn-neutral-border)] bg-[var(--recording-btn-neutral-bg)] text-white/90 transition-colors hover:bg-[var(--recording-btn-neutral-bg-hover)] disabled:opacity-40"
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+          </button>
+          <button
+            type="button"
+            onClick={() => drawing.setActive(false)}
+            className="ml-auto rounded-full border border-[var(--recording-btn-neutral-border)] px-2 py-1 text-[11px] font-semibold text-white/70 transition-colors hover:bg-white/5"
+          >
+            Sair
+          </button>
+        </div>
+      )}
+      {!pipWindow && !supportsDocumentPip() && (
+        <p className="mt-1 max-w-[320px] px-2 text-[10px] leading-tight text-white/50">
+          Seu navegador não suporta janela flutuante do sistema: o painel fica preso à aba do Gravaai.
+        </p>
+      )}
+    </div>
+  );
+
   if (pipWindow) {
     return createPortal(
       <div className="h-full w-full overflow-hidden bg-[var(--recording-panel-bg)]">
-        {Panel}
+        {Shell}
       </div>,
       pipWindow.document.body,
     );
@@ -351,7 +463,7 @@ export const FloatingRecorderPanel = forwardRef<
       className="fixed z-[9999]"
       style={{ left: pos.x, top: pos.y }}
     >
-      {Panel}
+      {Shell}
     </div>,
     document.body,
   );
