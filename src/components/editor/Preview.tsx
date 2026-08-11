@@ -8,13 +8,9 @@ import {
   type Clip,
 } from "@/state/editor-store";
 import { resolveClip } from "@/lib/keyframes";
-import {
-  renderCaptionWords,
-  typewriterText,
-  toSeconds,
-  CAPTION_END_BUFFER,
-} from "@/lib/caption-styles";
+import { CaptionOverlay } from "./CaptionOverlay";
 import { cn } from "@/lib/utils";
+
 
 /** #rrggbb + alpha => rgba() */
 function withAlpha(hex: string, alpha: number) {
