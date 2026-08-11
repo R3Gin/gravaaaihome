@@ -11,6 +11,7 @@ import {
   type KeyframeMap,
   type TangentSpeed,
 } from "@/lib/keyframes";
+import { remapCaptionsAfterCuts, toOriginalTime } from "@/lib/caption-remap";
 import {
   applyPreset,
   revealModeFor,
@@ -160,6 +161,8 @@ export interface EditorState {
   sourceBlob: Blob | null;
   /** trechos silenciosos detectados — só interface, não faz parte do projeto */
   silences: SilenceRange[];
+  /** trechos já removidos do vídeo (tempo original) — usados para remapear legendas */
+  removedRanges: SilenceRange[];
   captionStyle: CaptionStyle;
   /** exibição das sub-linhas de keyframes na timeline (atalho U / UU) */
   kfExpanded: "none" | "animated" | "all";
@@ -194,7 +197,8 @@ export interface EditorActions {
   addOverlayClip: (kind: "blur" | "spotlight") => void;
   addZoomKeyframe: (clipId: string, timelineTime: number) => void;
   removeZoomKeyframe: (clipId: string, index: number) => void;
-  cutRanges: (ranges: { start: number; end: number }[]) => void;
+  /** Remove trechos e devolve quantas legendas foram remapeadas. */
+  cutRanges: (ranges: { start: number; end: number }[]) => number;
   setSourceBlob: (blob: Blob | null) => void;
   setSilences: (ranges: SilenceRange[]) => void;
   addCaptionClips: (segments: { start: number; end: number; text: string }[]) => void;
@@ -316,6 +320,7 @@ export const useEditor = create<EditorState & EditorActions>((set, get) => {
     future: [],
     sourceBlob: null,
     silences: [],
+    removedRanges: [],
     captionStyle: DEFAULT_CAPTION_STYLE,
     kfExpanded: "none",
     selectedKeyframes: [],
@@ -356,6 +361,7 @@ export const useEditor = create<EditorState & EditorActions>((set, get) => {
         past: [],
         future: [],
         silences: [],
+        removedRanges: [],
       });
     },
 
@@ -574,9 +580,24 @@ export const useEditor = create<EditorState & EditorActions>((set, get) => {
     /** Remove intervalos de tempo (cortador de silêncio) fechando os buracos. */
     cutRanges: (ranges) => {
       const ordered = [...ranges].filter((r) => r.end - r.start > 0.05).sort((a, b) => a.start - b.start);
-      if (ordered.length === 0) return;
+      if (ordered.length === 0) return 0;
+      const captionsBefore = allClips(get().tracks).filter((c) => c.isCaption).length;
       write((tracks) =>
         mapTracks(tracks, (clips, track) => {
+          if (track.type === "text") {
+            const captions = clips.filter((c) => c.isCaption);
+            if (captions.length === 0) return clips;
+            const remapped = remapCaptionsAfterCuts(
+              captions.map((c) => ({ clip: c, start: c.startTime, end: c.startTime + c.duration })),
+              ordered,
+            ).map(({ clip, start, end }) => ({
+              ...clip,
+              startTime: start,
+              duration: Math.max(0.2, end - start),
+              sourceInEnd: Math.max(0.2, end - start),
+            }));
+            return [...clips.filter((c) => !c.isCaption), ...remapped];
+          }
           if (track.type !== "video" && track.type !== "audio") return clips;
           let out: Clip[] = clips;
           for (const r of ordered) {
@@ -622,14 +643,28 @@ export const useEditor = create<EditorState & EditorActions>((set, get) => {
           });
         }),
       );
-      set({ selectedClipId: null, silences: [] });
+      const prev = get().removedRanges;
+      const inOriginal = ordered.map((r) => ({
+        start: toOriginalTime(r.start, prev),
+        end: toOriginalTime(r.end, prev),
+      }));
+      set({
+        selectedClipId: null,
+        silences: [],
+        removedRanges: [...prev, ...inOriginal].sort((a, b) => a.start - b.start),
+      });
+      return captionsBefore;
     },
+
 
     setSourceBlob: (sourceBlob) => set({ sourceBlob }),
     setSilences: (silences) => set({ silences }),
 
-    addCaptionClips: (segments) => {
+    addCaptionClips: (rawSegments) => {
       const style = get().captionStyle;
+      // legendas vêm do áudio original: aplica os cortes já feitos
+      const removed = get().removedRanges;
+      const segments = removed.length ? remapCaptionsAfterCuts(rawSegments, removed) : rawSegments;
       const clips: Clip[] = segments
         .filter((s) => s.text.trim() && s.end - s.start > 0.1)
         .map((s) => ({
