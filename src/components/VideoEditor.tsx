@@ -1229,7 +1229,7 @@ export function VideoEditor() {
           </section>
 
           {/* ---------- 5. TIMELINE ---------- */}
-          <section className="flex h-[300px] shrink-0 flex-col border-t border-[var(--border)] bg-[var(--surface)]">
+          <section className="flex h-[340px] shrink-0 flex-col border-t border-[var(--border)] bg-[var(--surface)]">
             <div className="flex items-center gap-1 border-b border-[var(--border)] px-2 py-1.5">
               <IconBtn label="Reproduzir/Pausar" onClick={togglePlay} disabled={!hasMedia}>
                 {playing ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
