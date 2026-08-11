@@ -31,9 +31,11 @@ export interface TranscribeEvents {
  */
 export async function transcribe(
   blob: Blob,
-  language: string | undefined,
+  /** idioma fixo (padrão "portuguese") ou "auto" para detecção automática */
+  language: string | "auto" = "portuguese",
   events: TranscribeEvents = {},
 ): Promise<TranscribeResult> {
+  const lang = !language || language === "auto" ? undefined : language;
   events.onStage?.("audio");
   const audio = await decodeMono16k(blob);
   if (!audio || audio.length < 16000 * 0.3) {
@@ -56,7 +58,7 @@ export async function transcribe(
         if (msg.type === "error") reject(new Error(msg.message));
       };
       worker.onerror = () => reject(new Error("O modelo de transcrição não pôde ser carregado."));
-      worker.postMessage({ type: "transcribe", audio, language }, [audio.buffer]);
+      worker.postMessage({ type: "transcribe", audio, language: lang }, [audio.buffer]);
     });
   } finally {
     worker.terminate();
