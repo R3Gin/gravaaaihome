@@ -57,7 +57,7 @@ async function loadPdfDeck(
     const ctx = canvas.getContext("2d")!;
     ctx.fillStyle = "#ffffff";
     ctx.fillRect(0, 0, canvas.width, canvas.height);
-    await page.render({ canvas, canvasContext: ctx, viewport }).promise;
+    await page.render({ canvasContext: ctx, viewport }).promise;
     if (i === 1) {
       width = canvas.width;
       height = canvas.height;
