@@ -859,6 +859,7 @@ export function VideoEditor() {
       fadeOut: 0,
       animIn: "none",
       animOut: "none",
+      denoise: false,
     };
   }
 
