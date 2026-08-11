@@ -1607,9 +1607,11 @@ export function VideoEditor() {
               </div>
             ) : (
               <div
+                ref={stageRef}
                 onPointerDown={onStagePointerDown}
-                onPointerMove={(e) => textDragRef.current && moveTextTo(e)}
-                onPointerUp={() => (textDragRef.current = false)}
+                onPointerMove={onStagePointerMove}
+                onPointerUp={onStagePointerUp}
+                onPointerCancel={onStagePointerUp}
                 style={{
                   aspectRatio: String(ratio.value),
                   transform: `scale(${previewZoom})`,
@@ -1618,7 +1620,7 @@ export function VideoEditor() {
                 }}
                 className={cn(
                   "relative h-full overflow-hidden rounded-xl border border-[var(--border)] bg-black transition-transform",
-                  selectedText && "cursor-move",
+                  (selectedText || selectedShape) && "cursor-move",
                 )}
               >
                 <canvas ref={canvasRef} className="h-full w-full object-contain" />
@@ -1629,6 +1631,46 @@ export function VideoEditor() {
                   playsInline
                   className="pointer-events-none absolute h-px w-px opacity-0"
                 />
+                {shapes
+                  .filter((s) => time >= s.start && time <= s.end)
+                  .map((s) => (
+                    <div
+                      key={s.id}
+                      onPointerDown={(e) => {
+                        e.stopPropagation();
+                        setSelection({ kind: "shape", id: s.id });
+                        commit();
+                        const rect = (
+                          stageRef.current as HTMLElement
+                        ).getBoundingClientRect();
+                        stageDragRef.current = {
+                          kind: "shape-move",
+                          id: s.id,
+                          dx: (e.clientX - rect.left) / rect.width - s.x,
+                          dy: (e.clientY - rect.top) / rect.height - s.y,
+                        };
+                        stageRef.current?.setPointerCapture?.(e.pointerId);
+                      }}
+                      style={{
+                        left: `${s.x * 100}%`,
+                        top: `${s.y * 100}%`,
+                        width: `${s.w * 100}%`,
+                        height: `${s.h * 100}%`,
+                        borderRadius: s.kind === "spotlight" ? "9999px" : "6px",
+                      }}
+                      className={cn(
+                        "absolute cursor-move border-2 border-dashed",
+                        selectedShape?.id === s.id
+                          ? "border-[var(--brand)]"
+                          : "border-white/40 hover:border-white/70",
+                      )}
+                    >
+                      <span
+                        onPointerDown={startShapeResize(s.id)}
+                        className="absolute -bottom-1.5 -right-1.5 h-3 w-3 cursor-nwse-resize rounded-sm bg-[var(--brand)]"
+                      />
+                    </div>
+                  ))}
                 {selectedText ? (
                   <div
                     className="pointer-events-none absolute -translate-x-1/2 -translate-y-1/2 border border-[var(--brand)]"
