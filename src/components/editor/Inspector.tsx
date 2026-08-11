@@ -64,6 +64,7 @@ function AnimRow({ clip, prop }: { clip: Clip; prop: AnimProp }) {
   const setCurrentTime = useEditor((s) => s.setCurrentTime);
   const setPropValue = useEditor((s) => s.setPropValue);
   const toggle = useEditor((s) => s.togglePropertyAnimation);
+  const addKeyframeAt = useEditor((s) => s.addKeyframeAt);
 
   const keys = clip.keyframes?.[prop.key] ?? [];
   const animated = keys.length > 0;
@@ -116,8 +117,15 @@ function AnimRow({ clip, prop }: { clip: Clip; prop: AnimProp }) {
           </>
         ) : null}
         <span className="text-[11px] font-semibold text-[var(--muted-foreground)]">{prop.label}</span>
+        <button
+          onClick={() => addKeyframeAt(clip.id, prop.key)}
+          title="Adicionar keyframe no playhead com o valor atual"
+          className="ml-auto flex items-center gap-0.5 rounded border border-[var(--border)] px-1.5 py-0.5 text-[10px] font-semibold text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
+        >
+          <Plus className="h-2.5 w-2.5" /> Keyframe
+        </button>
         {animated ? (
-          <span className="ml-auto text-[10px] tabular-nums text-[var(--brand)]">{keys.length} kf</span>
+          <span className="text-[10px] tabular-nums text-[var(--brand)]">{keys.length}</span>
         ) : null}
       </div>
 
