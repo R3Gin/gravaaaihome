@@ -156,6 +156,13 @@ export function useCameraPip(opts: UseCameraPipOptions = {}): CameraPipControlle
 
   useEffect(() => () => stop(), [stop]);
 
+  const resetSettings = useCallback(() => {
+    setStyle(DEFAULT_CAMERA_STYLE);
+    setEffect("none");
+    setBgImageUrl(null);
+    setBubble({ ...defaultBubble });
+  }, [defaultBubble]);
+
   return {
     active,
     start,
@@ -171,6 +178,9 @@ export function useCameraPip(opts: UseCameraPipOptions = {}): CameraPipControlle
     setEffect,
     bgImageUrl,
     setBgImageUrl,
+    style,
+    setStyle,
+    resetSettings,
     effectCanvasRef,
   };
 }
