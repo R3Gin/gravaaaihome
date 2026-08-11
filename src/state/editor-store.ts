@@ -245,6 +245,15 @@ export const useEditor = create<EditorState & EditorActions>((set, get) => {
         mapTracks(tracks, (clips) => clips.map((c) => (c.id === id ? { ...c, ...patch } : c))),
       ),
 
+    updateClipLive: (id, patch) =>
+      set((s) => ({
+        tracks: mapTracks(s.tracks, (clips) =>
+          clips.map((c) => (c.id === id ? { ...c, ...patch } : c)),
+        ),
+      })),
+
+
+
     splitAt: (clipId, time) => {
       const clip = findClip(get().tracks, clipId);
       if (!clip) return;
