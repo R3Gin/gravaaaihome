@@ -23,6 +23,9 @@ export const CAPTION_ANIMS: {
   { id: "shakeDrop", label: "Shake & Drop", hint: "Cai tremendo", previewClass: "cap-prev-shake" },
 ];
 
+/** duração da troca entre blocos de legenda (ms) */
+export const CAPTION_SWITCH_MS = 110;
+
 const easeOut = (t: number) => 1 - Math.pow(1 - t, 3);
 const clamp01 = (v: number) => Math.max(0, Math.min(1, v));
 

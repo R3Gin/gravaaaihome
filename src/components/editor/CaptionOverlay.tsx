@@ -6,6 +6,7 @@ import {
   toSeconds,
   quantizeProgress,
   CAPTION_END_BUFFER,
+  CAPTION_SWITCH_MS,
 } from "@/lib/caption-styles";
 import { cn } from "@/lib/utils";
 
@@ -22,6 +23,8 @@ interface CaptionTextProps {
   progress: number;
   cs: CaptionStyle;
   selected: boolean;
+  /** "in" = bloco entrando · "out" = bloco saindo */
+  phase?: "in" | "out";
   onPointerDown: (e: React.PointerEvent) => void;
 }
 
@@ -31,6 +34,7 @@ const CaptionText = memo(function CaptionText({
   progress,
   cs,
   selected,
+  phase = "in",
   onPointerDown,
 }: CaptionTextProps) {
   const full = clip.textContent ?? "";
@@ -57,6 +61,7 @@ const CaptionText = memo(function CaptionText({
         onPointerDown={onPointerDown}
         className={cn(
           "pointer-events-auto absolute -translate-x-1/2 -translate-y-1/2 cursor-move px-3 py-1",
+          phase === "out" ? "cap-block-out" : "cap-block-in",
           selected && "outline outline-2 outline-[var(--brand)]",
         )}
         style={{
@@ -113,6 +118,9 @@ export function CaptionOverlay({ videoRef, onStartDrag }: Props) {
   const [progress, setProgress] = useState(0);
   const activeRef = useRef<Clip | null>(null);
   const progressRef = useRef(0);
+  /** bloco anterior, mantido por ~100ms só para a animação de saída */
+  const [exiting, setExiting] = useState<Clip | null>(null);
+  const exitTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     const v = videoRef.current;
@@ -147,6 +155,12 @@ export function CaptionOverlay({ videoRef, onStartDrag }: Props) {
       }
 
       if (clip !== activeRef.current) {
+        const prev = activeRef.current;
+        if (prev && prev.id !== clip?.id) {
+          setExiting(prev);
+          if (exitTimer.current) clearTimeout(exitTimer.current);
+          exitTimer.current = setTimeout(() => setExiting(null), CAPTION_SWITCH_MS);
+        }
         activeRef.current = clip;
         setActive(clip);
       }
@@ -188,22 +202,40 @@ export function CaptionOverlay({ videoRef, onStartDrag }: Props) {
       unsub();
       if (raf != null) cancelAnimationFrame(raf);
       if (v) events.forEach((e) => v.removeEventListener(e, update));
+      if (exitTimer.current) clearTimeout(exitTimer.current);
     };
   }, [videoRef]);
 
-  if (!active) return null;
+  if (!active && !exiting) return null;
 
   return (
-    <CaptionText
-      clip={active}
-      progress={progress}
-      cs={captionStyle}
-      selected={active.id === selectedClipId}
-      onPointerDown={(e) => {
-        e.stopPropagation();
-        select(active.id);
-        onStartDrag(active.id);
-      }}
-    />
+    <>
+      {exiting && exiting.id !== active?.id ? (
+        <CaptionText
+          key={`out-${exiting.id}`}
+          clip={exiting}
+          progress={1}
+          cs={captionStyle}
+          selected={false}
+          phase="out"
+          onPointerDown={() => {}}
+        />
+      ) : null}
+      {active ? (
+        <CaptionText
+          key={active.id}
+          clip={active}
+          progress={progress}
+          cs={captionStyle}
+          selected={active.id === selectedClipId}
+          phase="in"
+          onPointerDown={(e) => {
+            e.stopPropagation();
+            select(active.id);
+            onStartDrag(active.id);
+          }}
+        />
+      ) : null}
+    </>
   );
 }
