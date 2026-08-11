@@ -579,9 +579,24 @@ export const useEditor = create<EditorState & EditorActions>((set, get) => {
     /** Remove intervalos de tempo (cortador de silêncio) fechando os buracos. */
     cutRanges: (ranges) => {
       const ordered = [...ranges].filter((r) => r.end - r.start > 0.05).sort((a, b) => a.start - b.start);
-      if (ordered.length === 0) return;
+      if (ordered.length === 0) return 0;
+      const captionsBefore = allClips(get().tracks).filter((c) => c.isCaption).length;
       write((tracks) =>
         mapTracks(tracks, (clips, track) => {
+          if (track.type === "text") {
+            const captions = clips.filter((c) => c.isCaption);
+            if (captions.length === 0) return clips;
+            const remapped = remapCaptionsAfterCuts(
+              captions.map((c) => ({ clip: c, start: c.startTime, end: c.startTime + c.duration })),
+              ordered,
+            ).map(({ clip, start, end }) => ({
+              ...clip,
+              startTime: start,
+              duration: Math.max(0.2, end - start),
+              sourceInEnd: Math.max(0.2, end - start),
+            }));
+            return [...clips.filter((c) => !c.isCaption), ...remapped];
+          }
           if (track.type !== "video" && track.type !== "audio") return clips;
           let out: Clip[] = clips;
           for (const r of ordered) {
