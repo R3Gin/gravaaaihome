@@ -988,7 +988,9 @@ export function VideoEditor() {
 
   const hasMedia = Boolean(srcUrl);
 
+  return (
     <>
+
       <div className="flex h-screen w-full items-center justify-center bg-[var(--background)] p-8 text-center md:hidden">
         <div className="max-w-xs space-y-3">
           <span className="mx-auto grid h-12 w-12 place-items-center rounded-2xl bg-[var(--brand)]/15 text-[var(--brand)]">
