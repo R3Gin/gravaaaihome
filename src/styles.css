@@ -164,6 +164,12 @@
   --recording-pause-dot-glow: rgba(250, 204, 21, 0.6);
 }
 
+/* ---- Troca rápida entre blocos de legenda (só transform/opacity) ---- */
+@keyframes cap-block-in { from { opacity: 0; transform: translateY(4px) } to { opacity: 1; transform: translateY(0) } }
+@keyframes cap-block-out { from { opacity: 1; transform: translateY(0) } to { opacity: 0; transform: translateY(-4px) } }
+.cap-block-in { animation: cap-block-in 110ms ease-out both; will-change: transform, opacity }
+.cap-block-out { animation: cap-block-out 100ms ease-in both; will-change: transform, opacity; pointer-events: none }
+
 /* ---- Miniaturas animadas dos estilos de legenda (painel Legendas) ---- */
 @keyframes cap-pop { 0%,10% { transform: scale(.5); opacity: 0 } 45% { transform: scale(1.12); opacity: 1 } 70%,100% { transform: scale(1); opacity: 1 } }
 @keyframes cap-karaoke { 0%,45% { color: rgba(255,255,255,.55) } 55%,100% { color: var(--brand) } }
