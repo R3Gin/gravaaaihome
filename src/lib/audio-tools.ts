@@ -110,3 +110,81 @@ export async function detectSpeechBlocks(
   }
   return blocks;
 }
+
+/** Áudio mono 16 kHz (formato esperado pelo Whisper). */
+export async function decodeMono16k(blob: Blob): Promise<Float32Array | null> {
+  const buf = await decode(blob);
+  if (!buf) return null;
+  const target = 16000;
+  if (Math.abs(buf.sampleRate - target) < 1 && buf.numberOfChannels === 1) {
+    return buf.getChannelData(0).slice();
+  }
+  const OfflineCtx =
+    window.OfflineAudioContext ??
+    (window as unknown as { webkitOfflineAudioContext?: typeof OfflineAudioContext })
+      .webkitOfflineAudioContext;
+  if (!OfflineCtx) return buf.getChannelData(0).slice();
+  const frames = Math.ceil(buf.duration * target);
+  const ctx = new OfflineCtx(1, frames, target);
+  const src = ctx.createBufferSource();
+  src.buffer = buf;
+  src.connect(ctx.destination);
+  src.start();
+  const rendered = await ctx.startRendering();
+  return rendered.getChannelData(0).slice();
+}
+
+/**
+ * Toca um trecho do áudio original com ou sem tratamento de ruído
+ * (high-pass + noise gate), para conferir antes de exportar.
+ */
+export async function playAudioPreview(
+  blob: Blob,
+  start: number,
+  end: number,
+  denoise: boolean,
+): Promise<() => void> {
+  const buf = await decode(blob);
+  if (!buf) return () => {};
+  const Ctx =
+    window.AudioContext ??
+    (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+  if (!Ctx) return () => {};
+  const ctx = new Ctx();
+  const src = ctx.createBufferSource();
+  src.buffer = buf;
+  let node: AudioNode = src;
+  if (denoise) {
+    const hp = ctx.createBiquadFilter();
+    hp.type = "highpass";
+    hp.frequency.value = 90;
+    const gate = ctx.createDynamicsCompressor();
+    gate.threshold.value = -45;
+    gate.knee.value = 6;
+    gate.ratio.value = 12;
+    gate.attack.value = 0.003;
+    gate.release.value = 0.15;
+    const makeup = ctx.createGain();
+    makeup.gain.value = 1.3;
+    node.connect(hp);
+    hp.connect(gate);
+    gate.connect(makeup);
+    node = makeup;
+  }
+  node.connect(ctx.destination);
+  const dur = Math.max(0.2, Math.min(buf.duration - start, end - start));
+  src.start(0, Math.max(0, start), dur);
+  let stopped = false;
+  const stop = () => {
+    if (stopped) return;
+    stopped = true;
+    try {
+      src.stop();
+    } catch {
+      /* já parou */
+    }
+    void ctx.close();
+  };
+  src.onended = stop;
+  return stop;
+}
