@@ -219,12 +219,14 @@ export function Preview({ videoRef }: Props) {
           onClick={(e) => {
             if (e.target === stageRef.current) select(null);
           }}
-          className="relative max-h-full max-w-full overflow-hidden rounded-xl border border-[var(--border)] bg-black shadow-lg"
+          className="relative overflow-hidden rounded-xl border border-[var(--border)] bg-black shadow-lg"
           style={{
             aspectRatio: String(ratio),
             containerType: "size",
-            width: ratio >= 1 ? "min(100%, 1100px)" : undefined,
-            height: ratio < 1 ? "100%" : undefined,
+            width: "min(100%, 1100px)",
+            maxWidth: "100%",
+            maxHeight: "100%",
+            margin: "auto",
           }}
         >
           {sourceUrl ? (
@@ -232,7 +234,7 @@ export function Preview({ videoRef }: Props) {
               ref={videoRef}
               src={sourceUrl}
               playsInline
-              className="h-full w-full object-cover"
+              className="h-full w-full object-contain"
               style={{ ...filterStyle, ...zoomStyle(videoClip) }}
             />
           ) : (
