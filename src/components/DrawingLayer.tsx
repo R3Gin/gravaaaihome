@@ -2,7 +2,7 @@
 // Os traços são guardados em coordenadas do container e redesenhados no
 // <canvas> de composição — por isso aparecem na gravação final.
 
-import { useCallback, useRef, useState, type RefObject } from "react";
+import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
 import { Eraser, Pen, Trash2, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 
