@@ -8,8 +8,10 @@ import {
   type AnimProp,
   type Easing,
 } from "@/lib/keyframes";
+import { KeyframeSpeedModal } from "@/components/editor/KeyframeSpeedModal";
 import { getPeaks, type Peaks } from "@/lib/waveform";
 import { cn } from "@/lib/utils";
+
 
 const LABEL_W = 96;
 const LANE_H = 56;
@@ -23,6 +25,8 @@ function fmt(t: number) {
 
 type Ghost = { start: number; duration: number } | null;
 type KfMenu = { x: number; y: number; prop: string; kfId: string } | null;
+type KfSpeed = { prop: string; kfId: string } | null;
+
 
 /** Sub-linha com os keyframes de uma propriedade do clipe selecionado. */
 function KeyframeLane({
