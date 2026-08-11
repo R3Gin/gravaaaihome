@@ -381,21 +381,28 @@ export function CameraPipBubble({
       ctx.drawImage(src, 0, 0, w, h);
 
       // 3) Fundo por trás (destination-over)
-      ctx.globalCompositeOperation = "destination-over";
-      if (effect === "blur") {
-        ctx.filter = "blur(14px)";
-        ctx.drawImage(src, -8, -8, w + 16, h + 16);
-        ctx.filter = "none";
-      } else if (effect === "image" && bgImg && bgImg.complete && bgImg.naturalWidth) {
-        const iw = bgImg.naturalWidth, ih = bgImg.naturalHeight;
-        // cover
-        const scale = Math.max(w / iw, h / ih);
-        const dw = iw * scale, dh = ih * scale;
-        const dx = (w - dw) / 2, dy = (h - dh) / 2;
-        ctx.drawImage(bgImg, dx, dy, dw, dh);
+      if (effect === "transparent") {
+        // Sem fundo: mantém só a pessoa recortada (alfa preservado).
       } else {
-        ctx.fillStyle = "#111";
-        ctx.fillRect(0, 0, w, h);
+        ctx.globalCompositeOperation = "destination-over";
+        if (effect === "blur") {
+          ctx.filter = "blur(14px)";
+          ctx.drawImage(src, -8, -8, w + 16, h + 16);
+          ctx.filter = "none";
+        } else if (effect === "image" && bgImg && bgImg.complete && bgImg.naturalWidth) {
+          const iw = bgImg.naturalWidth, ih = bgImg.naturalHeight;
+          // cover
+          const scale = Math.max(w / iw, h / ih);
+          const dw = iw * scale, dh = ih * scale;
+          const dx = (w - dw) / 2, dy = (h - dh) / 2;
+          ctx.drawImage(bgImg, dx, dy, dw, dh);
+        } else if (effect === "color") {
+          ctx.fillStyle = bgColor;
+          ctx.fillRect(0, 0, w, h);
+        } else {
+          ctx.fillStyle = "#111";
+          ctx.fillRect(0, 0, w, h);
+        }
       }
       ctx.restore();
     };
