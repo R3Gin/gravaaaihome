@@ -8,7 +8,17 @@ import {
   type Clip,
 } from "@/state/editor-store";
 import { resolveClip } from "@/lib/keyframes";
+import { renderCaptionWords, typewriterText } from "@/lib/caption-styles";
 import { cn } from "@/lib/utils";
+
+/** #rrggbb + alpha => rgba() */
+function withAlpha(hex: string, alpha: number) {
+  const m = /^#?([\da-f]{6})$/i.exec(hex.trim());
+  if (!m) return hex;
+  const n = parseInt(m[1], 16);
+  return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${alpha})`;
+}
+
 
 const ASPECTS: { id: AspectRatio; label: string; ratio: number }[] = [
   { id: "16:9", label: "16:9", ratio: 16 / 9 },
@@ -26,6 +36,8 @@ export function Preview({ videoRef }: Props) {
   const currentTime = useEditor((s) => s.currentTime);
   const playing = useEditor((s) => s.playing);
   const aspect = useEditor((s) => s.aspect);
+  const captionStyle = useEditor((s) => s.captionStyle);
+
   const selectedClipId = useEditor((s) => s.selectedClipId);
   const setAspect = useEditor((s) => s.setAspect);
   const setCurrentTime = useEditor((s) => s.setCurrentTime);
@@ -291,6 +303,70 @@ export function Preview({ videoRef }: Props) {
 
           {textClips.map((clip) => {
             const selected = clip.id === selectedClipId;
+
+            if (clip.isCaption) {
+              const progress = Math.max(
+                0,
+                Math.min(1, (currentTime - clip.startTime) / Math.max(0.01, clip.duration)),
+              );
+              const full = clip.textContent ?? "";
+              const cs = captionStyle;
+              const words =
+                cs.anim === "typewriter"
+                  ? null
+                  : renderCaptionWords(cs.anim, full, progress, {
+                      color: cs.color,
+                      highlight: cs.highlight,
+                      wordByWord: cs.wordByWord,
+                    });
+              return (
+                <div
+                  key={clip.id}
+                  onPointerDown={(e) => {
+                    e.stopPropagation();
+                    select(clip.id);
+                    dragRef.current = { id: clip.id, kind: "move" };
+                  }}
+                  className={cn(
+                    "absolute -translate-x-1/2 -translate-y-1/2 cursor-move px-3 py-1",
+                    selected && "outline outline-2 outline-[var(--brand)]",
+                  )}
+                  style={{
+                    left: `${(clip.position?.x ?? 0.5) * 100}%`,
+                    top: `${(clip.position?.y ?? 0.85) * 100}%`,
+                    maxWidth: "88%",
+                    opacity: clip.opacity ?? 1,
+                    textAlign: cs.align,
+                    fontFamily: cs.fontFamily,
+                    fontWeight: cs.bold ? 800 : 500,
+                    fontStyle: cs.italic ? "italic" : "normal",
+                    color: cs.color,
+                    fontSize: `${(cs.fontSize / 720) * 100}cqh`,
+                    lineHeight: 1.2,
+                    borderRadius: "0.4em",
+                    background: cs.background ? withAlpha(cs.highlight, cs.bgOpacity) : undefined,
+                    WebkitTextStroke: cs.outline ? "0.03em rgba(0,0,0,0.85)" : undefined,
+                    textShadow: cs.outline ? "0 0.04em 0.12em rgba(0,0,0,0.7)" : undefined,
+                  }}
+                >
+                  {words ? (
+                    <span className="inline-flex flex-wrap justify-center gap-[0.28em]">
+                      {words.map((w, i) => (
+                        <span
+                          key={`${clip.id}-${i}`}
+                          style={{ display: "inline-block", ...w.style }}
+                        >
+                          {w.text}
+                        </span>
+                      ))}
+                    </span>
+                  ) : (
+                    (typewriterText(full, progress) || "\u200b")
+                  )}
+                </div>
+              );
+            }
+
             const reveal = Math.max(0, Math.min(1, clip.reveal ?? 1));
             const mode = clip.revealMode ?? "none";
             const full = clip.textContent ?? "";
@@ -328,6 +404,7 @@ export function Preview({ videoRef }: Props) {
               </div>
             );
           })}
+
 
         </div>
       </div>
