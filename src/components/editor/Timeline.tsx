@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AudioLines, Copy, Scissors, Trash2, ZoomIn, ZoomOut } from "lucide-react";
+import { AudioLines, Copy, GripVertical, Scissors, Trash2, ZoomIn, ZoomOut } from "lucide-react";
 import { MIN_CLIP, findClip, useEditor, type Clip, type Track } from "@/state/editor-store";
 import {
   EASINGS,
