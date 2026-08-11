@@ -108,3 +108,16 @@ export function typewriterText(text: string, progress: number) {
   const chars = Math.round(text.length * clamp01(progress / 0.8));
   return text.slice(0, chars);
 }
+
+/** Aceita segundos numéricos ou "HH:MM:SS(.ms)" / "M:SS" e devolve segundos. */
+export function toSeconds(value: number | string | null | undefined): number {
+  if (typeof value === "number") return Number.isFinite(value) ? value : 0;
+  if (typeof value !== "string") return 0;
+  const s = value.trim().replace(",", ".");
+  if (/^\d*\.?\d+$/.test(s)) return parseFloat(s);
+  const parts = s.split(":").map((p) => parseFloat(p) || 0);
+  return parts.reduce((acc, p) => acc * 60 + p, 0);
+}
+
+/** Margem para evitar piscada na troca de segmentos. */
+export const CAPTION_END_BUFFER = 0.05;
