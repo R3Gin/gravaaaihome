@@ -359,6 +359,7 @@ export const useEditor = create<EditorState & EditorActions>((set, get) => {
         past: [],
         future: [],
         silences: [],
+        removedRanges: [],
       });
     },
 
