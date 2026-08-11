@@ -360,6 +360,7 @@ export async function exportTimeline(
   texts: TextOverlayImage[],
   size: { width: number; height: number },
   onProgress?: (ratio: number) => void,
+  options: ExportOptions = {},
 ): Promise<Blob> {
   if (clips.length === 0) throw new Error("Nenhum clipe na timeline.");
   const ff = await getFFmpeg();
