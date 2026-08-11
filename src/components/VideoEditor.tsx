@@ -413,14 +413,32 @@ export function VideoEditor() {
     if (f) void loadBlob(f, f.name);
   };
 
-  const onLoadedMetadata = () => {
+  const initializedUrlRef = useRef<string | null>(null);
+  const onLoadedMetadata = useCallback(() => {
     const v = videoRef.current;
-    if (!v || !Number.isFinite(v.duration)) return;
+    if (!v || !Number.isFinite(v.duration) || v.duration <= 0) return;
+    if (initializedUrlRef.current === v.currentSrc) return;
+    initializedUrlRef.current = v.currentSrc;
     setDuration(v.duration);
     setSrcSize({ width: v.videoWidth || 1280, height: v.videoHeight || 720 });
     setClips([newClip(0, v.duration)]);
     setSel({ start: 0, end: v.duration });
-  };
+  }, []);
+
+  // O evento pode disparar antes da hidratação; garantimos a leitura aqui.
+  useEffect(() => {
+    const v = videoRef.current;
+    if (!v || !srcUrl) return;
+    const handler = () => onLoadedMetadata();
+    v.addEventListener("loadedmetadata", handler);
+    v.addEventListener("durationchange", handler);
+    if (v.readyState >= 1) handler();
+    return () => {
+      v.removeEventListener("loadedmetadata", handler);
+      v.removeEventListener("durationchange", handler);
+    };
+  }, [srcUrl, onLoadedMetadata]);
+
 
   /* ---------------- preview ---------------- */
 
