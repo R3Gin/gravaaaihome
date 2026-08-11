@@ -20,6 +20,13 @@ import {
   type PresetId,
 } from "@/lib/text-presets";
 import type { CaptionAnim } from "@/lib/caption-styles";
+import {
+  BLOCK_PRESETS,
+  chunkCaptionWords,
+  chunkSegmentsByText,
+  type CaptionBlockSize,
+} from "@/lib/caption-chunking";
+import type { WordTiming } from "@/lib/captions";
 
 
 
@@ -119,6 +126,8 @@ export interface CaptionStyle {
   outline: boolean;
   /** anima palavra por palavra (senão, linha inteira de uma vez) */
   wordByWord: boolean;
+  /** tamanho dos blocos gerados na transcrição automática */
+  blockSize: CaptionBlockSize;
 }
 
 export const DEFAULT_CAPTION_STYLE: CaptionStyle = {
@@ -135,6 +144,7 @@ export const DEFAULT_CAPTION_STYLE: CaptionStyle = {
   italic: false,
   outline: true,
   wordByWord: true,
+  blockSize: "medio",
 };
 
 
@@ -201,7 +211,10 @@ export interface EditorActions {
   cutRanges: (ranges: { start: number; end: number }[]) => number;
   setSourceBlob: (blob: Blob | null) => void;
   setSilences: (ranges: SilenceRange[]) => void;
-  addCaptionClips: (segments: { start: number; end: number; text: string }[]) => void;
+  addCaptionClips: (
+    segments: { start: number; end: number; text: string }[],
+    words?: WordTiming[],
+  ) => void;
   setCaptionStyle: (patch: Partial<CaptionStyle>) => void;
   clearCaptions: () => void;
   /* --- keyframes --- */

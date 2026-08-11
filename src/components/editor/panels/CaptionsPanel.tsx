@@ -67,7 +67,7 @@ export function CaptionsPanel() {
     setError(null);
     setDownload(0);
     try {
-      const segs = await transcribe(sourceBlob, lang === "pt" ? "portuguese" : undefined, {
+      const res = await transcribe(sourceBlob, lang === "pt" ? "portuguese" : undefined, {
         onStage: (s) =>
           setStage(
             s === "audio"
@@ -78,7 +78,7 @@ export function CaptionsPanel() {
           ),
         onDownload: setDownload,
       });
-      addCaptionClips(segs);
+      addCaptionClips(res.segments, res.words);
       setTab("lista");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Não consegui gerar as legendas.");
