@@ -163,6 +163,11 @@ export function ScreenRecorder() {
   useEffect(() => {
     cameraEffectRef.current = camera.effect;
   }, [camera.effect]);
+  const cameraStyleRef = useRef(camera.style);
+  useEffect(() => {
+    cameraStyleRef.current = camera.style;
+  }, [camera.style]);
+  const [cameraSettingsOpen, setCameraSettingsOpen] = useState(false);
 
   useEffect(() => {
     statusRef.current = status;
