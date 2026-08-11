@@ -12,17 +12,20 @@ import {
 import {
   AudioLines,
   Captions,
+  Check,
   Copy,
   Crop,
   Download,
-  FileText,
+  Droplets,
   FlipHorizontal2,
+  Focus,
   Image as ImageIcon,
   Loader2,
   Maximize2,
   Minus,
   MoreHorizontal,
   MousePointer2,
+  Move,
   Music,
   Pause,
   Play,
@@ -31,8 +34,6 @@ import {
   RotateCcw,
   Scissors,
   Shapes,
-  SlidersHorizontal,
-  Sparkles,
   SplitSquareHorizontal,
   Trash2,
   Type,
@@ -42,15 +43,18 @@ import {
   Volume2,
   VolumeX,
   Wand2,
+  X,
   ZoomIn,
   ZoomOut,
 } from "lucide-react";
 import {
   exportTimeline,
+  type BlurRegion,
   type TimelineClip,
   type TransitionKind,
   type ZoomKey,
 } from "@/lib/ffmpeg-convert";
+import { detectSilences, detectSpeechBlocks, type Segment } from "@/lib/audio-tools";
 import { takeEditorHandoff } from "@/lib/editor-handoff";
 import { cn } from "@/lib/utils";
 
@@ -78,6 +82,7 @@ interface Clip {
   fadeOut: number;
   animIn: "none" | "fade" | "slide";
   animOut: "none" | "fade" | "slide";
+  denoise: boolean;
 }
 
 interface TextLayer {
@@ -90,26 +95,42 @@ interface TextLayer {
   y: number;
   size: number;
   color: string;
+  bg: string; // "" = sem fundo
+  font: string;
   align: "left" | "center" | "right";
   animIn: "none" | "fade" | "slide";
   animOut: "none" | "fade" | "slide";
+  caption?: boolean;
 }
 
-type Selection = { kind: "clip" | "text"; id: string } | null;
-type PanelId =
-  | "upload"
-  | "audio"
-  | "text"
-  | "elements"
-  | "captions"
-  | "transcript"
-  | "effects"
-  | "transitions"
-  | "filters";
+/** Camada retangular sobre o preview: blur ou spotlight. */
+interface ShapeLayer {
+  id: string;
+  kind: "blur" | "spotlight";
+  start: number;
+  end: number;
+  /** frações do quadro (0..1) */
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  /** blur: intensidade do desfoque; spotlight: escurecimento ao redor */
+  strength: number;
+  color: string;
+}
+
+interface SilenceMark extends Segment {
+  id: string;
+  status: "pending" | "ignored";
+}
+
+type Selection = { kind: "clip" | "text" | "shape"; id: string } | null;
+type PanelId = "upload" | "audio" | "text" | "elements" | "captions" | "transitions";
 
 interface Snapshot {
   clips: Clip[];
   texts: TextLayer[];
+  shapes: ShapeLayer[];
 }
 
 const uid = () => Math.random().toString(36).slice(2, 9);
@@ -144,7 +165,22 @@ const PANELS: { id: PanelId; label: string; Icon: typeof Upload }[] = [
   { id: "upload", label: "Upload", Icon: Upload },
   { id: "audio", label: "Áudio", Icon: Music },
   { id: "text", label: "Texto", Icon: Type },
+  { id: "captions", label: "Legendas", Icon: Captions },
+  { id: "elements", label: "Elementos", Icon: Shapes },
   { id: "transitions", label: "Transições", Icon: Wand2 },
+];
+
+const FONTS: readonly (readonly [string, string])[] = [
+  ["DM Sans", "DM Sans"],
+  ["Georgia", "Georgia"],
+  ["Impact", "Impact"],
+  ["Courier New", "Courier"],
+];
+
+const CAPTION_POSITIONS: readonly (readonly [string, number])[] = [
+  ["Topo", 0.12],
+  ["Centro", 0.5],
+  ["Base", 0.86],
 ];
 
 
@@ -181,6 +217,7 @@ export function VideoEditor() {
   const [duration, setDuration] = useState(0);
   const [clips, setClips] = useState<Clip[]>([]);
   const [texts, setTexts] = useState<TextLayer[]>([]);
+  const [shapes, setShapes] = useState<ShapeLayer[]>([]);
   const [selection, setSelection] = useState<Selection>(null);
   const [tool, setTool] = useState<"select" | "blade">("select");
   const [pxPerSec, setPxPerSec] = useState(60);
@@ -198,13 +235,30 @@ export function VideoEditor() {
   const [panel, setPanel] = useState<PanelId | null>("upload");
   const [previewZoom, setPreviewZoom] = useState(1);
   const [ratio, setRatio] = useState(RATIOS[0]);
-  const [inspectorTab, setInspectorTab] = useState<
-    "basic" | "bg" | "audio" | "anim" | "speed"
-  >("basic");
-  const [transcript, setTranscript] = useState("");
+  const [contentOffset, setContentOffset] = useState({ x: 0, y: 0 });
+  const [inspectorTab, setInspectorTab] = useState<"basic" | "audio" | "speed">("basic");
   const [past, setPast] = useState<Snapshot[]>([]);
   const [future, setFuture] = useState<Snapshot[]>([]);
   const [moreOpen, setMoreOpen] = useState(false);
+
+  // Cortador de silêncio
+  const [silences, setSilences] = useState<SilenceMark[]>([]);
+  const [silenceOpen, setSilenceOpen] = useState(false);
+  const [silenceBusy, setSilenceBusy] = useState(false);
+  const [sensitivity, setSensitivity] = useState(0.5);
+
+  // Legendas
+  const [captionsBusy, setCaptionsBusy] = useState(false);
+  const [captionStyle, setCaptionStyle] = useState({
+    font: "DM Sans",
+    size: 52,
+    color: "#ffffff",
+    bg: "#000000",
+    y: 0.86,
+  });
+
+  // Ruído de fundo (preview antes/depois)
+  const [bypassDenoise, setBypassDenoise] = useState(false);
 
   const sourceBlobRef = useRef<Blob | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -212,25 +266,35 @@ export function VideoEditor() {
   const inputRef = useRef<HTMLInputElement | null>(null);
   const lanesRef = useRef<HTMLDivElement | null>(null);
   const shellRef = useRef<HTMLDivElement | null>(null);
+  const stageRef = useRef<HTMLDivElement | null>(null);
   const timeRef = useRef(0);
   const playingRef = useRef(false);
-  const stateRef = useRef({ clips, texts, srcSize, selection });
-  stateRef.current = { clips, texts, srcSize, selection };
+  const stateRef = useRef({ clips, texts, shapes, srcSize, selection, ratio, contentOffset });
+  stateRef.current = { clips, texts, shapes, srcSize, selection, ratio, contentOffset };
   const dragRef = useRef<
     | { kind: "clip"; id: string; grabOffset: number }
     | { kind: "text"; id: string; grabOffset: number }
     | { kind: "text-edge"; id: string; edge: "start" | "end" }
+    | { kind: "shape"; id: string; grabOffset: number }
+    | { kind: "shape-edge"; id: string; edge: "start" | "end" }
     | { kind: "playhead" }
     | { kind: "sel"; edge: "start" | "end" }
     | null
   >(null);
-  const textDragRef = useRef(false);
+  const stageDragRef = useRef<
+    | { kind: "text" }
+    | { kind: "shape-move"; id: string; dx: number; dy: number }
+    | { kind: "shape-resize"; id: string }
+    | { kind: "frame"; x: number; y: number; ox: number; oy: number }
+    | null
+  >(null);
 
   const total = useMemo(() => {
     const a = clips.reduce((m, c) => Math.max(m, clipEnd(c)), 0);
     const b = texts.reduce((m, t) => Math.max(m, t.end), 0);
-    return Math.max(a, b, 1);
-  }, [clips, texts]);
+    const c = shapes.reduce((m, s) => Math.max(m, s.end), 0);
+    return Math.max(a, b, c, 1);
+  }, [clips, texts, shapes]);
 
   const selectedClip = useMemo(
     () => (selection?.kind === "clip" ? clips.find((c) => c.id === selection.id) ?? null : null),
@@ -240,6 +304,18 @@ export function VideoEditor() {
     () => (selection?.kind === "text" ? texts.find((t) => t.id === selection.id) ?? null : null),
     [selection, texts],
   );
+  const selectedShape = useMemo(
+    () => (selection?.kind === "shape" ? shapes.find((s) => s.id === selection.id) ?? null : null),
+    [selection, shapes],
+  );
+
+  /** Quadro de saída de acordo com a proporção escolhida. */
+  const frame = useMemo(() => {
+    const base = Math.max(srcSize.width, srcSize.height);
+    const h = ratio.value >= 1 ? Math.round(base / ratio.value) : base;
+    const w = Math.round(h * ratio.value);
+    return { width: Math.max(2, Math.round(w / 2) * 2), height: Math.max(2, Math.round(h / 2) * 2) };
+  }, [srcSize, ratio]);
 
   useEffect(() => {
     playingRef.current = playing;
@@ -260,18 +336,19 @@ export function VideoEditor() {
   /* ---------------- histórico ---------------- */
 
   const commit = useCallback(() => {
-    setPast((p) => [...p.slice(-49), { clips, texts }]);
+    setPast((p) => [...p.slice(-49), { clips, texts, shapes }]);
     setFuture([]);
     setResultUrl(null);
-  }, [clips, texts]);
+  }, [clips, texts, shapes]);
 
   const undo = () => {
     setPast((p) => {
       if (p.length === 0) return p;
       const prev = p[p.length - 1];
-      setFuture((f) => [{ clips, texts }, ...f].slice(0, 50));
+      setFuture((f) => [{ clips, texts, shapes }, ...f].slice(0, 50));
       setClips(prev.clips);
       setTexts(prev.texts);
+      setShapes(prev.shapes);
       setSelection(null);
       return p.slice(0, -1);
     });
@@ -281,9 +358,10 @@ export function VideoEditor() {
     setFuture((f) => {
       if (f.length === 0) return f;
       const next = f[0];
-      setPast((p) => [...p, { clips, texts }]);
+      setPast((p) => [...p, { clips, texts, shapes }]);
       setClips(next.clips);
       setTexts(next.texts);
+      setShapes(next.shapes);
       setSelection(null);
       return f.slice(1);
     });
@@ -361,6 +439,8 @@ export function VideoEditor() {
       setThumbs([]);
       setPeaks([]);
       setTexts([]);
+      setShapes([]);
+      setSilences([]);
       setClips([]);
       setPast([]);
       setFuture([]);
@@ -447,7 +527,14 @@ export function VideoEditor() {
       last = now;
       const video = videoRef.current;
       const canvas = canvasRef.current;
-      const { clips: cs, texts: ts, srcSize: size } = stateRef.current;
+      const {
+        clips: cs,
+        texts: ts,
+        shapes: sh,
+        srcSize: size,
+        ratio: rt,
+        contentOffset: off,
+      } = stateRef.current;
 
       if (playingRef.current) {
         const totalNow = cs.reduce((m, c) => Math.max(m, clipEnd(c)), 0);
@@ -484,8 +571,9 @@ export function VideoEditor() {
       }
 
       if (canvas) {
-        const W = size.width;
-        const H = size.height;
+        const base = Math.max(size.width, size.height);
+        const H = Math.max(2, Math.round((rt.value >= 1 ? base / rt.value : base) / 2) * 2);
+        const W = Math.max(2, Math.round((H * rt.value) / 2) * 2);
         if (canvas.width !== W || canvas.height !== H) {
           canvas.width = W;
           canvas.height = H;
@@ -498,12 +586,13 @@ export function VideoEditor() {
         ctx.fillStyle = "#000";
         ctx.fillRect(0, 0, W, H);
 
+        let placed: { dx: number; dy: number; dw: number; dh: number } | null = null;
         if (video && clip && video.readyState >= 2) {
           const local = t - clip.start;
           const f = clip.filters;
           const z = Math.max(1, zoomAt(clip.zoomKeys, local));
           let alpha = 1;
-          let offsetX = 0;
+          let shiftX = 0;
           const dur = clipDuration(clip);
           const isFirst = cs.length > 0 && cs.indexOf(clip) === 0;
           if (!isFirst && clip.transition !== "none") {
@@ -511,26 +600,85 @@ export function VideoEditor() {
             if (local < d) {
               const r = local / d;
               if (clip.transition === "fade") alpha = r;
-              else offsetX = (1 - r) * W;
+              else shiftX = (1 - r) * W;
             }
           }
+          const vw = size.width;
+          const vh = size.height;
+          const fit = Math.min(W / vw, H / vh) * z;
+          const dw = vw * fit;
+          const dh = vh * fit;
+          const dx = (W - dw) / 2 + (off.x * W) / 2 + shiftX;
+          const dy = (H - dh) / 2 + (off.y * H) / 2;
+          placed = { dx, dy, dw, dh };
           ctx.filter = `brightness(${(1 + f.brightness).toFixed(3)}) contrast(${f.contrast.toFixed(
             3,
           )}) saturate(${f.saturation.toFixed(3)})`;
           ctx.globalAlpha = alpha;
-          const dw = W * z;
-          const dh = H * z;
-          ctx.drawImage(video, offsetX - (dw - W) / 2, -(dh - H) / 2, dw, dh);
+          ctx.drawImage(video, dx, dy, dw, dh);
           ctx.filter = "none";
           ctx.globalAlpha = 1;
+        }
+
+        // Camadas de blur e spotlight
+        for (const s of sh) {
+          if (t < s.start || t > s.end) continue;
+          const rx = s.x * W;
+          const ry = s.y * H;
+          const rw = s.w * W;
+          const rh = s.h * H;
+          if (s.kind === "blur") {
+            if (!video || !placed) continue;
+            ctx.save();
+            ctx.beginPath();
+            ctx.rect(rx, ry, rw, rh);
+            ctx.clip();
+            ctx.filter = `blur(${Math.max(1, s.strength).toFixed(0)}px)`;
+            ctx.drawImage(video, placed.dx, placed.dy, placed.dw, placed.dh);
+            ctx.filter = "none";
+            ctx.restore();
+          } else {
+            ctx.save();
+            ctx.beginPath();
+            ctx.rect(0, 0, W, H);
+            ctx.ellipse(rx + rw / 2, ry + rh / 2, rw / 2, rh / 2, 0, 0, Math.PI * 2);
+            ctx.fillStyle = `rgba(0,0,0,${Math.min(0.95, Math.max(0, s.strength))})`;
+            ctx.fill("evenodd");
+            ctx.beginPath();
+            ctx.ellipse(rx + rw / 2, ry + rh / 2, rw / 2, rh / 2, 0, 0, Math.PI * 2);
+            ctx.strokeStyle = s.color;
+            ctx.lineWidth = Math.max(2, W * 0.004);
+            ctx.stroke();
+            ctx.restore();
+          }
         }
 
         for (const layer of ts) {
           if (t < layer.start || t > layer.end) continue;
           const fontSize = (layer.size / 1080) * H;
-          ctx.font = `700 ${fontSize}px "DM Sans", system-ui, sans-serif`;
+          ctx.font = `700 ${fontSize}px "${layer.font || "DM Sans"}", system-ui, sans-serif`;
           ctx.textAlign = layer.align;
           ctx.textBaseline = "middle";
+          if (layer.bg) {
+            const m = ctx.measureText(layer.text);
+            const padX = fontSize * 0.35;
+            const padY = fontSize * 0.28;
+            const bx =
+              layer.align === "center"
+                ? layer.x * W - m.width / 2
+                : layer.align === "right"
+                  ? layer.x * W - m.width
+                  : layer.x * W;
+            ctx.fillStyle = layer.bg;
+            ctx.globalAlpha = 0.7;
+            ctx.fillRect(
+              bx - padX,
+              layer.y * H - fontSize / 2 - padY,
+              m.width + padX * 2,
+              fontSize + padY * 2,
+            );
+            ctx.globalAlpha = 1;
+          }
           ctx.fillStyle = layer.color;
           ctx.shadowColor = "rgba(0,0,0,0.55)";
           ctx.shadowBlur = fontSize * 0.25;
@@ -615,6 +763,18 @@ export function VideoEditor() {
       (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
     };
 
+  const onShapePointerDown =
+    (layer: ShapeLayer, edge?: "start" | "end") => (e: ReactPointerEvent<HTMLDivElement>) => {
+      e.stopPropagation();
+      setSelection({ kind: "shape", id: layer.id });
+      commit();
+      const t = timeFromX(e.clientX);
+      dragRef.current = edge
+        ? { kind: "shape-edge", id: layer.id, edge }
+        : { kind: "shape", id: layer.id, grabOffset: t - layer.start };
+      (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    };
+
   const laneUnderPointer = (clientY: number, clientX: number): "text" | "overlay" | null => {
     const el = document.elementFromPoint(clientX, clientY) as HTMLElement | null;
     const lane = el?.closest("[data-lane]") as HTMLElement | null;
@@ -649,6 +809,24 @@ export function VideoEditor() {
             : { ...l, end: Math.max(t, l.start + 0.2) };
         }),
       );
+    } else if (drag.kind === "shape") {
+      setShapes((cur) =>
+        cur.map((s) => {
+          if (s.id !== drag.id) return s;
+          const len = s.end - s.start;
+          const start = Math.max(0, t - drag.grabOffset);
+          return { ...s, start, end: start + len };
+        }),
+      );
+    } else if (drag.kind === "shape-edge") {
+      setShapes((cur) =>
+        cur.map((s) => {
+          if (s.id !== drag.id) return s;
+          return drag.edge === "start"
+            ? { ...s, start: Math.min(Math.max(0, t), s.end - 0.2) }
+            : { ...s, end: Math.max(t, s.start + 0.2) };
+        }),
+      );
     } else if (drag.kind === "playhead") {
       seek(t);
     } else if (drag.kind === "sel") {
@@ -681,6 +859,7 @@ export function VideoEditor() {
       fadeOut: 0,
       animIn: "none",
       animOut: "none",
+      denoise: false,
     };
   }
 
@@ -710,6 +889,7 @@ export function VideoEditor() {
     if (!selection) return;
     commit();
     if (selection.kind === "clip") setClips((cur) => cur.filter((c) => c.id !== selection.id));
+    else if (selection.kind === "shape") setShapes((cur) => cur.filter((s) => s.id !== selection.id));
     else setTexts((cur) => cur.filter((t) => t.id !== selection.id));
     setSelection(null);
   };
@@ -770,6 +950,9 @@ export function VideoEditor() {
       align: "center",
       animIn: "none",
       animOut: "none",
+      bg: "",
+      font: "DM Sans",
+      caption: false,
       ...preset,
     };
     setTexts((cur) => [...cur, layer]);
@@ -851,28 +1034,236 @@ export function VideoEditor() {
     commit();
     setClips([newClip(0, duration)]);
     setTexts([]);
+    setShapes([]);
+    setSilences([]);
     setSel({ start: 0, end: duration });
     setSelection(null);
   };
 
+  /* ---------------- blur / spotlight ---------------- */
+
+  const addShape = (kind: "blur" | "spotlight") => {
+    commit();
+    const start = Math.min(time, Math.max(0, total - 1));
+    const layer: ShapeLayer = {
+      id: uid(),
+      kind,
+      start,
+      end: Math.min(total, start + 3),
+      x: 0.3,
+      y: 0.3,
+      w: kind === "blur" ? 0.3 : 0.28,
+      h: kind === "blur" ? 0.2 : 0.28,
+      strength: kind === "blur" ? 18 : 0.55,
+      color: "#ef4444",
+    };
+    setShapes((cur) => [...cur, layer]);
+    setSelection({ kind: "shape", id: layer.id });
+    setPanel(null);
+  };
+
+  const updateSelectedShape = (patch: Partial<ShapeLayer>, record = true) => {
+    if (!selectedShape) return;
+    if (record) commit();
+    setShapes((cur) => cur.map((s) => (s.id === selectedShape.id ? { ...s, ...patch } : s)));
+  };
+
+  /* ---------------- cortador de silêncio ---------------- */
+
+  const runSilenceDetection = async (value = sensitivity) => {
+    const blob = sourceBlobRef.current;
+    if (!blob) return;
+    setSilenceBusy(true);
+    try {
+      const segs = await detectSilences(blob, value);
+      setSilences(
+        segs.map((s) => ({ ...s, id: uid(), status: "pending" as const })),
+      );
+      setSilenceOpen(true);
+    } catch {
+      setError("Não foi possível analisar o áudio deste vídeo.");
+    } finally {
+      setSilenceBusy(false);
+    }
+  };
+
+  /** Remove da timeline o intervalo indicado (mesma lógica de "remover seleção"). */
+  const cutRange = (list: Clip[], start: number, end: number): Clip[] => {
+    const out: Clip[] = [];
+    for (const c of list) {
+      const cs = c.start;
+      const ce = clipEnd(c);
+      const speed = c.speed || 1;
+      if (end <= cs || start >= ce) {
+        out.push(c);
+        continue;
+      }
+      if (start > cs) out.push({ ...c, srcEnd: c.srcStart + (start - cs) * speed });
+      if (end < ce)
+        out.push({
+          ...c,
+          id: uid(),
+          srcStart: c.srcStart + (end - cs) * speed,
+          start: end,
+          zoomKeys: [],
+        });
+    }
+    return out.filter((c) => clipDuration(c) > MIN_CLIP);
+  };
+
+  const removeSilences = (marks: SilenceMark[]) => {
+    const targets = marks.filter((m) => m.status === "pending").sort((a, b) => b.start - a.start);
+    if (targets.length === 0) return;
+    commit();
+    setClips((cur) => {
+      let next = cur;
+      for (const m of targets) next = cutRange(next, m.start, m.end);
+      return next.sort((a, b) => a.start - b.start);
+    });
+    setSilences((cur) => cur.filter((m) => !targets.some((t) => t.id === m.id)));
+    setSelection(null);
+    window.setTimeout(rippleClose, 0);
+  };
+
+  /* ---------------- legendas automáticas ---------------- */
+
+  const generateCaptions = async () => {
+    const blob = sourceBlobRef.current;
+    if (!blob) return;
+    setCaptionsBusy(true);
+    try {
+      const blocks = await detectSpeechBlocks(blob);
+      if (blocks.length === 0) {
+        setError("Nenhuma fala detectada no áudio.");
+        return;
+      }
+      commit();
+      const layers: TextLayer[] = blocks.map((b, i) => ({
+        id: uid(),
+        lane: "text",
+        text: `Legenda ${i + 1}`,
+        start: b.start,
+        end: b.end,
+        x: 0.5,
+        y: captionStyle.y,
+        size: captionStyle.size,
+        color: captionStyle.color,
+        align: "center",
+        animIn: "none",
+        animOut: "none",
+        bg: captionStyle.bg,
+        font: captionStyle.font,
+        caption: true,
+      }));
+      setTexts((cur) => [...cur.filter((t) => !t.caption), ...layers]);
+      setSelection({ kind: "text", id: layers[0].id });
+    } catch {
+      setError("Não foi possível gerar as legendas.");
+    } finally {
+      setCaptionsBusy(false);
+    }
+  };
+
+  const applyCaptionStyle = (patch: Partial<typeof captionStyle>) => {
+    const next = { ...captionStyle, ...patch };
+    setCaptionStyle(next);
+    setTexts((cur) =>
+      cur.map((t) =>
+        t.caption
+          ? { ...t, font: next.font, size: next.size, color: next.color, bg: next.bg, y: next.y }
+          : t,
+      ),
+    );
+  };
+
   /* ---------------- overlay no player ---------------- */
 
-  const onStagePointerDown = (e: ReactPointerEvent<HTMLDivElement>) => {
-    if (!selectedText) return;
-    textDragRef.current = true;
-    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-    moveTextTo(e);
-  };
-  const moveTextTo = (e: ReactPointerEvent<HTMLDivElement>) => {
-    if (!selectedText) return;
+  const stagePoint = (e: ReactPointerEvent<HTMLDivElement>) => {
     const rect = e.currentTarget.getBoundingClientRect();
-    updateSelectedText(
-      {
-        x: Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width)),
-        y: Math.min(1, Math.max(0, (e.clientY - rect.top) / rect.height)),
-      },
-      false,
-    );
+    return {
+      x: Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width)),
+      y: Math.min(1, Math.max(0, (e.clientY - rect.top) / rect.height)),
+    };
+  };
+
+  const onStagePointerDown = (e: ReactPointerEvent<HTMLDivElement>) => {
+    const p = stagePoint(e);
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    if (selectedShape) {
+      commit();
+      stageDragRef.current = {
+        kind: "shape-move",
+        id: selectedShape.id,
+        dx: p.x - selectedShape.x,
+        dy: p.y - selectedShape.y,
+      };
+      return;
+    }
+    if (selectedText) {
+      commit();
+      stageDragRef.current = { kind: "text" };
+      updateSelectedText({ x: p.x, y: p.y }, false);
+      return;
+    }
+    stageDragRef.current = {
+      kind: "frame",
+      x: e.clientX,
+      y: e.clientY,
+      ox: contentOffset.x,
+      oy: contentOffset.y,
+    };
+  };
+
+  const onStagePointerMove = (e: ReactPointerEvent<HTMLDivElement>) => {
+    const drag = stageDragRef.current;
+    if (!drag) return;
+    const p = stagePoint(e);
+    if (drag.kind === "text") {
+      updateSelectedText({ x: p.x, y: p.y }, false);
+    } else if (drag.kind === "shape-move") {
+      setShapes((cur) =>
+        cur.map((s) =>
+          s.id === drag.id
+            ? {
+                ...s,
+                x: Math.min(1 - s.w, Math.max(0, p.x - drag.dx)),
+                y: Math.min(1 - s.h, Math.max(0, p.y - drag.dy)),
+              }
+            : s,
+        ),
+      );
+    } else if (drag.kind === "shape-resize") {
+      setShapes((cur) =>
+        cur.map((s) =>
+          s.id === drag.id
+            ? {
+                ...s,
+                w: Math.min(1 - s.x, Math.max(0.05, p.x - s.x)),
+                h: Math.min(1 - s.y, Math.max(0.05, p.y - s.y)),
+              }
+            : s,
+        ),
+      );
+    } else if (drag.kind === "frame") {
+      const rect = e.currentTarget.getBoundingClientRect();
+      setContentOffset({
+        x: Math.min(1, Math.max(-1, drag.ox + ((e.clientX - drag.x) / rect.width) * 2)),
+        y: Math.min(1, Math.max(-1, drag.oy + ((e.clientY - drag.y) / rect.height) * 2)),
+      });
+    }
+  };
+
+  const onStagePointerUp = () => {
+    stageDragRef.current = null;
+  };
+
+  const startShapeResize = (id: string) => (e: ReactPointerEvent<HTMLDivElement>) => {
+    e.stopPropagation();
+    commit();
+    setSelection({ kind: "shape", id });
+    stageDragRef.current = { kind: "shape-resize", id };
+    const stage = stageRef.current;
+    stage?.setPointerCapture?.(e.pointerId);
   };
 
   /* ---------------- exportação ---------------- */
@@ -937,9 +1328,40 @@ export function VideoEditor() {
         filters: c.filters,
         transition: c.transition,
         zoomKeys: c.zoomKeys,
+        denoise: c.denoise && !bypassDenoise,
       }));
 
-      const out = await exportTimeline(blob, payload, overlays, srcSize, (r) => setProgress(r));
+      const blurs = shapes
+        .filter((s) => s.kind === "blur")
+        .map((s) => ({
+          x: s.x * srcSize.width,
+          y: s.y * srcSize.height,
+          w: s.w * srcSize.width,
+          h: s.h * srcSize.height,
+          strength: s.strength,
+          start: mapTime(s.start),
+          end: mapTime(s.end),
+        }));
+
+      const out = await exportTimeline(
+        blob,
+        payload,
+        overlays,
+        srcSize,
+        (r) => setProgress(r),
+        {
+          blurs,
+          frame:
+            ratio.id === RATIOS[0].id && contentOffset.x === 0 && contentOffset.y === 0
+              ? undefined
+              : {
+                  width: frame.width,
+                  height: frame.height,
+                  offsetX: contentOffset.x,
+                  offsetY: contentOffset.y,
+                },
+        },
+      );
       if (resultUrl) URL.revokeObjectURL(resultUrl);
       setResultUrl(URL.createObjectURL(out));
       setProgress(1);
@@ -1142,11 +1564,14 @@ export function VideoEditor() {
                   onUpload={() => inputRef.current?.click()}
                   onDropFile={onDrop}
                   onAddText={addText}
+                  onAddShape={addShape}
                   onApplyFilters={(f) => updateSelectedClip({ filters: f })}
                   onApplyTransition={(t) => updateSelectedClip({ transition: t })}
                   selectedClip={selectedClip}
-                  transcript={transcript}
-                  setTranscript={setTranscript}
+                  onGenerateCaptions={generateCaptions}
+                  captionsBusy={captionsBusy}
+                  captionStyle={captionStyle}
+                  onCaptionStyle={applyCaptionStyle}
                   time={time}
                 />
               </aside>
@@ -1213,9 +1638,11 @@ export function VideoEditor() {
               </div>
             ) : (
               <div
+                ref={stageRef}
                 onPointerDown={onStagePointerDown}
-                onPointerMove={(e) => textDragRef.current && moveTextTo(e)}
-                onPointerUp={() => (textDragRef.current = false)}
+                onPointerMove={onStagePointerMove}
+                onPointerUp={onStagePointerUp}
+                onPointerCancel={onStagePointerUp}
                 style={{
                   aspectRatio: String(ratio.value),
                   transform: `scale(${previewZoom})`,
@@ -1224,7 +1651,7 @@ export function VideoEditor() {
                 }}
                 className={cn(
                   "relative h-full overflow-hidden rounded-xl border border-[var(--border)] bg-black transition-transform",
-                  selectedText && "cursor-move",
+                  (selectedText || selectedShape) && "cursor-move",
                 )}
               >
                 <canvas ref={canvasRef} className="h-full w-full object-contain" />
@@ -1235,6 +1662,46 @@ export function VideoEditor() {
                   playsInline
                   className="pointer-events-none absolute h-px w-px opacity-0"
                 />
+                {shapes
+                  .filter((s) => time >= s.start && time <= s.end)
+                  .map((s) => (
+                    <div
+                      key={s.id}
+                      onPointerDown={(e) => {
+                        e.stopPropagation();
+                        setSelection({ kind: "shape", id: s.id });
+                        commit();
+                        const rect = (
+                          stageRef.current as HTMLElement
+                        ).getBoundingClientRect();
+                        stageDragRef.current = {
+                          kind: "shape-move",
+                          id: s.id,
+                          dx: (e.clientX - rect.left) / rect.width - s.x,
+                          dy: (e.clientY - rect.top) / rect.height - s.y,
+                        };
+                        stageRef.current?.setPointerCapture?.(e.pointerId);
+                      }}
+                      style={{
+                        left: `${s.x * 100}%`,
+                        top: `${s.y * 100}%`,
+                        width: `${s.w * 100}%`,
+                        height: `${s.h * 100}%`,
+                        borderRadius: s.kind === "spotlight" ? "9999px" : "6px",
+                      }}
+                      className={cn(
+                        "absolute cursor-move border-2 border-dashed",
+                        selectedShape?.id === s.id
+                          ? "border-[var(--brand)]"
+                          : "border-white/40 hover:border-white/70",
+                      )}
+                    >
+                      <span
+                        onPointerDown={startShapeResize(s.id)}
+                        className="absolute -bottom-1.5 -right-1.5 h-3 w-3 cursor-nwse-resize rounded-sm bg-[var(--brand)]"
+                      />
+                    </div>
+                  ))}
                 {selectedText ? (
                   <div
                     className="pointer-events-none absolute -translate-x-1/2 -translate-y-1/2 border border-[var(--brand)]"
@@ -1293,6 +1760,18 @@ export function VideoEditor() {
               >
                 <FlipHorizontal2 className="h-4 w-4" />
               </IconBtn>
+              <IconBtn
+                label="Detectar silêncios"
+                active={silenceOpen}
+                onClick={() => (silenceOpen ? setSilenceOpen(false) : void runSilenceDetection())}
+                disabled={!hasMedia || silenceBusy}
+              >
+                {silenceBusy ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <AudioLines className="h-4 w-4" />
+                )}
+              </IconBtn>
               <div className="relative">
                 <IconBtn label="Mais opções" onClick={() => setMoreOpen((o) => !o)}>
                   <MoreHorizontal className="h-4 w-4" />
@@ -1339,6 +1818,84 @@ export function VideoEditor() {
                 </IconBtn>
               </div>
             </div>
+
+            {silenceOpen ? (
+              <div className="shrink-0 space-y-2 border-b border-[var(--border)] bg-[var(--surface-2)] px-3 py-2">
+                <div className="flex flex-wrap items-center gap-2">
+                  <p className="text-xs font-semibold">
+                    {silences.filter((s) => s.status === "pending").length} trecho(s) de silêncio
+                    encontrado(s)
+                  </p>
+                  <label className="ml-auto flex items-center gap-2 text-[11px] text-[var(--muted-foreground)]">
+                    Pouco sensível
+                    <input
+                      type="range"
+                      min={0}
+                      max={1}
+                      step={0.05}
+                      value={sensitivity}
+                      onChange={(e) => {
+                        const v = Number(e.target.value);
+                        setSensitivity(v);
+                        void runSilenceDetection(v);
+                      }}
+                      className="w-32 accent-[var(--brand)]"
+                    />
+                    Muito sensível
+                  </label>
+                  <button
+                    onClick={() => removeSilences(silences)}
+                    disabled={silences.every((s) => s.status !== "pending")}
+                    className="rounded-lg bg-[var(--brand)] px-3 py-1.5 text-[11px] font-semibold text-white disabled:opacity-40"
+                  >
+                    Remover todos
+                  </button>
+                  <button
+                    onClick={() => {
+                      setSilenceOpen(false);
+                      setSilences([]);
+                    }}
+                    className="rounded-lg border border-[var(--border)] px-3 py-1.5 text-[11px] font-semibold"
+                  >
+                    Fechar
+                  </button>
+                </div>
+                <div className="flex max-h-20 flex-wrap gap-1.5 overflow-y-auto">
+                  {silences.map((s) => (
+                    <span
+                      key={s.id}
+                      className={cn(
+                        "inline-flex items-center gap-1 rounded-md border px-2 py-1 text-[11px] tabular-nums",
+                        s.status === "pending"
+                          ? "border-[var(--brand)]/50 text-[var(--foreground)]"
+                          : "border-white/10 text-[var(--muted-foreground)] line-through",
+                      )}
+                    >
+                      {short(s.start)} – {short(s.end)}
+                      <button
+                        title="Remover este trecho"
+                        onClick={() => removeSilences([s])}
+                        className="text-[var(--brand)]"
+                      >
+                        <Check className="h-3 w-3" />
+                      </button>
+                      <button
+                        title="Ignorar"
+                        onClick={() =>
+                          setSilences((cur) =>
+                            cur.map((m) => (m.id === s.id ? { ...m, status: "ignored" } : m)),
+                          )
+                        }
+                        className="text-[var(--muted-foreground)]"
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+
 
             <div
               ref={lanesRef}
@@ -1480,6 +2037,41 @@ export function VideoEditor() {
                     ))}
                 </Lane>
 
+                {/* Faixa de efeitos (blur / spotlight) */}
+                <Lane icon={<Wand2 className="h-3.5 w-3.5" />} label="Efeitos">
+                  {shapes.length === 0 ? <Placeholder /> : null}
+                  {shapes.map((s) => (
+                    <div
+                      key={s.id}
+                      onPointerDown={onShapePointerDown(s)}
+                      style={{
+                        left: s.start * pxPerSec,
+                        width: Math.max(12, (s.end - s.start) * pxPerSec),
+                      }}
+                      className={cn(
+                        "absolute inset-y-2 cursor-grab overflow-hidden rounded-md border px-2 text-[10px] font-semibold leading-6",
+                        selectedShape?.id === s.id
+                          ? "border-[var(--brand)] bg-[var(--brand)]/20 text-white"
+                          : "border-white/15 bg-[var(--surface-2)] text-[var(--muted-foreground)]",
+                      )}
+                    >
+                      <span className="pointer-events-none truncate">
+                        {s.kind === "blur" ? "Blur" : "Spotlight"}
+                      </span>
+                      {(["start", "end"] as const).map((edge) => (
+                        <span
+                          key={edge}
+                          onPointerDown={onShapePointerDown(s, edge)}
+                          className={cn(
+                            "absolute inset-y-0 w-1.5 cursor-ew-resize bg-[var(--brand)]/70",
+                            edge === "start" ? "left-0" : "right-0",
+                          )}
+                        />
+                      ))}
+                    </div>
+                  ))}
+                </Lane>
+
                 {/* Faixa de áudio */}
                 <Lane
                   icon={
@@ -1509,6 +2101,22 @@ export function VideoEditor() {
                       <Waveform peaks={peaks} clip={c} duration={duration} />
                     </div>
                   ))}
+                  {silences.map((s) => (
+                    <div
+                      key={s.id}
+                      title={`Silêncio ${short(s.start)} – ${short(s.end)}`}
+                      style={{
+                        left: s.start * pxPerSec,
+                        width: Math.max(2, (s.end - s.start) * pxPerSec),
+                      }}
+                      className={cn(
+                        "pointer-events-none absolute inset-y-2 rounded-sm border",
+                        s.status === "pending"
+                          ? "border-[var(--brand)] bg-[var(--brand)]/30"
+                          : "border-white/20 bg-white/5",
+                      )}
+                    />
+                  ))}
                 </Lane>
 
                 {/* Playhead */}
@@ -1524,7 +2132,7 @@ export function VideoEditor() {
         </div>
 
         {/* ---------- 4. PAINEL DIREITO ---------- */}
-        {selectedClip || selectedText ? (
+        {selectedClip || selectedText || selectedShape ? (
           <aside className="w-72 shrink-0 overflow-y-auto overflow-x-hidden border-l border-[var(--border)] bg-[var(--surface)] p-4">
             {selectedClip ? (
               <>
@@ -1532,6 +2140,7 @@ export function VideoEditor() {
                   {(
                     [
                       ["basic", "Básico"],
+                      ["audio", "Áudio"],
                       ["speed", "Velocidade"],
                     ] as const
                   ).map(([id, label]) => (
@@ -1637,6 +2246,37 @@ export function VideoEditor() {
                   </div>
                 ) : null}
 
+                {inspectorTab === "audio" ? (
+                  <div className="space-y-3">
+                    <label className="flex items-center justify-between gap-2 rounded-lg border border-[var(--border)] bg-[var(--surface-2)] p-2 text-xs font-semibold">
+                      Reduzir ruído de fundo
+                      <input
+                        type="checkbox"
+                        checked={!!selectedClip.denoise}
+                        onChange={(e) => updateSelectedClip({ denoise: e.target.checked })}
+                        className="h-4 w-4 accent-[var(--brand)]"
+                      />
+                    </label>
+                    <p className="text-[11px] text-[var(--muted-foreground)]">
+                      Remove chiado, ventilador e ruídos constantes na exportação deste clipe.
+                    </p>
+                    <button
+                      disabled={!selectedClip.denoise}
+                      onClick={() => setBypassDenoise((b) => !b)}
+                      className="w-full rounded-lg border border-[var(--border)] px-3 py-2 text-xs font-semibold disabled:opacity-40"
+                    >
+                      {bypassDenoise ? "Ouvindo: antes (original)" : "Ouvindo: depois (com redução)"}
+                    </button>
+                    <Slider
+                      label="Volume"
+                      value={selectedClip.volume}
+                      min={0}
+                      max={1.5}
+                      step={0.05}
+                      onChange={(v) => updateSelectedClip({ volume: v }, false)}
+                    />
+                  </div>
+                ) : null}
 
                 {inspectorTab === "speed" ? (
                   <div className="space-y-3">
@@ -1721,6 +2361,38 @@ export function VideoEditor() {
                 />
                 <p className="text-[11px] text-[var(--muted-foreground)]">
                   Arraste no player para posicionar. Ajuste entrada e saída pelas bordas do clipe.
+                </p>
+              </div>
+            ) : selectedShape ? (
+              <div className="space-y-3">
+                <h2 className="font-display text-sm font-bold tracking-tight">
+                  {selectedShape.kind === "blur" ? "Área de blur" : "Spotlight"}
+                </h2>
+                <Slider
+                  label={selectedShape.kind === "blur" ? "Intensidade do desfoque" : "Escurecimento"}
+                  value={selectedShape.strength}
+                  min={selectedShape.kind === "blur" ? 2 : 0}
+                  max={selectedShape.kind === "blur" ? 60 : 0.95}
+                  step={selectedShape.kind === "blur" ? 1 : 0.05}
+                  onChange={(v) => updateSelectedShape({ strength: v }, false)}
+                />
+                {selectedShape.kind === "spotlight" ? (
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs text-[var(--muted-foreground)]">Cor do contorno</span>
+                    <input
+                      type="color"
+                      value={selectedShape.color}
+                      onChange={(e) => updateSelectedShape({ color: e.target.value }, false)}
+                      className="h-8 w-14 rounded border border-[var(--border)] bg-transparent"
+                    />
+                  </div>
+                ) : null}
+                <p className="text-[11px] tabular-nums text-[var(--muted-foreground)]">
+                  {short(selectedShape.start)} – {short(selectedShape.end)}
+                </p>
+                <p className="text-[11px] text-[var(--muted-foreground)]">
+                  Arraste no player para mover e use o canto inferior direito para redimensionar. Ajuste
+                  o tempo pela faixa Efeitos.
                 </p>
               </div>
             ) : null}
@@ -1966,11 +2638,14 @@ function SidePanel({
   onUpload,
   onDropFile,
   onAddText,
+  onAddShape,
   onApplyFilters,
   onApplyTransition,
   selectedClip,
-  transcript,
-  setTranscript,
+  onGenerateCaptions,
+  captionsBusy,
+  captionStyle,
+  onCaptionStyle,
   time,
 }: {
   panel: PanelId;
@@ -1981,11 +2656,14 @@ function SidePanel({
   onUpload: () => void;
   onDropFile: (e: DragEvent<HTMLDivElement>) => void;
   onAddText: (preset?: Partial<TextLayer>, lane?: "text" | "overlay") => void;
+  onAddShape: (kind: "blur" | "spotlight") => void;
   onApplyFilters: (f: Filters) => void;
   onApplyTransition: (t: TransitionKind) => void;
   selectedClip: Clip | null;
-  transcript: string;
-  setTranscript: (v: string) => void;
+  onGenerateCaptions: () => void;
+  captionsBusy: boolean;
+  captionStyle: { font: string; size: number; color: string; bg: string; y: number };
+  onCaptionStyle: (patch: Partial<{ font: string; size: number; color: string; bg: string; y: number }>) => void;
   time: number;
 }) {
   const title = PANELS.find((p) => p.id === panel)?.label ?? "";
@@ -2070,76 +2748,126 @@ function SidePanel({
       ) : null}
 
       {panel === "elements" ? (
-        <div className="grid grid-cols-4 gap-2">
-          {STICKERS.map((s) => (
-            <button
-              key={s}
-              onClick={() => onAddText({ text: s, size: 140, y: 0.5 }, "overlay")}
-              className="grid h-14 place-items-center rounded-lg border border-[var(--border)] bg-[var(--surface-2)] text-2xl hover:border-[var(--brand)]"
-            >
-              {s}
-            </button>
-          ))}
-        </div>
-      ) : null}
-
-      {panel === "captions" ? (
         <>
-          <p className="text-xs text-[var(--muted-foreground)]">
-            A legenda automática por IA ainda não está ligada. Enquanto isso, crie legendas na posição
-            do playhead — cada uma vira um clipe na faixa de texto.
-          </p>
           <button
-            onClick={() => onAddText({ text: "Nova legenda", size: 52, y: 0.86 })}
-            className="w-full rounded-lg bg-[var(--brand)] px-3 py-2 text-xs font-semibold text-white"
+            disabled={!hasMedia}
+            onClick={() => onAddShape("blur")}
+            className="w-full rounded-lg border border-[var(--border)] bg-[var(--surface-2)] px-3 py-3 text-left text-xs font-semibold hover:border-[var(--brand)] disabled:opacity-40"
           >
-            Adicionar legenda em {short(time)}
+            Adicionar área de blur
+            <span className="mt-1 block font-normal text-[var(--muted-foreground)]">
+              Retângulo arrastável que desfoca o vídeo por baixo.
+            </span>
           </button>
-        </>
-      ) : null}
-
-      {panel === "transcript" ? (
-        <>
-          <textarea
-            value={transcript}
-            onChange={(e) => setTranscript(e.target.value)}
-            rows={10}
-            placeholder="Cole ou escreva a transcrição do áudio aqui…"
-            className="w-full rounded-lg border border-[var(--border)] bg-[var(--surface-2)] p-2 text-xs"
-          />
           <button
-            onClick={() => {
-              const line = transcript.split("\n").find((l) => l.trim().length > 0);
-              if (line) onAddText({ text: line.trim(), size: 52, y: 0.86 });
-            }}
-            className="w-full rounded-lg border border-[var(--border)] bg-[var(--surface-2)] px-3 py-2 text-xs font-semibold"
+            disabled={!hasMedia}
+            onClick={() => onAddShape("spotlight")}
+            className="w-full rounded-lg border border-[var(--border)] bg-[var(--surface-2)] px-3 py-3 text-left text-xs font-semibold hover:border-[var(--brand)] disabled:opacity-40"
           >
-            Enviar primeira linha para a timeline
+            Adicionar spotlight
+            <span className="mt-1 block font-normal text-[var(--muted-foreground)]">
+              Destaca uma área e escurece o restante do quadro.
+            </span>
           </button>
-        </>
-      ) : null}
-
-      {panel === "effects" || panel === "filters" ? (
-        <>
-          {!selectedClip ? (
-            <p className="text-xs text-[var(--muted-foreground)]">
-              Selecione um clipe na timeline para aplicar.
-            </p>
-          ) : null}
-          <div className="grid grid-cols-2 gap-2">
-            {FILTER_PRESETS.map((p) => (
+          <div className="grid grid-cols-4 gap-2 pt-1">
+            {STICKERS.map((s) => (
               <button
-                key={p.name}
-                disabled={!selectedClip}
-                onClick={() => onApplyFilters(p.filters)}
-                className="rounded-lg border border-[var(--border)] bg-[var(--surface-2)] px-2 py-3 text-xs font-semibold hover:border-[var(--brand)] disabled:opacity-40"
+                key={s}
+                onClick={() => onAddText({ text: s, size: 140, y: 0.5 }, "overlay")}
+                className="grid h-14 place-items-center rounded-lg border border-[var(--border)] bg-[var(--surface-2)] text-2xl hover:border-[var(--brand)]"
               >
-                {p.name}
+                {s}
               </button>
             ))}
           </div>
         </>
       ) : null}
+
+      {panel === "captions" ? (
+        <>
+          <button
+            disabled={!hasMedia || captionsBusy}
+            onClick={onGenerateCaptions}
+            className="inline-flex w-full items-center justify-center gap-1.5 rounded-lg bg-[var(--brand)] px-3 py-2 text-xs font-semibold text-white disabled:opacity-40"
+          >
+            {captionsBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
+            Gerar legendas automaticamente
+          </button>
+          <p className="text-[11px] text-[var(--muted-foreground)]">
+            Os blocos são detectados pelo áudio e criados na faixa de texto. Clique em cada bloco para
+            corrigir o conteúdo.
+          </p>
+
+          <div className="space-y-2 rounded-lg border border-[var(--border)] bg-[var(--surface-2)] p-2">
+            <label className="block text-[11px] font-semibold">Fonte</label>
+            <select
+              value={captionStyle.font}
+              onChange={(e) => onCaptionStyle({ font: e.target.value })}
+              className="w-full rounded-md border border-[var(--border)] bg-[var(--surface)] px-2 py-1 text-xs"
+            >
+              {["DM Sans", "Georgia", "Impact", "Courier New"].map((f) => (
+                <option key={f}>{f}</option>
+              ))}
+            </select>
+
+            <label className="block text-[11px] font-semibold">Tamanho ({captionStyle.size}px)</label>
+            <input
+              type="range"
+              min={24}
+              max={120}
+              value={captionStyle.size}
+              onChange={(e) => onCaptionStyle({ size: Number(e.target.value) })}
+              className="w-full accent-[var(--brand)]"
+            />
+
+            <div className="flex items-center gap-3">
+              <label className="flex items-center gap-1.5 text-[11px] font-semibold">
+                Texto
+                <input
+                  type="color"
+                  value={captionStyle.color}
+                  onChange={(e) => onCaptionStyle({ color: e.target.value })}
+                  className="h-6 w-8 rounded border border-[var(--border)] bg-transparent"
+                />
+              </label>
+              <label className="flex items-center gap-1.5 text-[11px] font-semibold">
+                Fundo
+                <input
+                  type="color"
+                  value={captionStyle.bg || "#000000"}
+                  onChange={(e) => onCaptionStyle({ bg: e.target.value })}
+                  className="h-6 w-8 rounded border border-[var(--border)] bg-transparent"
+                />
+              </label>
+            </div>
+
+            <label className="block text-[11px] font-semibold">Posição</label>
+            <div className="grid grid-cols-3 gap-1">
+              {(
+                [
+                  ["Topo", 0.14],
+                  ["Centro", 0.5],
+                  ["Base", 0.86],
+                ] as const
+              ).map(([l, v]) => (
+                <button
+                  key={l}
+                  onClick={() => onCaptionStyle({ y: v })}
+                  className={cn(
+                    "rounded-md border border-[var(--border)] px-2 py-1 text-[11px] font-semibold",
+                    Math.abs(captionStyle.y - v) < 0.01
+                      ? "border-[var(--brand)] text-[var(--brand)]"
+                      : "text-[var(--muted-foreground)]",
+                  )}
+                >
+                  {l}
+                </button>
+              ))}
+            </div>
+          </div>
+        </>
+      ) : null}
+
 
       {panel === "transitions" ? (
         <>

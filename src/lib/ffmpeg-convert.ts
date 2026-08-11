@@ -286,6 +286,8 @@ export interface TimelineClip {
   filters: EditFilters;
   transition: TransitionKind;
   zoomKeys: ZoomKey[];
+  /** redução de ruído de fundo (afftdn) */
+  denoise?: boolean;
 }
 
 export interface TextOverlayImage {
@@ -294,6 +296,30 @@ export interface TextOverlayImage {
   end: number;
   x: number;
   y: number;
+}
+
+/** Região retangular desfocada, em pixels do vídeo de origem. */
+export interface BlurRegion {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  strength: number;
+  start: number;
+  end: number;
+}
+
+export interface OutputFrame {
+  width: number;
+  height: number;
+  /** deslocamento do conteúdo dentro do quadro, -1..1 (0 = centralizado) */
+  offsetX: number;
+  offsetY: number;
+}
+
+export interface ExportOptions {
+  blurs?: BlurRegion[];
+  frame?: OutputFrame;
 }
 
 const TRANSITION_DURATION = 0.5;
@@ -334,6 +360,7 @@ export async function exportTimeline(
   texts: TextOverlayImage[],
   size: { width: number; height: number },
   onProgress?: (ratio: number) => void,
+  options: ExportOptions = {},
 ): Promise<Blob> {
   if (clips.length === 0) throw new Error("Nenhum clipe na timeline.");
   const ff = await getFFmpeg();
@@ -381,6 +408,7 @@ export async function exportTimeline(
             "asetpts=PTS-STARTPTS",
           ];
           if (Math.abs(speed - 1) > 0.001) achain.push(atempoChain(speed));
+          if (clip.denoise) achain.push("highpass=f=90", "afftdn=nf=-25", "dynaudnorm=p=0.9:m=8");
           achain.push("aformat=sample_rates=48000:channel_layouts=stereo");
           parts.push(`[0:a]${achain.join(",")}[ca${i}]`);
         }
@@ -412,6 +440,23 @@ export async function exportTimeline(
         if (withAudio) aLabel = outA;
       }
 
+      const even = (n: number) => Math.max(2, Math.round(n / 2) * 2);
+      (options.blurs ?? []).forEach((b, i) => {
+        const bw = even(Math.min(b.w, W));
+        const bh = even(Math.min(b.h, H));
+        const bx = Math.max(0, Math.min(W - bw, Math.round(b.x)));
+        const by = Math.max(0, Math.min(H - bh, Math.round(b.y)));
+        const sigma = Math.max(2, Math.round(b.strength));
+        parts.push(`[${vLabel}]split=2[bs${i}][bc${i}]`);
+        parts.push(
+          `[bc${i}]crop=${bw}:${bh}:${bx}:${by},boxblur=${sigma}:2,format=yuv420p[bb${i}]`,
+        );
+        parts.push(
+          `[bs${i}][bb${i}]overlay=x=${bx}:y=${by}:enable='between(t,${b.start.toFixed(3)},${b.end.toFixed(3)})'[bo${i}]`,
+        );
+        vLabel = `bo${i}`;
+      });
+
       texts.forEach((t, i) => {
         const out = `tx${i}`;
         parts.push(
@@ -419,6 +464,18 @@ export async function exportTimeline(
         );
         vLabel = out;
       });
+
+      const frame = options.frame;
+      if (frame) {
+        const FW = even(frame.width);
+        const FH = even(frame.height);
+        const ox = `((ow-iw)/2+${(frame.offsetX / 2).toFixed(4)}*ow)`;
+        const oy = `((oh-ih)/2+${(frame.offsetY / 2).toFixed(4)}*oh)`;
+        parts.push(
+          `[${vLabel}]scale=${FW}:${FH}:force_original_aspect_ratio=decrease,pad=${FW}:${FH}:x='${ox}':y='${oy}':color=black,setsar=1[fr]`,
+        );
+        vLabel = "fr";
+      }
 
       parts.push(`[${vLabel}]format=yuv420p[vout]`);
 
