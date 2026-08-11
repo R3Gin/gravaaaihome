@@ -197,7 +197,8 @@ export interface EditorActions {
   addOverlayClip: (kind: "blur" | "spotlight") => void;
   addZoomKeyframe: (clipId: string, timelineTime: number) => void;
   removeZoomKeyframe: (clipId: string, index: number) => void;
-  cutRanges: (ranges: { start: number; end: number }[]) => void;
+  /** Remove trechos e devolve quantas legendas foram remapeadas. */
+  cutRanges: (ranges: { start: number; end: number }[]) => number;
   setSourceBlob: (blob: Blob | null) => void;
   setSilences: (ranges: SilenceRange[]) => void;
   addCaptionClips: (segments: { start: number; end: number; text: string }[]) => void;
