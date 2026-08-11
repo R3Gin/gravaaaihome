@@ -440,6 +440,23 @@ export async function exportTimeline(
         if (withAudio) aLabel = outA;
       }
 
+      const even = (n: number) => Math.max(2, Math.round(n / 2) * 2);
+      (options.blurs ?? []).forEach((b, i) => {
+        const bw = even(Math.min(b.w, W));
+        const bh = even(Math.min(b.h, H));
+        const bx = Math.max(0, Math.min(W - bw, Math.round(b.x)));
+        const by = Math.max(0, Math.min(H - bh, Math.round(b.y)));
+        const sigma = Math.max(2, Math.round(b.strength));
+        parts.push(`[${vLabel}]split=2[bs${i}][bc${i}]`);
+        parts.push(
+          `[bc${i}]crop=${bw}:${bh}:${bx}:${by},boxblur=${sigma}:2,format=yuv420p[bb${i}]`,
+        );
+        parts.push(
+          `[bs${i}][bb${i}]overlay=x=${bx}:y=${by}:enable='between(t,${b.start.toFixed(3)},${b.end.toFixed(3)})'[bo${i}]`,
+        );
+        vLabel = `bo${i}`;
+      });
+
       texts.forEach((t, i) => {
         const out = `tx${i}`;
         parts.push(
@@ -447,6 +464,18 @@ export async function exportTimeline(
         );
         vLabel = out;
       });
+
+      const frame = options.frame;
+      if (frame) {
+        const FW = even(frame.width);
+        const FH = even(frame.height);
+        const ox = `((ow-iw)/2+${(frame.offsetX / 2).toFixed(4)}*ow)`;
+        const oy = `((oh-ih)/2+${(frame.offsetY / 2).toFixed(4)}*oh)`;
+        parts.push(
+          `[${vLabel}]scale=${FW}:${FH}:force_original_aspect_ratio=decrease,pad=${FW}:${FH}:x='${ox}':y='${oy}':color=black,setsar=1[fr]`,
+        );
+        vLabel = "fr";
+      }
 
       parts.push(`[${vLabel}]format=yuv420p[vout]`);
 
