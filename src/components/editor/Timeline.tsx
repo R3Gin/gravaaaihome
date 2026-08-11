@@ -154,7 +154,6 @@ export function Timeline() {
   const setCurrentTime = useEditor((s) => s.setCurrentTime);
   const setTool = useEditor((s) => s.setTool);
   const select = useEditor((s) => s.select);
-  const moveClip = useEditor((s) => s.moveClip);
   const removeClip = useEditor((s) => s.removeClip);
   const duplicateClip = useEditor((s) => s.duplicateClip);
   const splitPlayhead = useEditor((s) => s.splitPlayhead);
@@ -169,14 +168,6 @@ export function Timeline() {
     return out;
   }, [duration, zoom]);
 
-  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 4 } }));
-
-  const onDragEnd = (e: DragEndEvent) => {
-    const id = String(e.active.id);
-    const clip = tracks.flatMap((t) => t.clips).find((c) => c.id === id);
-    if (!clip) return;
-    moveClip(id, Math.max(0, clip.startTime + e.delta.x / zoom));
-  };
 
   const seekFromEvent = (e: React.PointerEvent) => {
     const lane = scrollRef.current;
