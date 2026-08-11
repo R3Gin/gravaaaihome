@@ -316,7 +316,7 @@ export const useEditor = create<EditorState & EditorActions>((set, get) => {
     setZoom: (z) => set({ zoom: Math.min(400, Math.max(10, z)) }),
     setAspect: (aspect) => set({ aspect }),
     setTool: (tool) => set({ tool }),
-    select: (selectedClipId) => set({ selectedClipId }),
+    select: (selectedClipId) => set({ selectedClipId, selectedKeyframes: [] }),
 
     updateClip: (id, patch) =>
       write((tracks) =>
