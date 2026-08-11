@@ -242,6 +242,66 @@ function AnimSection({ clip }: { clip: Clip }) {
   );
 }
 
+/* ------------------------------------------------------------------ *
+ * Presets de animação de entrada/saída (texto).
+ * ------------------------------------------------------------------ */
+function PresetSection({ clip, side }: { clip: Clip; side: "in" | "out" }) {
+  const setTextPreset = useEditor((s) => s.setTextPreset);
+  const cfg: PresetConfig = { ...DEFAULT_PRESET, ...(side === "in" ? clip.animIn : clip.animOut) };
+
+  return (
+    <div className="space-y-2 rounded-lg border border-[var(--border)] p-3">
+      <span className="text-[11px] font-bold uppercase tracking-wide text-[var(--muted-foreground)]">
+        {side === "in" ? "Animação de entrada" : "Animação de saída"}
+      </span>
+      <select
+        value={cfg.preset}
+        onChange={(e) => setTextPreset(clip.id, side, { preset: e.target.value as PresetId })}
+        className="w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-2 py-1.5 text-xs"
+      >
+        {TEXT_PRESETS.map((p) => (
+          <option key={p.id} value={p.id}>
+            {p.label}
+          </option>
+        ))}
+      </select>
+      {cfg.preset !== "none" ? (
+        <div className="grid grid-cols-2 gap-2">
+          <label className="space-y-1">
+            <span className="text-[10px] text-[var(--muted-foreground)]">Duração (s)</span>
+            <input
+              type="number"
+              min={0.05}
+              step={0.05}
+              value={cfg.duration}
+              onChange={(e) => setTextPreset(clip.id, side, { duration: Number(e.target.value) })}
+              className="w-full rounded-md border border-[var(--border)] bg-[var(--background)] px-2 py-1 text-xs tabular-nums"
+            />
+          </label>
+          <label className="space-y-1">
+            <span className="text-[10px] text-[var(--muted-foreground)]">
+              {side === "in" ? "Velocidade de entrada (%)" : "Velocidade de saída (%)"}
+            </span>
+            <input
+              type="number"
+              min={10}
+              max={400}
+              step={10}
+              value={cfg.speed}
+              onChange={(e) => setTextPreset(clip.id, side, { speed: Number(e.target.value) })}
+              className="w-full rounded-md border border-[var(--border)] bg-[var(--background)] px-2 py-1 text-xs tabular-nums"
+            />
+          </label>
+        </div>
+      ) : null}
+      <p className="text-[10px] leading-relaxed text-[var(--muted-foreground)]">
+        Os keyframes são gerados automaticamente. Ajuste fino: duplo clique no losango na timeline.
+      </p>
+    </div>
+  );
+}
+
+
 export function Inspector() {
   const tracks = useEditor((s) => s.tracks);
   const selectedClipId = useEditor((s) => s.selectedClipId);
