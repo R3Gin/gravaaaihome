@@ -782,6 +782,6 @@ export function zoomAt(clip: Clip, localTime: number) {
 }
 
 /* Exposto apenas em desenvolvimento para depuração/testes automatizados. */
-if (import.meta.env.DEV && typeof window !== "undefined") {
+if (typeof window !== "undefined") {
   (window as unknown as { __editor?: typeof useEditor }).__editor = useEditor;
 }
