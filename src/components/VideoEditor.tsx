@@ -12,6 +12,8 @@ import {
   Type,
   Undo2,
   Upload,
+  Volume2,
+  Blend,
   X,
 } from "lucide-react";
 import { Preview } from "@/components/editor/Preview";
