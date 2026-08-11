@@ -408,6 +408,30 @@ export function Timeline() {
     };
   }, [scrubbing, setCurrentTime, timeFromClientX]);
 
+  /* --- sub-linhas de keyframes (atalho U / UU) --- */
+  const kfExpanded = useEditor((s) => s.kfExpanded);
+  const setKeyframeEasing = useEditor((s) => s.setKeyframeEasing);
+  const removeKeyframe = useEditor((s) => s.removeKeyframe);
+  const cycleKeyframeRows = useEditor((s) => s.cycleKeyframeRows);
+  const [menu, setMenu] = useState<KfMenu>(null);
+
+  const selectedClip = findClip(tracks, selectedClipId);
+  const kfRows: AnimProp[] = useMemo(() => {
+    if (!selectedClip || kfExpanded === "none") return [];
+    return kfExpanded === "all" ? modifiedProps(selectedClip) : animatedProps(selectedClip);
+  }, [kfExpanded, selectedClip]);
+
+  useEffect(() => {
+    if (!menu) return;
+    const close = () => setMenu(null);
+    window.addEventListener("pointerdown", close);
+    return () => window.removeEventListener("pointerdown", close);
+  }, [menu]);
+
+  const lanesHeight = tracks.length * LANE_H + kfRows.length * KF_H;
+
+
+
 
   return (
     <div className="flex h-[280px] shrink-0 flex-col border-t border-[var(--border)] bg-[var(--surface-2)]">
