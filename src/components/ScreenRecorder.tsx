@@ -855,20 +855,8 @@ export function ScreenRecorder() {
         </div>
       )}
 
-      {/* Caneta */}
-      <div className="flex flex-wrap items-center gap-3">
-        <ActionButton
-          tone={drawing.active ? "record" : "neutral"}
-          icon={<PenIcon />}
-          onClick={() => drawing.setActive(!drawing.active)}
-        >
-          {drawing.active ? "Desenho ativo" : "Caneta"}
-        </ActionButton>
-        <span className="text-xs text-[var(--muted-foreground)]">
-          Desenhe sobre o preview — os traços entram na gravação e continuam na tela até você limpar.
-        </span>
-      </div>
-      <DrawingToolbar controller={drawing} />
+      {/* Caneta: controles vivem no painel flutuante de gravação. */}
+
 
       {/* Toggles */}
       <div className="grid gap-3 sm:grid-cols-3">
