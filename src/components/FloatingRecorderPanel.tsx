@@ -27,6 +27,8 @@ import {
   Pen,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { PEN_COLORS, type DrawingController } from "./DrawingLayer";
+import { Eraser, Trash2 } from "lucide-react";
 
 export interface FloatingRecorderPanelProps {
   visible: boolean;
@@ -38,8 +40,7 @@ export interface FloatingRecorderPanelProps {
   hasScreenAudio: boolean;
   hasMic: boolean;
   hasCamera: boolean;
-  penOn?: boolean;
-  onTogglePen?: () => void;
+  drawing?: DrawingController;
   onPauseResume: () => void;
   onStop: () => void;
   onToggleScreenAudio: () => void;
@@ -52,6 +53,7 @@ export interface FloatingRecorderPanelHandle {
   closePip: () => void;
   isPipSupported: () => boolean;
 }
+
 
 function fmt(sec: number) {
   const h = Math.floor(sec / 3600).toString().padStart(2, "0");
