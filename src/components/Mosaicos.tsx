@@ -1,5 +1,5 @@
 import { Link } from "@tanstack/react-router";
-import { Monitor, Scissors, FileText, Film, ArrowRight } from "lucide-react";
+import { Monitor, Scissors, FileText, Film, FileSearch, ArrowRight } from "lucide-react";
 import type { ComponentType, SVGProps } from "react";
 
 type MosaicoHref =
@@ -7,7 +7,8 @@ type MosaicoHref =
   | "/mosaicos/gdocs-presentation"
   | "/mosaicos/editor"
   | "/mosaicos/teleprompter"
-  | "/mosaicos/video-para-gif";
+  | "/mosaicos/video-para-gif"
+  | "/mosaicos/transcricao";
 
 interface MosaicoDef {
   title: string;
@@ -44,6 +45,13 @@ const mosaicos: MosaicoDef[] = [
       "Transforme um trecho da sua gravação em GIF, direto no navegador.",
     href: "/mosaicos/video-para-gif",
     Icon: Film,
+  },
+  {
+    title: "Transcrição e Resumo",
+    description:
+      "Transforme sua gravação em texto e gere um resumo automático.",
+    href: "/mosaicos/transcricao",
+    Icon: FileSearch,
   },
 
 ];

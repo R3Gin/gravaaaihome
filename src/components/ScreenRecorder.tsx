@@ -5,6 +5,7 @@ import { convertWebmToMp4, fixWebmSeekable, remuxMp4FastStart } from "@/lib/ffmp
 import { cn } from "@/lib/utils";
 import { setEditorHandoff } from "@/lib/editor-handoff";
 import { setGifHandoff } from "@/lib/gif-handoff";
+import { setTranscriptHandoff } from "@/lib/transcript-handoff";
 import { useNavigate } from "@tanstack/react-router";
 import {
   CameraPipBubble,
@@ -39,6 +40,17 @@ function DownloadIcon() {
     </svg>
   );
 }
+function TranscriptIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="h-4 w-4" aria-hidden="true">
+      <path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z" />
+      <path d="M14 3v5h5" />
+      <path d="M9 13h6" />
+      <path d="M9 17h4" />
+    </svg>
+  );
+}
+
 function GifIcon() {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-4 w-4" aria-hidden="true">
@@ -726,6 +738,13 @@ export function ScreenRecorder() {
     void navigate({ to: "/mosaicos/video-para-gif" });
   }, [downloadExt, navigate]);
 
+  const sendToTranscription = useCallback(() => {
+    const finalBlob = downloadBlobRef.current;
+    if (!finalBlob) return;
+    setTranscriptHandoff(finalBlob, `gravaai.${downloadExt}`);
+    void navigate({ to: "/mosaicos/transcricao" });
+  }, [downloadExt, navigate]);
+
 
   const isRecording = status === "recording";
   const isConverting = status === "converting";
@@ -948,6 +967,11 @@ export function ScreenRecorder() {
         {downloadUrl && !isConverting ? (
           <ActionButton tone="neutral" icon={<GifIcon />} onClick={sendToGif}>
             Enviar para GIF
+          </ActionButton>
+        ) : null}
+        {downloadUrl && !isConverting ? (
+          <ActionButton tone="neutral" icon={<TranscriptIcon />} onClick={sendToTranscription}>
+            Enviar para transcrição
           </ActionButton>
         ) : null}
       </div>
