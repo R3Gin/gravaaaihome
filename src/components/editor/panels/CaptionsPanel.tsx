@@ -49,7 +49,7 @@ export function CaptionsPanel() {
   const [stage, setStage] = useState<string>("");
   const [download, setDownload] = useState(0);
   const [error, setError] = useState<string | null>(null);
-  const [lang, setLang] = useState<"auto" | "pt">("auto");
+  const [lang, setLang] = useState<string>("portuguese");
   const [tab, setTab] = useState<"estilo" | "lista">("estilo");
 
   const captions = useMemo(
