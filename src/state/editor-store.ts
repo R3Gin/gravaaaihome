@@ -1,6 +1,5 @@
 import { create } from "zustand";
 import {
-  animatablePropsFor,
   newKeyframe,
   propByKey,
   sortKeys,
@@ -614,11 +613,8 @@ export const useEditor = create<EditorState & EditorActions>((set, get) => {
       const map: KeyframeMap = { ...(clip.keyframes ?? {}) };
       if ((map[prop]?.length ?? 0) > 0) {
         // desliga: congela o valor atual e remove todos os keyframes
-        const local = get().currentTime - clip.startTime;
-        const frozen = (map[prop] ?? [])[0] ? meta.get(clip) : meta.get(clip);
         delete map[prop];
-        get().updateClip(clipId, { keyframes: map, ...meta.set(frozen) });
-        void local;
+        get().updateClip(clipId, { keyframes: map, ...meta.set(meta.get(clip)) });
       } else {
         const local = Math.max(0, Math.min(clip.duration, get().currentTime - clip.startTime));
         map[prop] = [newKeyframe(local, meta.get(clip))];
