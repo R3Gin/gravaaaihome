@@ -1788,8 +1788,10 @@ export function VideoEditor() {
           </aside>
         ) : null}
       </div>
-    </div>
+      </div>
+    </>
   );
+
 }
 
 /* ---------------- subcomponentes ---------------- */
