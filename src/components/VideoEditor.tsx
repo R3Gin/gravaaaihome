@@ -2476,61 +2476,89 @@ function SidePanel({
 
       {panel === "captions" ? (
         <>
-          <p className="text-xs text-[var(--muted-foreground)]">
-            A legenda automática por IA ainda não está ligada. Enquanto isso, crie legendas na posição
-            do playhead — cada uma vira um clipe na faixa de texto.
+          <button
+            disabled={!hasMedia || captionsBusy}
+            onClick={onGenerateCaptions}
+            className="inline-flex w-full items-center justify-center gap-1.5 rounded-lg bg-[var(--brand)] px-3 py-2 text-xs font-semibold text-white disabled:opacity-40"
+          >
+            {captionsBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
+            Gerar legendas automaticamente
+          </button>
+          <p className="text-[11px] text-[var(--muted-foreground)]">
+            Os blocos são detectados pelo áudio e criados na faixa de texto. Clique em cada bloco para
+            corrigir o conteúdo.
           </p>
-          <button
-            onClick={() => onAddText({ text: "Nova legenda", size: 52, y: 0.86 })}
-            className="w-full rounded-lg bg-[var(--brand)] px-3 py-2 text-xs font-semibold text-white"
-          >
-            Adicionar legenda em {short(time)}
-          </button>
-        </>
-      ) : null}
 
-      {panel === "transcript" ? (
-        <>
-          <textarea
-            value={transcript}
-            onChange={(e) => setTranscript(e.target.value)}
-            rows={10}
-            placeholder="Cole ou escreva a transcrição do áudio aqui…"
-            className="w-full rounded-lg border border-[var(--border)] bg-[var(--surface-2)] p-2 text-xs"
-          />
-          <button
-            onClick={() => {
-              const line = transcript.split("\n").find((l) => l.trim().length > 0);
-              if (line) onAddText({ text: line.trim(), size: 52, y: 0.86 });
-            }}
-            className="w-full rounded-lg border border-[var(--border)] bg-[var(--surface-2)] px-3 py-2 text-xs font-semibold"
-          >
-            Enviar primeira linha para a timeline
-          </button>
-        </>
-      ) : null}
+          <div className="space-y-2 rounded-lg border border-[var(--border)] bg-[var(--surface-2)] p-2">
+            <label className="block text-[11px] font-semibold">Fonte</label>
+            <select
+              value={captionStyle.font}
+              onChange={(e) => onCaptionStyle({ font: e.target.value })}
+              className="w-full rounded-md border border-[var(--border)] bg-[var(--surface)] px-2 py-1 text-xs"
+            >
+              {["DM Sans", "Georgia", "Impact", "Courier New"].map((f) => (
+                <option key={f}>{f}</option>
+              ))}
+            </select>
 
-      {panel === "effects" || panel === "filters" ? (
-        <>
-          {!selectedClip ? (
-            <p className="text-xs text-[var(--muted-foreground)]">
-              Selecione um clipe na timeline para aplicar.
-            </p>
-          ) : null}
-          <div className="grid grid-cols-2 gap-2">
-            {FILTER_PRESETS.map((p) => (
-              <button
-                key={p.name}
-                disabled={!selectedClip}
-                onClick={() => onApplyFilters(p.filters)}
-                className="rounded-lg border border-[var(--border)] bg-[var(--surface-2)] px-2 py-3 text-xs font-semibold hover:border-[var(--brand)] disabled:opacity-40"
-              >
-                {p.name}
-              </button>
-            ))}
+            <label className="block text-[11px] font-semibold">Tamanho ({captionStyle.size}px)</label>
+            <input
+              type="range"
+              min={24}
+              max={120}
+              value={captionStyle.size}
+              onChange={(e) => onCaptionStyle({ size: Number(e.target.value) })}
+              className="w-full accent-[var(--brand)]"
+            />
+
+            <div className="flex items-center gap-3">
+              <label className="flex items-center gap-1.5 text-[11px] font-semibold">
+                Texto
+                <input
+                  type="color"
+                  value={captionStyle.color}
+                  onChange={(e) => onCaptionStyle({ color: e.target.value })}
+                  className="h-6 w-8 rounded border border-[var(--border)] bg-transparent"
+                />
+              </label>
+              <label className="flex items-center gap-1.5 text-[11px] font-semibold">
+                Fundo
+                <input
+                  type="color"
+                  value={captionStyle.bg || "#000000"}
+                  onChange={(e) => onCaptionStyle({ bg: e.target.value })}
+                  className="h-6 w-8 rounded border border-[var(--border)] bg-transparent"
+                />
+              </label>
+            </div>
+
+            <label className="block text-[11px] font-semibold">Posição</label>
+            <div className="grid grid-cols-3 gap-1">
+              {(
+                [
+                  ["Topo", 0.14],
+                  ["Centro", 0.5],
+                  ["Base", 0.86],
+                ] as const
+              ).map(([l, v]) => (
+                <button
+                  key={l}
+                  onClick={() => onCaptionStyle({ y: v })}
+                  className={cn(
+                    "rounded-md border border-[var(--border)] px-2 py-1 text-[11px] font-semibold",
+                    Math.abs(captionStyle.y - v) < 0.01
+                      ? "border-[var(--brand)] text-[var(--brand)]"
+                      : "text-[var(--muted-foreground)]",
+                  )}
+                >
+                  {l}
+                </button>
+              ))}
+            </div>
           </div>
         </>
       ) : null}
+
 
       {panel === "transitions" ? (
         <>
