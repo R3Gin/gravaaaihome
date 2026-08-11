@@ -1,13 +1,24 @@
 import { create } from "zustand";
 import {
+  applyContinuity,
   newKeyframe,
   propByKey,
   sortKeys,
   upsertKeyframe,
   type Easing,
+  type Keyframe,
   type KeyValue,
   type KeyframeMap,
+  type TangentSpeed,
 } from "@/lib/keyframes";
+import {
+  applyPreset,
+  revealModeFor,
+  stripPreset,
+  type PresetConfig,
+  type PresetId,
+} from "@/lib/text-presets";
+
 
 
 /* ------------------------------------------------------------------ *
