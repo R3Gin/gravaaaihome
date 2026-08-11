@@ -31,9 +31,11 @@ export interface TranscribeEvents {
  */
 export async function transcribe(
   blob: Blob,
-  language: string | undefined,
+  /** idioma fixo (padrão "portuguese") ou "auto" para detecção automática */
+  language: string | "auto" = "portuguese",
   events: TranscribeEvents = {},
 ): Promise<TranscribeResult> {
+  const lang = !language || language === "auto" ? undefined : language;
   events.onStage?.("audio");
   const audio = await decodeMono16k(blob);
   if (!audio || audio.length < 16000 * 0.3) {
