@@ -108,22 +108,23 @@ export function CaptionsPanel() {
         A transcrição roda no seu navegador com Whisper — nenhum áudio é enviado para servidores.
       </p>
 
-      <div className="flex gap-1.5">
-        {(["auto", "pt"] as const).map((k) => (
-          <button
-            key={k}
-            onClick={() => setLang(k)}
-            className={cn(
-              "flex-1 rounded-md border px-2 py-1.5 text-[11px] font-semibold transition-colors",
-              lang === k
-                ? "border-[var(--brand)] bg-[var(--brand)]/15 text-[var(--brand)]"
-                : "border-[var(--border)] text-[var(--muted-foreground)]",
-            )}
-          >
-            {k === "auto" ? "Detectar idioma" : "Português"}
-          </button>
-        ))}
+      <div className="space-y-1.5">
+        <span className="text-[11px] font-bold uppercase tracking-wide text-[var(--muted-foreground)]">
+          Idioma do áudio
+        </span>
+        <select
+          value={lang}
+          onChange={(e) => setLang(e.target.value)}
+          className="w-full rounded-md border border-[var(--border)] bg-[var(--background)] px-2 py-1.5 text-xs text-[var(--foreground)]"
+        >
+          {LANGUAGES.map((l) => (
+            <option key={l.value} value={l.value}>
+              {l.label}
+            </option>
+          ))}
+        </select>
       </div>
+
 
       <div className="space-y-1.5">
         <span className="text-[11px] font-bold uppercase tracking-wide text-[var(--muted-foreground)]">
