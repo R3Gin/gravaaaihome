@@ -2363,6 +2363,38 @@ export function VideoEditor() {
                   Arraste no player para posicionar. Ajuste entrada e saída pelas bordas do clipe.
                 </p>
               </div>
+            ) : selectedShape ? (
+              <div className="space-y-3">
+                <h2 className="font-display text-sm font-bold tracking-tight">
+                  {selectedShape.kind === "blur" ? "Área de blur" : "Spotlight"}
+                </h2>
+                <Slider
+                  label={selectedShape.kind === "blur" ? "Intensidade do desfoque" : "Escurecimento"}
+                  value={selectedShape.strength}
+                  min={selectedShape.kind === "blur" ? 2 : 0}
+                  max={selectedShape.kind === "blur" ? 60 : 0.95}
+                  step={selectedShape.kind === "blur" ? 1 : 0.05}
+                  onChange={(v) => updateSelectedShape({ strength: v }, false)}
+                />
+                {selectedShape.kind === "spotlight" ? (
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs text-[var(--muted-foreground)]">Cor do contorno</span>
+                    <input
+                      type="color"
+                      value={selectedShape.color}
+                      onChange={(e) => updateSelectedShape({ color: e.target.value }, false)}
+                      className="h-8 w-14 rounded border border-[var(--border)] bg-transparent"
+                    />
+                  </div>
+                ) : null}
+                <p className="text-[11px] tabular-nums text-[var(--muted-foreground)]">
+                  {short(selectedShape.start)} – {short(selectedShape.end)}
+                </p>
+                <p className="text-[11px] text-[var(--muted-foreground)]">
+                  Arraste no player para mover e use o canto inferior direito para redimensionar. Ajuste
+                  o tempo pela faixa Efeitos.
+                </p>
+              </div>
             ) : null}
           </aside>
         ) : null}
