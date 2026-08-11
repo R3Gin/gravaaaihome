@@ -155,10 +155,23 @@ export interface EditorActions {
   addCaptionClips: (segments: { start: number; end: number; text: string }[]) => void;
   setCaptionStyle: (patch: Partial<CaptionStyle>) => void;
   clearCaptions: () => void;
+  /* --- keyframes --- */
+  /** liga/desliga a animação de uma propriedade (cronômetro) */
+  togglePropertyAnimation: (clipId: string, prop: string) => void;
+  /** altera o valor: cria/atualiza keyframe se animada, senão valor estático */
+  setPropValue: (clipId: string, prop: string, value: KeyValue, live?: boolean) => void;
+  moveKeyframes: (clipId: string, moves: { prop: string; kfId: string; time: number }[], live?: boolean) => void;
+  setKeyframeEasing: (clipId: string, prop: string, kfId: string, easing: Easing) => void;
+  removeKeyframe: (clipId: string, prop: string, kfId: string) => void;
+  removeSelectedKeyframes: () => void;
+  selectKeyframe: (prop: string, kfId: string, additive?: boolean) => void;
+  clearKeyframeSelection: () => void;
+  cycleKeyframeRows: (all?: boolean) => void;
   undo: () => void;
   redo: () => void;
   commit: () => void;
 }
+
 
 export const MIN_CLIP = 0.12;
 const uid = () => Math.random().toString(36).slice(2, 10);
