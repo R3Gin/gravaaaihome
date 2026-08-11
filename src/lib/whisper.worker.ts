@@ -15,28 +15,56 @@ type Chunk = { timestamp: [number, number | null]; text: string };
 
 let asr: AutomaticSpeechRecognitionPipeline | null = null;
 
+type Attempt = { model: string; device: "webgpu" | "wasm"; dtype: "fp16" | "fp32" | "q8" };
+
+async function hasWebGPU() {
+  try {
+    return (
+      "gpu" in navigator &&
+      Boolean(await (navigator as never as { gpu: { requestAdapter(): Promise<unknown> } }).gpu.requestAdapter())
+    );
+  } catch {
+    return false;
+  }
+}
+
 async function ensureModel() {
   if (asr) return asr;
   const post = (data: unknown) => (self as unknown as Worker).postMessage(data);
-  const load = async (device: "webgpu" | "wasm") =>
-    (await pipeline("automatic-speech-recognition", "onnx-community/whisper-small", {
-      device,
-      dtype: device === "webgpu" ? "fp16" : "q8",
-      progress_callback: (p: { status: string; progress?: number; file?: string }) => {
-        if (p.status === "progress" && typeof p.progress === "number") {
-          post({ type: "download", progress: p.progress / 100, file: p.file });
-        }
-      },
-    })) as AutomaticSpeechRecognitionPipeline;
 
-  try {
-    const hasGpu = "gpu" in navigator && Boolean(await (navigator as never as { gpu: { requestAdapter(): Promise<unknown> } }).gpu.requestAdapter());
-    asr = await load(hasGpu ? "webgpu" : "wasm");
-  } catch {
-    asr = await load("wasm");
+  const attempts: Attempt[] = [];
+  if (await hasWebGPU()) {
+    attempts.push({ model: "onnx-community/whisper-base", device: "webgpu", dtype: "fp16" });
   }
-  return asr;
+  attempts.push({ model: "onnx-community/whisper-base", device: "wasm", dtype: "fp32" });
+  attempts.push({ model: "onnx-community/whisper-tiny", device: "wasm", dtype: "fp32" });
+  attempts.push({ model: "onnx-community/whisper-tiny", device: "wasm", dtype: "q8" });
+
+  let lastError: unknown = null;
+  for (const attempt of attempts) {
+    try {
+      post({ type: "stage", stage: "model", model: attempt.model });
+      asr = (await pipeline("automatic-speech-recognition", attempt.model, {
+        device: attempt.device,
+        dtype: attempt.dtype,
+        progress_callback: (p: { status: string; progress?: number; file?: string }) => {
+          if (p.status === "progress" && typeof p.progress === "number") {
+            post({ type: "download", progress: p.progress / 100, file: p.file, model: attempt.model });
+          }
+        },
+      })) as AutomaticSpeechRecognitionPipeline;
+      return asr;
+    } catch (err) {
+      lastError = err;
+    }
+  }
+  throw new Error(
+    `Não foi possível carregar o modelo de legendas neste navegador. ${
+      lastError instanceof Error ? lastError.message : ""
+    }`.trim(),
+  );
 }
+
 
 self.onmessage = async (event: MessageEvent<InMsg>) => {
   const post = (data: unknown) => (self as unknown as Worker).postMessage(data);
