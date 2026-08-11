@@ -125,6 +125,38 @@ export function CaptionsPanel() {
         ))}
       </div>
 
+      <div className="space-y-1.5">
+        <span className="text-[11px] font-bold uppercase tracking-wide text-[var(--muted-foreground)]">
+          Tamanho do bloco
+        </span>
+        <div className="flex gap-1.5">
+          {(
+            [
+              { id: "curto", label: "Curto", hint: "3-4 palavras" },
+              { id: "medio", label: "Médio", hint: "5-6 palavras" },
+              { id: "longo", label: "Longo", hint: "frase quase inteira" },
+            ] as const
+          ).map((b) => (
+            <button
+              key={b.id}
+              title={b.hint}
+              onClick={() => setCaptionStyle({ blockSize: b.id })}
+              className={cn(
+                "flex-1 rounded-md border px-2 py-1.5 text-[11px] font-semibold transition-colors",
+                (style.blockSize ?? "medio") === b.id
+                  ? "border-[var(--brand)] bg-[var(--brand)]/15 text-[var(--brand)]"
+                  : "border-[var(--border)] text-[var(--muted-foreground)]",
+              )}
+            >
+              {b.label}
+            </button>
+          ))}
+        </div>
+        <p className="text-[10px] text-[var(--muted-foreground)]">
+          Os blocos são cortados nas pausas reais da fala.
+        </p>
+      </div>
+
       <button
         disabled={!sourceBlob || busy}
         onClick={() => void run()}
