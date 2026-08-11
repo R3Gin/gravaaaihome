@@ -67,7 +67,7 @@ export function CaptionsPanel() {
     setError(null);
     setDownload(0);
     try {
-      const res = await transcribe(sourceBlob, lang === "pt" ? "portuguese" : undefined, {
+      const res = await transcribe(sourceBlob, lang, {
         onStage: (s) =>
           setStage(
             s === "audio"
