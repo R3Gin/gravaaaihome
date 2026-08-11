@@ -13,9 +13,10 @@ interface MosaicoDef {
 
 const mosaicos: MosaicoDef[] = [
   {
-    title: "Apresentação do Google + Câmera",
+    title: "Apresentação + Câmera",
     description:
-      "Slides + bolha da webcam com efeitos de fundo e gravação combinada em MP4.",
+      "Suba um PDF ou PPTX, apresente com a bolha da webcam por cima e grave tudo em MP4.",
+
     href: "/mosaicos/gdocs-presentation",
     Icon: Monitor,
   },
