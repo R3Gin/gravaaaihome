@@ -1328,9 +1328,40 @@ export function VideoEditor() {
         filters: c.filters,
         transition: c.transition,
         zoomKeys: c.zoomKeys,
+        denoise: c.denoise && !bypassDenoise,
       }));
 
-      const out = await exportTimeline(blob, payload, overlays, srcSize, (r) => setProgress(r));
+      const blurs = shapes
+        .filter((s) => s.kind === "blur")
+        .map((s) => ({
+          x: s.x * srcSize.width,
+          y: s.y * srcSize.height,
+          w: s.w * srcSize.width,
+          h: s.h * srcSize.height,
+          strength: s.strength,
+          start: mapTime(s.start),
+          end: mapTime(s.end),
+        }));
+
+      const out = await exportTimeline(
+        blob,
+        payload,
+        overlays,
+        srcSize,
+        (r) => setProgress(r),
+        {
+          blurs,
+          frame:
+            ratio.id === RATIOS[0].id && contentOffset.x === 0 && contentOffset.y === 0
+              ? undefined
+              : {
+                  width: frame.width,
+                  height: frame.height,
+                  offsetX: contentOffset.x,
+                  offsetY: contentOffset.y,
+                },
+        },
+      );
       if (resultUrl) URL.revokeObjectURL(resultUrl);
       setResultUrl(URL.createObjectURL(out));
       setProgress(1);
