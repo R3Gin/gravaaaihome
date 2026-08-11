@@ -665,6 +665,14 @@ export function ScreenRecorder() {
     window.setTimeout(() => URL.revokeObjectURL(url), 1000);
   }, [downloadExt]);
 
+  const sendToEditor = useCallback(() => {
+    const finalBlob = downloadBlobRef.current;
+    if (!finalBlob) return;
+    setEditorHandoff(finalBlob, `gravaai.${downloadExt}`);
+    void navigate({ to: "/mosaicos/editor" });
+  }, [downloadExt, navigate]);
+
+
   const isRecording = status === "recording";
   const isConverting = status === "converting";
   const canRecord = status === "capturing";
