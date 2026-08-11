@@ -66,3 +66,12 @@ export function remapCaptionsAfterCuts<T extends { start: number | string; end: 
 
   return out.sort((a, b) => a.start - b.start);
 }
+
+/** Converte um tempo da linha do tempo atual de volta para o tempo do vídeo original. */
+export function toOriginalTime(t: number, removed: TimeRange[]): number {
+  let out = t;
+  for (const r of [...removed].sort((a, b) => a.start - b.start)) {
+    if (r.start <= out) out += r.end - r.start;
+  }
+  return out;
+}
