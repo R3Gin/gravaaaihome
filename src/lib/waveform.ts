@@ -4,6 +4,8 @@
  * por Blob para não decodificar o mesmo arquivo várias vezes.
  */
 
+import { peaksInWorker } from "@/lib/audio-worker-client";
+
 export type Peaks = {
   /** picos normalizados (0..1), um por bucket */
   data: Float32Array;
