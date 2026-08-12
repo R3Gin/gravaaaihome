@@ -217,7 +217,7 @@ export function Teleprompter() {
       displayStreamRef.current = display;
       let mic: MediaStream | null = null;
       try {
-        mic = await navigator.mediaDevices.getUserMedia({ audio: true });
+        mic = await getProcessedMicStream();
         micStreamRef.current = mic;
       } catch {
         /* segue sem microfone */

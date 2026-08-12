@@ -272,7 +272,7 @@ export function ScreenRecorder() {
 
   const attachMic = useCallback(async () => {
     if (micStreamRef.current) return;
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    const stream = await getProcessedMicStream();
     micStreamRef.current = stream;
     const { ctx, dest } = ensureAudioContext();
     const src = ctx.createMediaStreamSource(stream);
