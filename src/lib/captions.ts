@@ -21,8 +21,11 @@ export interface TranscribeResult {
 }
 
 export interface TranscribeEvents {
-  onStage?: (stage: "audio" | "model" | "transcribe") => void;
+  onStage?: (stage: "audio" | "model" | "transcribe" | "finalize") => void;
+  /** progresso do download do modelo (0..1) */
   onDownload?: (progress: number) => void;
+  /** progresso real da transcrição (0..1) */
+  onProgress?: (progress: number) => void;
 }
 
 /**
@@ -48,12 +51,14 @@ export async function transcribe(
     return await new Promise<TranscribeResult>((resolve, reject) => {
       worker.onmessage = (e: MessageEvent) => {
         const msg = e.data as
-          | { type: "stage"; stage: "model" | "transcribe" }
+          | { type: "stage"; stage: "model" | "transcribe" | "finalize" }
           | { type: "download"; progress: number }
+          | { type: "progress"; progress: number }
           | { type: "done"; segments: CaptionSegment[]; words?: WordTiming[] }
           | { type: "error"; message: string };
         if (msg.type === "stage") events.onStage?.(msg.stage);
         if (msg.type === "download") events.onDownload?.(msg.progress);
+        if (msg.type === "progress") events.onProgress?.(msg.progress);
         if (msg.type === "done") resolve({ segments: msg.segments, words: msg.words ?? [] });
         if (msg.type === "error") reject(new Error(msg.message));
       };
@@ -64,6 +69,7 @@ export async function transcribe(
     worker.terminate();
   }
 }
+
 
 /** Alternativa sem modelo: blocos de fala vazios para preencher à mão. */
 export async function speechPlaceholders(blob: Blob): Promise<CaptionSegment[]> {
