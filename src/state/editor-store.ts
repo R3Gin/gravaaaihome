@@ -301,6 +301,14 @@ export interface EditorActions {
   /** presets de animação de entrada/saída de texto */
   setTextPreset: (clipId: string, side: "in" | "out", cfg: Partial<PresetConfig>) => void;
 
+  /* --- presets de efeito (modo Simples) --- */
+  /** aplica/substitui um preset de efeito, gerando keyframes automaticamente */
+  applyEffectPreset: (clipId: string, presetId: string, params?: PresetParams) => void;
+  updateEffectPresetParams: (clipId: string, instanceId: string, params: PresetParams) => void;
+  removeEffectPreset: (clipId: string, instanceId: string) => void;
+  /** arma o modo "clique no ponto do preview" para presets de zoom */
+  setPendingEffectPreset: (value: { presetId: string; params: PresetParams } | null) => void;
+
   removeKeyframe: (clipId: string, prop: string, kfId: string) => void;
   removeSelectedKeyframes: () => void;
   selectKeyframe: (prop: string, kfId: string, additive?: boolean) => void;
