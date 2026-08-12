@@ -183,25 +183,19 @@ export const FloatingRecorderPanel = forwardRef<
     if (!visible) closedByUserRef.current = false;
   }, [visible, pipWindow]);
 
-  // Abertura AUTOMÁTICA da janela real do sistema: única forma de painel
-  // quando o navegador suporta Document PiP. Tenta algumas vezes caso a
-  // primeira chamada (feita pelo gesto do usuário) tenha sido recusada.
+  // Fallback de user activation: se a abertura automática (feita no mesmo
+  // gesto do usuário que iniciou a captura) tiver sido recusada, o primeiro
+  // clique seguinte em qualquer lugar da página reabre a janela.
   useEffect(() => {
     if (!visible || pipWindow || !pipSupported || closedByUserRef.current) return;
-    let cancelled = false;
-    let attempts = 0;
-    const tick = () => {
-      if (cancelled || attempts >= 10) return;
-      attempts += 1;
+    const onClick = () => {
+      if (closedByUserRef.current) return;
       openPip().catch(() => {});
     };
-    tick();
-    const id = window.setInterval(tick, 700);
-    return () => {
-      cancelled = true;
-      window.clearInterval(id);
-    };
+    window.addEventListener("pointerdown", onClick, { once: true });
+    return () => window.removeEventListener("pointerdown", onClick);
   }, [visible, pipWindow, pipSupported, openPip]);
+
 
 
   useEffect(() => {
