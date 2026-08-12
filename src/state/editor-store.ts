@@ -215,6 +215,8 @@ export interface EditorState {
   selectedKeyframes: { prop: string; kfId: string }[];
   /** keyframes copiados (Ctrl/Cmd+C) — colados no playhead */
   kfClipboard: { prop: string; offset: number; value: KeyValue; easing: Easing }[];
+  /** preset de zoom aguardando o clique no ponto do preview (modo Simples) */
+  pendingEffectPreset: { presetId: string; params: PresetParams } | null;
   /** ferramenta de anotação ativa no preview (null = seleção normal) */
   annotationTool: AnnotationTool | null;
   annotationColor: string;
