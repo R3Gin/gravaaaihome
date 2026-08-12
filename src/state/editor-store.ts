@@ -367,6 +367,11 @@ export const useEditor = create<EditorState & EditorActions>((set, get) => {
     captionStyle: DEFAULT_CAPTION_STYLE,
     kfExpanded: "none",
     selectedKeyframes: [],
+    annotationTool: null,
+    annotationColor: "#ef4444",
+    annotationSize: 6,
+    annotationFill: false,
+    annotationDuration: 3,
 
 
     loadSource: (url, duration, size, name) => {
