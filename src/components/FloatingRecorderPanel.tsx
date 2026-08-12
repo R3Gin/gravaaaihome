@@ -146,7 +146,7 @@ export const FloatingRecorderPanel = forwardRef<
   useEffect(() => {
     if (!pipWindow) return;
     try {
-      pipWindow.resizeTo(360, drawing?.active ? 132 : 64);
+      pipWindow.resizeTo(380, drawing?.active ? 230 : 64);
     } catch {
       /* alguns navegadores bloqueiam resize */
     }
