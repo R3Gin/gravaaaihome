@@ -1,7 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 import { Pause, Play } from "lucide-react";
 import { findClip, useEditor } from "@/state/editor-store";
-import { playAudioPreview } from "@/lib/audio-tools";
+import {
+  denoiseSamplesRnnoise,
+  playAudioPreview,
+  playSamples,
+  renderMono48k,
+} from "@/lib/audio-tools";
 import { cn } from "@/lib/utils";
 
 function Slider({
