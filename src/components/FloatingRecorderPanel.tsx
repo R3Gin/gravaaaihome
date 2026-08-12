@@ -170,18 +170,29 @@ export const FloatingRecorderPanel = forwardRef<
     [openPip, closePip],
   );
 
-  // Fecha o PiP quando a gravação termina.
+  // Fecha o PiP quando a sessão termina (visível -> invisível). A janela pode
+  // ser aberta ANTES de a sessão ficar visível (no gesto do usuário), então
+  // nunca fechamos por "ainda não visível".
+  const wasVisibleRef = useRef(false);
   useEffect(() => {
-    if (!visible && pipWindow) {
-      try {
-        pipWindow.close();
-      } catch {
-        /* noop */
-      }
-      setPipWindow(null);
+    if (visible) {
+      wasVisibleRef.current = true;
+      return;
     }
-    if (!visible) closedByUserRef.current = false;
+    if (wasVisibleRef.current) {
+      wasVisibleRef.current = false;
+      if (pipWindow) {
+        try {
+          pipWindow.close();
+        } catch {
+          /* noop */
+        }
+        setPipWindow(null);
+      }
+      closedByUserRef.current = false;
+    }
   }, [visible, pipWindow]);
+
 
   // Fallback de user activation: se a abertura automática (feita no mesmo
   // gesto do usuário que iniciou a captura) tiver sido recusada, o primeiro
