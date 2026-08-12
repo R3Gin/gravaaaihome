@@ -240,7 +240,11 @@ export function ScreenRecorder() {
         window.AudioContext ??
         (window as unknown as { webkitAudioContext: typeof AudioContext })
           .webkitAudioContext;
-      audioCtxRef.current = new Ctx();
+      try {
+        audioCtxRef.current = new Ctx({ sampleRate: 48000 });
+      } catch {
+        audioCtxRef.current = new Ctx();
+      }
       destRef.current = audioCtxRef.current.createMediaStreamDestination();
     }
     return { ctx: audioCtxRef.current!, dest: destRef.current! };
