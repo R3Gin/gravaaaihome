@@ -292,7 +292,7 @@ export const FloatingRecorderPanel = forwardRef<
         </span>
       </div>
 
-      <div className="mx-1 h-5 w-px bg-white/10" />
+      <div className="mx-0.5 h-5 w-px bg-white/10" />
 
       <div className="flex items-center gap-1">
         {!recording ? (
@@ -351,7 +351,7 @@ export const FloatingRecorderPanel = forwardRef<
       </div>
 
 
-      <div className="mx-1 h-5 w-px bg-white/10" />
+      <div className="mx-0.5 h-5 w-px bg-white/10" />
 
       <div className="flex items-center gap-1">
         <ToggleButton
@@ -386,7 +386,7 @@ export const FloatingRecorderPanel = forwardRef<
 
       {pipWindow && (
         <>
-          <div className="mx-1 h-5 w-px bg-white/10" />
+          <div className="mx-0.5 h-5 w-px bg-white/10" />
           <button
             type="button"
             onClick={closePip}
