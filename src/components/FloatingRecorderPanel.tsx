@@ -105,10 +105,17 @@ export const FloatingRecorderPanel = forwardRef<
 >(function FloatingRecorderPanel(props, ref) {
   const { visible, recording = true } = props;
   const [pipWindow, setPipWindow] = useState<PipWindow | null>(null);
+  const [pipSupported, setPipSupported] = useState(true);
   const [pos, setPos] = useState({ x: 24, y: 24 });
   const dragRef = useRef<{ dx: number; dy: number } | null>(null);
+  const closedByUserRef = useRef(false);
+
+  useEffect(() => {
+    setPipSupported(supportsDocumentPip());
+  }, []);
 
   const closePip = useCallback(() => {
+    closedByUserRef.current = true;
     if (pipWindow) {
       try {
         pipWindow.close();
@@ -118,6 +125,7 @@ export const FloatingRecorderPanel = forwardRef<
     }
     setPipWindow(null);
   }, [pipWindow]);
+
 
   const openPip = useCallback(async () => {
     if (!supportsDocumentPip()) return;
