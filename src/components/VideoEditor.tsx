@@ -178,6 +178,42 @@ export function VideoEditor() {
           state.removeClip(id);
         }
       }
+      // Copiar / colar keyframes
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "c") {
+        const state = useEditor.getState();
+        if (state.selectedKeyframes.length > 0) {
+          e.preventDefault();
+          state.copySelectedKeyframes();
+        }
+      }
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "v") {
+        const state = useEditor.getState();
+        if (state.kfClipboard.length > 0) {
+          e.preventDefault();
+          state.pasteKeyframes();
+        }
+      }
+      // Setas: navega entre keyframes da propriedade selecionada (Alt = deslocar no tempo)
+      if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
+        const state = useEditor.getState();
+        const sel = state.selectedKeyframes;
+        if (sel.length === 0) return;
+        e.preventDefault();
+        const dir = e.key === "ArrowRight" ? 1 : -1;
+        if (e.altKey) {
+          state.nudgeSelectedKeyframes(dir * (e.shiftKey ? 0.5 : 0.05));
+          return;
+        }
+        const clip = findClip(state.tracks, state.selectedClipId);
+        if (!clip) return;
+        const prop = sel[sel.length - 1].prop;
+        const keys = clip.keyframes?.[prop] ?? [];
+        const idx = keys.findIndex((k) => k.id === sel[sel.length - 1].kfId);
+        const next = keys[idx + dir];
+        if (!next) return;
+        state.selectKeyframe(prop, next.id, false);
+        state.setCurrentTime(clip.startTime + next.time);
+      }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
