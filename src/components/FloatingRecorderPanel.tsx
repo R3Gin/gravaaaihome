@@ -169,8 +169,37 @@ export const FloatingRecorderPanel = forwardRef<
 
   // Fecha o PiP quando a gravação termina.
   useEffect(() => {
-    if (!visible && pipWindow) closePip();
-  }, [visible, pipWindow, closePip]);
+    if (!visible && pipWindow) {
+      try {
+        pipWindow.close();
+      } catch {
+        /* noop */
+      }
+      setPipWindow(null);
+    }
+    if (!visible) closedByUserRef.current = false;
+  }, [visible, pipWindow]);
+
+  // Abertura AUTOMÁTICA da janela real do sistema: única forma de painel
+  // quando o navegador suporta Document PiP. Tenta algumas vezes caso a
+  // primeira chamada (feita pelo gesto do usuário) tenha sido recusada.
+  useEffect(() => {
+    if (!visible || pipWindow || !pipSupported || closedByUserRef.current) return;
+    let cancelled = false;
+    let attempts = 0;
+    const tick = () => {
+      if (cancelled || attempts >= 10) return;
+      attempts += 1;
+      openPip().catch(() => {});
+    };
+    tick();
+    const id = window.setInterval(tick, 700);
+    return () => {
+      cancelled = true;
+      window.clearInterval(id);
+    };
+  }, [visible, pipWindow, pipSupported, openPip]);
+
 
   useEffect(() => {
     return () => {
