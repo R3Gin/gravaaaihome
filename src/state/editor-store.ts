@@ -226,6 +226,12 @@ export interface EditorActions {
   trimClip: (id: string, side: "start" | "end", newTime: number) => void;
   addTextClip: (text?: string) => void;
   addOverlayClip: (kind: "blur" | "spotlight") => void;
+  /** cria um clipe de anotação na faixa de efeitos, começando no playhead */
+  addAnnotationClip: (annotation: Annotation) => void;
+  setAnnotationTool: (tool: AnnotationTool | null) => void;
+  setAnnotationStyle: (
+    patch: Partial<{ color: string; size: number; fill: boolean; duration: number }>,
+  ) => void;
   addZoomKeyframe: (clipId: string, timelineTime: number) => void;
   removeZoomKeyframe: (clipId: string, index: number) => void;
   /** Remove trechos e devolve quantas legendas foram remapeadas. */
