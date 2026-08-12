@@ -37,9 +37,14 @@ function ensure(): Worker | null {
   }
 }
 
-function run<T extends AnalysisResponse>(
-  payload: Omit<AnalysisRequest, "id">,
-): Promise<T | null> {
+type RequestInput = AnalysisRequest extends infer R
+  ? R extends AnalysisRequest
+    ? Omit<R, "id">
+    : never
+  : never;
+
+function run<T extends AnalysisResponse>(payload: RequestInput): Promise<T | null> {
+
   const w = ensure();
   if (!w) return Promise.resolve(null);
   const id = ++seq;
