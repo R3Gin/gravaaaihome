@@ -1041,6 +1041,81 @@ export const useEditor = create<EditorState & EditorActions>((set, get) => {
       });
     },
 
+    /* ---------------- presets de efeito (modo Simples) ---------------- */
+
+    applyEffectPreset: (clipId, presetId, params) => {
+      const clip = findClip(get().tracks, clipId);
+      const def = presetById(presetId);
+      if (!clip || !def) return;
+      const merged: PresetParams = { ...params };
+      const instanceId = `fx-${uid()}`;
+      const generated = def.build(clip, merged);
+
+      // remove presets anteriores da mesma categoria (e seus keyframes)
+      const previous = (clip.effectPresets ?? []).filter((p) => p.category === def.category);
+      const drop = new Set(previous.map((p) => p.id));
+      const map: KeyframeMap = {};
+      for (const [prop, keys] of Object.entries(clip.keyframes ?? {})) {
+        const rest = keys.filter((k) => !k.origin || !drop.has(k.origin));
+        if (rest.length) map[prop] = rest;
+      }
+      // aplica os novos: substitui keyframes automáticos das mesmas props
+      for (const [prop, keys] of Object.entries(generated)) {
+        const tagged = keys.map((k) => ({ ...k, origin: instanceId }));
+        const manual = (map[prop] ?? []).filter((k) => !k.origin);
+        map[prop] = sortKeys([...manual, ...tagged]);
+      }
+
+      const presets: AppliedPreset[] = [
+        ...(clip.effectPresets ?? []).filter((p) => p.category !== def.category),
+        { id: instanceId, presetId, category: def.category, params: merged },
+      ];
+      get().updateClip(clipId, { keyframes: map, effectPresets: presets });
+      set({ pendingEffectPreset: null, selectedKeyframes: [] });
+    },
+
+    updateEffectPresetParams: (clipId, instanceId, params) => {
+      const clip = findClip(get().tracks, clipId);
+      const inst = clip?.effectPresets?.find((p) => p.id === instanceId);
+      const def = inst ? presetById(inst.presetId) : undefined;
+      if (!clip || !inst || !def) return;
+      const merged: PresetParams = { ...inst.params, ...params };
+      const generated = def.build(clip, merged);
+      const map: KeyframeMap = {};
+      for (const [prop, keys] of Object.entries(clip.keyframes ?? {})) {
+        const rest = keys.filter((k) => k.origin !== instanceId);
+        if (rest.length) map[prop] = rest;
+      }
+      for (const [prop, keys] of Object.entries(generated)) {
+        const tagged = keys.map((k) => ({ ...k, origin: instanceId }));
+        map[prop] = sortKeys([...(map[prop] ?? []).filter((k) => !k.origin), ...tagged]);
+      }
+      get().updateClip(clipId, {
+        keyframes: map,
+        effectPresets: (clip.effectPresets ?? []).map((p) =>
+          p.id === instanceId ? { ...p, params: merged, edited: false } : p,
+        ),
+      });
+    },
+
+    removeEffectPreset: (clipId, instanceId) => {
+      const clip = findClip(get().tracks, clipId);
+      if (!clip) return;
+      const map: KeyframeMap = {};
+      for (const [prop, keys] of Object.entries(clip.keyframes ?? {})) {
+        const rest = keys.filter((k) => k.origin !== instanceId);
+        if (rest.length) map[prop] = rest;
+      }
+      get().updateClip(clipId, {
+        keyframes: map,
+        effectPresets: (clip.effectPresets ?? []).filter((p) => p.id !== instanceId),
+      });
+      set({ selectedKeyframes: [] });
+    },
+
+    setPendingEffectPreset: (value) => set({ pendingEffectPreset: value }),
+
+
 
 
     removeKeyframe: (clipId, prop, kfId) => {
