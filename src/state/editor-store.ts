@@ -685,7 +685,7 @@ export const useEditor = create<EditorState & EditorActions>((set, get) => {
             if (captions.length === 0) return clips;
             const remapped = remapCaptionsAfterCuts(
               captions.map((c) => ({ clip: c, start: c.startTime, end: c.startTime + c.duration })),
-              ordered,
+              merged,
             ).map(({ clip, start, end }) => ({
               ...clip,
               startTime: start,
@@ -756,7 +756,7 @@ export const useEditor = create<EditorState & EditorActions>((set, get) => {
 
       );
       const prev = get().removedRanges;
-      const inOriginal = ordered.map((r) => ({
+      const inOriginal = merged.map((r) => ({
         start: toOriginalTime(r.start, prev),
         end: toOriginalTime(r.end, prev),
       }));
