@@ -3,6 +3,8 @@
  * - detecção de silêncio (para o cortador de silêncio)
  * - segmentação de fala (base para os blocos de legenda)
  */
+import { silencesInWorker } from "@/lib/audio-worker-client";
+
 
 export interface Segment {
   start: number;
