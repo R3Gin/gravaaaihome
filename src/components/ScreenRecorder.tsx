@@ -175,6 +175,17 @@ export function ScreenRecorder() {
     statusRef.current = status;
   }, [status]);
 
+  // Ao sair da sessão de captura (parou de gravar / voltou para idle),
+  // libera a webcam e reseta o estado que controla a bolha ao vivo.
+  useEffect(() => {
+    const sessionActive = status === "capturing" || status === "recording";
+    if (!sessionActive && camera.active) {
+      camera.stop();
+      setCameraSettingsOpen(false);
+    }
+  }, [status, camera]);
+
+
   const cleanupAudioGraph = useCallback(() => {
     try { screenSourceRef.current?.disconnect(); } catch { /* noop */ }
     try { micSourceRef.current?.disconnect(); } catch { /* noop */ }
@@ -795,7 +806,11 @@ export function ScreenRecorder() {
   const isConverting = status === "converting";
   const canRecord = status === "capturing";
   const captureDisabled = status === "recording" || status === "converting";
+  // Sessão de captura ao vivo: do momento em que a tela é capturada até a
+  // gravação parar. Só nesse intervalo a webcam ao vivo pode ser exibida.
+  const isRecordingSessionActive = status === "capturing" || status === "recording";
   const panelVisible = isRecording || status === "capturing";
+
   const hasScreenAudioTrack =
     (displayStreamRef.current?.getAudioTracks().length ?? 0) > 0;
   const hasMicTrack = (micStreamRef.current?.getTracks().length ?? 0) > 0;
@@ -849,8 +864,13 @@ export function ScreenRecorder() {
           autoPlay
           muted
         />
-        {/* Bolha PiP da câmera sobreposta ao preview e gravada no MP4. */}
-        <CameraPipBubble controller={camera} containerRef={previewContainerRef} />
+        {/* Bolha PiP da webcam AO VIVO: só existe durante uma sessão de
+            captura ativa. Nunca aparece sobre o preview de um vídeo já
+            gravado (que já tem a bolha "queimada" no arquivo). */}
+        {isRecordingSessionActive && (
+          <CameraPipBubble controller={camera} containerRef={previewContainerRef} />
+        )}
+
 
         {status === "idle" && (
           <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center gap-3 text-[var(--muted-foreground)]">
