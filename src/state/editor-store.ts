@@ -54,6 +54,17 @@ export interface ZoomKeyframe {
   y: number;
 }
 
+/** instância de preset de efeito aplicada a um clipe (modo Simples) */
+export interface AppliedPreset {
+  /** id da instância (marca os keyframes gerados via `origin`) */
+  id: string;
+  presetId: string;
+  category: EffectCategory;
+  params: PresetParams;
+  /** o usuário editou manualmente algum keyframe gerado */
+  edited?: boolean;
+}
+
 export interface Clip {
   id: string;
   trackId: string;
