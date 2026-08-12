@@ -121,14 +121,20 @@ export const FloatingRecorderPanel = forwardRef<
 
   const openPip = useCallback(async () => {
     if (!supportsDocumentPip()) return;
-    if (pipWindow) return;
+    // Reaproveita a janela existente do navegador, se houver.
+    // @ts-expect-error - experimental API
+    const existing: PipWindow | null = window.documentPictureInPicture?.window ?? null;
+    if (pipWindow || existing) {
+      if (!pipWindow && existing) setPipWindow(existing);
+      return;
+    }
     try {
       // Janela real do sistema operacional, sempre por cima de qualquer app,
       // e desvinculada da aba de origem (o usuário pode navegar livremente).
       // @ts-expect-error - experimental API
       const w: PipWindow = await window.documentPictureInPicture.requestWindow({
-        width: 340,
-        height: 64,
+        width: 400,
+        height: 120,
         disallowReturnToOpener: true,
         preferInitialWindowPlacement: true,
       });
@@ -137,6 +143,7 @@ export const FloatingRecorderPanel = forwardRef<
       setPipWindow(w);
     } catch (err) {
       console.warn("[recorder-panel] Document PiP recusado:", err);
+      throw err;
     }
   }, [pipWindow]);
 
