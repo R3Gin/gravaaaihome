@@ -355,6 +355,16 @@ const P = {
     get: (c) => c.reveal ?? 1,
     set: (v) => ({ reveal: num(v, 1) }),
   },
+  zoom: {
+    key: "zoom",
+    label: "Zoom",
+    kind: "number",
+    min: 1,
+    max: 4,
+    step: 0.05,
+    get: (c) => c.zoom ?? 1,
+    set: (v) => ({ zoom: num(v, 1) }),
+  },
   strength: {
     key: "strength",
     label: "Intensidade",
@@ -371,7 +381,17 @@ export const ANIM_PROPS: Record<string, AnimProp> = P;
 
 export function animatablePropsFor(clip: Clip): AnimProp[] {
   if (clip.type === "video" || clip.type === "audio") {
-    return [P.position, P.scale, P.rotation, P.opacity, P.brightness, P.contrast, P.saturation, P.volume];
+    return [
+      P.position,
+      P.scale,
+      P.rotation,
+      P.zoom,
+      P.opacity,
+      P.brightness,
+      P.contrast,
+      P.saturation,
+      P.volume,
+    ];
   }
   if (clip.type === "text") {
     return [P.position, P.opacity, P.scale, P.rotation, P.fontSize, P.blur, P.reveal];
@@ -402,6 +422,7 @@ export function modifiedProps(clip: Clip): AnimProp[] {
     fontSize: 48,
     blur: 0,
     reveal: 1,
+    zoom: 1,
     strength: clip.overlayKind === "blur" ? 12 : 0.7,
   };
   return animatablePropsFor(clip).filter((p) => {

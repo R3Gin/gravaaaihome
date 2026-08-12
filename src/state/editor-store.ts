@@ -1,6 +1,8 @@
 import { create } from "zustand";
 import {
   applyContinuity,
+  KF_EPS,
+  valueAt,
   newKeyframe,
   propByKey,
   resolveClip,
@@ -76,6 +78,8 @@ export interface Clip {
   fadeIn?: number;
   fadeOut?: number;
   zoomKeyframes?: ZoomKeyframe[];
+  /** zoom animável (unificado com o sistema de keyframes) */
+  zoom?: number;
   position?: { x: number; y: number };
   // transformações animáveis
   opacity?: number;
@@ -191,6 +195,8 @@ export interface EditorState {
   kfExpanded: "none" | "animated" | "all";
   /** keyframes selecionados na timeline (permite mover/deletar em conjunto) */
   selectedKeyframes: { prop: string; kfId: string }[];
+  /** keyframes copiados (Ctrl/Cmd+C) — colados no playhead */
+  kfClipboard: { prop: string; offset: number; value: KeyValue; easing: Easing }[];
   /** ferramenta de anotação ativa no preview (null = seleção normal) */
   annotationTool: AnnotationTool | null;
   annotationColor: string;
@@ -278,7 +284,15 @@ export interface EditorActions {
   removeKeyframe: (clipId: string, prop: string, kfId: string) => void;
   removeSelectedKeyframes: () => void;
   selectKeyframe: (prop: string, kfId: string, additive?: boolean) => void;
+  /** seleção por marquee: substitui ou soma à seleção atual */
+  selectKeyframes: (list: { prop: string; kfId: string }[], additive?: boolean) => void;
   clearKeyframeSelection: () => void;
+  /** define o tempo exato (local ao clipe) de um keyframe */
+  setKeyframeTime: (clipId: string, prop: string, kfId: string, time: number) => void;
+  /** desloca todos os keyframes selecionados mantendo o espaçamento */
+  nudgeSelectedKeyframes: (delta: number) => void;
+  copySelectedKeyframes: () => void;
+  pasteKeyframes: () => void;
   cycleKeyframeRows: (all?: boolean) => void;
   undo: () => void;
   redo: () => void;
@@ -373,6 +387,7 @@ export const useEditor = create<EditorState & EditorActions>((set, get) => {
     captionStyle: DEFAULT_CAPTION_STYLE,
     kfExpanded: "none",
     selectedKeyframes: [],
+    kfClipboard: [],
     annotationTool: null,
     annotationColor: "#ef4444",
     annotationSize: 6,
@@ -1026,7 +1041,70 @@ export const useEditor = create<EditorState & EditorActions>((set, get) => {
         };
       }),
 
+    selectKeyframes: (list, additive) =>
+      set((s) => {
+        if (!additive) return { selectedKeyframes: list };
+        const merged = [...s.selectedKeyframes];
+        for (const item of list) {
+          if (!merged.some((k) => k.kfId === item.kfId)) merged.push(item);
+        }
+        return { selectedKeyframes: merged };
+      }),
+
     clearKeyframeSelection: () => set({ selectedKeyframes: [] }),
+
+    setKeyframeTime: (clipId, prop, kfId, time) => {
+      get().moveKeyframes(clipId, [{ prop, kfId, time }]);
+    },
+
+    nudgeSelectedKeyframes: (delta) => {
+      const { selectedClipId, selectedKeyframes } = get();
+      const clip = findClip(get().tracks, selectedClipId);
+      if (!clip || selectedKeyframes.length === 0) return;
+      const moves = selectedKeyframes.flatMap((sel) => {
+        const kf = clip.keyframes?.[sel.prop]?.find((k) => k.id === sel.kfId);
+        return kf ? [{ prop: sel.prop, kfId: sel.kfId, time: kf.time + delta }] : [];
+      });
+      get().moveKeyframes(clip.id, moves);
+    },
+
+    copySelectedKeyframes: () => {
+      const { selectedClipId, selectedKeyframes } = get();
+      const clip = findClip(get().tracks, selectedClipId);
+      if (!clip || selectedKeyframes.length === 0) return;
+      const picked = selectedKeyframes.flatMap((sel) => {
+        const kf = clip.keyframes?.[sel.prop]?.find((k) => k.id === sel.kfId);
+        return kf ? [{ prop: sel.prop, time: kf.time, value: kf.value, easing: kf.easing }] : [];
+      });
+      if (picked.length === 0) return;
+      const base = Math.min(...picked.map((k) => k.time));
+      set({
+        kfClipboard: picked.map((k) => ({
+          prop: k.prop,
+          offset: k.time - base,
+          value: k.value,
+          easing: k.easing,
+        })),
+      });
+    },
+
+    pasteKeyframes: () => {
+      const { selectedClipId, kfClipboard, currentTime } = get();
+      const clip = findClip(get().tracks, selectedClipId);
+      if (!clip || kfClipboard.length === 0) return;
+      const at = Math.max(0, Math.min(clip.duration, currentTime - clip.startTime));
+      const map: KeyframeMap = { ...(clip.keyframes ?? {}) };
+      const created: { prop: string; kfId: string }[] = [];
+      for (const item of kfClipboard) {
+        const time = Math.max(0, Math.min(clip.duration, at + item.offset));
+        const kf = newKeyframe(time, item.value, item.easing);
+        const keys = (map[item.prop] ?? []).filter((k) => Math.abs(k.time - time) > KF_EPS / 2);
+        map[item.prop] = sortKeys([...keys, kf]);
+        created.push({ prop: item.prop, kfId: kf.id });
+      }
+      get().updateClip(clip.id, { keyframes: map });
+      set({ selectedKeyframes: created });
+    },
 
     cycleKeyframeRows: (all) =>
       set((s) => {
@@ -1080,6 +1158,15 @@ export function clipsAt(tracks: Track[], type: TrackType, time: number): Clip[] 
 
 /** Interpola os keyframes de zoom no tempo local do clipe. */
 export function zoomAt(clip: Clip, localTime: number) {
+  // caminho unificado: zoom agora é uma propriedade animável comum
+  const kf = clip.keyframes?.zoom;
+  if (kf && kf.length > 0) {
+    const v = valueAt(kf, localTime);
+    return { time: localTime, scale: typeof v === "number" ? v : 1, x: 0, y: 0 };
+  }
+  if (!clip.keyframes?.zoom && typeof clip.zoom === "number" && clip.zoom !== 1) {
+    return { time: localTime, scale: clip.zoom, x: 0, y: 0 };
+  }
   const keys = clip.zoomKeyframes ?? [];
   if (keys.length === 0) return { scale: 1, x: 0, y: 0 };
   if (keys.length === 1) return keys[0];

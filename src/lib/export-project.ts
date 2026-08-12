@@ -96,6 +96,9 @@ export async function exportProject(
     for (const k of scaleKeys) {
       zoomKeys.push({ t: k.time, scale: Math.max(0.05, k.value as number) });
     }
+    for (const k of c.keyframes?.zoom ?? []) {
+      if (typeof k.value === "number") zoomKeys.push({ t: k.time, scale: Math.max(0.05, k.value) });
+    }
     zoomKeys.sort((a, b) => a.t - b.t);
     return {
       srcStart: c.sourceInStart,

@@ -13,6 +13,7 @@ import {
   type PresetId,
 } from "@/lib/text-presets";
 import { cn } from "@/lib/utils";
+import { KeyframeEditor } from "./KeyframeEditor";
 
 
 function Row({ label, children }: { label: string; children: React.ReactNode }) {
@@ -269,7 +270,10 @@ export function Inspector() {
             Selecione um clipe na timeline para editar suas propriedades.
           </p>
         ) : (
-          <AnimSection clip={clip} />
+          <>
+            <KeyframeEditor clip={clip} />
+            <AnimSection clip={clip} />
+          </>
         )}
 
         {clip?.type === "video" ? (
@@ -291,47 +295,10 @@ export function Inspector() {
               Volume, redução de ruído e fades ficam no módulo <strong>Áudio</strong>; efeitos de
               troca entre clipes, no módulo <strong>Transições</strong> (sidebar esquerda).
             </p>
-            <div className="space-y-2 rounded-lg border border-[var(--border)] p-3">
-              <div className="flex items-center justify-between">
-                <span className="text-[11px] font-semibold">Zoom com keyframes</span>
-                <button
-                  onClick={() => addZoomKeyframe(clip.id, currentTime)}
-                  className="rounded-md bg-[var(--brand)] px-2 py-1 text-[11px] font-semibold text-white"
-                >
-                  + Keyframe
-                </button>
-              </div>
-              {(clip.zoomKeyframes ?? []).length === 0 ? (
-                <p className="text-[11px] text-[var(--muted-foreground)]">
-                  Posicione o playhead e adicione pontos de zoom.
-                </p>
-              ) : (
-                (clip.zoomKeyframes ?? []).map((k, i) => (
-                  <div key={i} className="flex items-center gap-2">
-                    <span className="w-10 text-[11px] tabular-nums">{k.time.toFixed(1)}s</span>
-                    <input
-                      type="range"
-                      min={1}
-                      max={3}
-                      step={0.05}
-                      value={k.scale}
-                      onChange={(e) => {
-                        const keys = [...(clip.zoomKeyframes ?? [])];
-                        keys[i] = { ...k, scale: Number(e.target.value) };
-                        updateClip(clip.id, { zoomKeyframes: keys });
-                      }}
-                      className="w-full accent-[var(--brand)]"
-                    />
-                    <button
-                      onClick={() => removeZoomKeyframe(clip.id, i)}
-                      className="text-[11px] text-[var(--muted-foreground)]"
-                    >
-                      ×
-                    </button>
-                  </div>
-                ))
-              )}
-            </div>
+            <p className="rounded-lg border border-[var(--border)] p-3 text-[10px] leading-relaxed text-[var(--muted-foreground)]">
+              O <strong>Zoom</strong> agora é uma propriedade animável comum: use o losango ao lado
+              de "Zoom" acima para criar keyframes, igual a Posição, Escala e Rotação.
+            </p>
           </>
         ) : null}
 
