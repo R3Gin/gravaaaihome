@@ -375,13 +375,34 @@ export function drawFrame(
 
       const lineH = size * 1.25;
       const totalH = lines.length * lineH;
-      if (cs.background) {
+      const solid = cs.anim === "solidBox";
+      if (cs.background || solid) {
         const padX = size * 0.35;
         const bw = Math.max(...lines.map((l) => l.width)) + padX * 2;
-        ctx.fillStyle = withAlpha(cs.highlight, cs.bgOpacity);
-        roundRect(ctx, cx - bw / 2, cy - totalH / 2 - size * 0.15, bw, totalH + size * 0.3, size * 0.22);
+        ctx.fillStyle = solid
+          ? cs.background
+            ? withAlpha(cs.highlight, 1)
+            : "#000000"
+          : withAlpha(cs.highlight, cs.bgOpacity);
+        roundRect(ctx, cx - bw / 2, cy - totalH / 2 - size * 0.15, bw, totalH + size * 0.3, solid ? size * 0.06 : size * 0.22);
         ctx.fill();
       }
+
+      if (cs.anim === "minimalUnderline") {
+        ctx.save();
+        ctx.globalAlpha = (clip.opacity ?? 1) * (fx2[0]?.alpha ?? 1);
+        ctx.strokeStyle = cs.highlight;
+        ctx.lineWidth = Math.max(1, size * 0.05);
+        lines.forEach((line, li) => {
+          const y = cy - totalH / 2 + lineH * (li + 0.5) + size * 0.62;
+          ctx.beginPath();
+          ctx.moveTo(cx - line.width / 2, y);
+          ctx.lineTo(cx + line.width / 2, y);
+          ctx.stroke();
+        });
+        ctx.restore();
+      }
+
 
       lines.forEach((line, li) => {
         const y = cy - totalH / 2 + lineH * (li + 0.5);

@@ -31,10 +31,12 @@ const fmt = (t: number) => {
   return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}.${String(c).padStart(2, "0")}`;
 };
 
+const BLOCK_PREVIEW = ["typewriter", "popIn", "none", "simpleFade", "solidBox", "minimalUnderline"];
+
 function StylePreview({ id }: { id: string }) {
   const anim = CAPTION_ANIMS.find((a) => a.id === id);
   if (!anim) return null;
-  if (id === "typewriter") {
+  if (BLOCK_PREVIEW.includes(id)) {
     return <span className={cn("whitespace-nowrap", anim.previewClass)}>Legenda ativa</span>;
   }
   return (
@@ -223,34 +225,43 @@ export function CaptionsPanel() {
 
       {tab === "estilo" ? (
         <div className="space-y-4 animate-fade-in">
-          {/* galeria de animações */}
-          <div className="space-y-2">
-            <span className="text-[11px] font-bold uppercase tracking-wide text-[var(--muted-foreground)]">
-              Estilo animado
-            </span>
-            <div className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1">
-              {CAPTION_ANIMS.map((a) => (
-                <button
-                  key={a.id}
-                  title={a.hint}
-                  onClick={() => setCaptionStyle({ anim: a.id })}
-                  className={cn(
-                    "w-[104px] shrink-0 rounded-lg border p-2 text-left transition-colors",
-                    style.anim === a.id
-                      ? "border-[var(--brand)] bg-[var(--brand)]/10"
-                      : "border-[var(--border)] hover:border-white/25",
-                  )}
-                >
-                  <span className="grid h-10 place-items-center overflow-hidden rounded bg-black text-[10px] font-bold text-white">
-                    <StylePreview id={a.id} />
-                  </span>
-                  <span className="mt-1 block text-[10px] font-semibold text-[var(--foreground)]">
-                    {a.label}
-                  </span>
-                </button>
-              ))}
+          {/* galeria de estilos */}
+          {(
+            [
+              { kind: "animated", title: "Animadas", hint: "Efeito por palavra / movimento" },
+              { kind: "static", title: "Padrão", hint: "Estáticas, sem animação chamativa" },
+            ] as const
+          ).map((sec) => (
+            <div key={sec.kind} className="space-y-2">
+              <span className="text-[11px] font-bold uppercase tracking-wide text-[var(--muted-foreground)]">
+                {sec.title}
+              </span>
+              <p className="text-[10px] text-[var(--muted-foreground)]">{sec.hint}</p>
+              <div className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1">
+                {CAPTION_ANIMS.filter((a) => a.kind === sec.kind).map((a) => (
+                  <button
+                    key={a.id}
+                    title={a.hint}
+                    onClick={() => setCaptionStyle({ anim: a.id })}
+                    className={cn(
+                      "w-[104px] shrink-0 rounded-lg border p-2 text-left transition-colors",
+                      style.anim === a.id
+                        ? "border-[var(--brand)] bg-[var(--brand)]/10"
+                        : "border-[var(--border)] hover:border-white/25",
+                    )}
+                  >
+                    <span className="grid h-10 place-items-center overflow-hidden rounded bg-black text-[10px] font-bold text-white">
+                      <StylePreview id={a.id} />
+                    </span>
+                    <span className="mt-1 block text-[10px] font-semibold text-[var(--foreground)]">
+                      {a.label}
+                    </span>
+                  </button>
+                ))}
+              </div>
             </div>
-          </div>
+          ))}
+
 
           <div className="space-y-3 rounded-lg border border-[var(--border)] p-3">
             <label className="block space-y-1">

@@ -190,3 +190,19 @@
 .cap-prev-pop span:nth-child(3), .cap-prev-karaoke span:nth-child(3),
 .cap-prev-slide span:nth-child(3), .cap-prev-glow span:nth-child(3),
 .cap-prev-shake span:nth-child(3) { animation-delay: .36s }
+
+/* ---- Novos estilos de legenda: miniaturas ---- */
+@keyframes cap-bounce { 0%,10% { transform: translateY(0); opacity: 0 } 35% { transform: translateY(-45%); opacity: 1 } 60% { transform: translateY(8%) } 80% { transform: translateY(-12%) } 100% { transform: translateY(0) } }
+@keyframes cap-sweep { 0%,40% { color: rgba(255,255,255,.55) } 60%,100% { color: var(--brand) } }
+@keyframes cap-popin { 0%,10% { transform: scale(.9); opacity: 0 } 55%,100% { transform: scale(1); opacity: 1 } }
+@keyframes cap-fade { 0%,10% { opacity: 0 } 40%,75% { opacity: 1 } 100% { opacity: 0 } }
+
+.cap-prev-bounce span { display: inline-block; animation: cap-bounce 1.6s infinite }
+.cap-prev-sweep span { display: inline-block; animation: cap-sweep 1.6s infinite }
+.cap-prev-popin { display: inline-block; animation: cap-popin 1.6s infinite }
+.cap-prev-fade { display: inline-block; animation: cap-fade 1.8s infinite }
+.cap-prev-none { display: inline-block }
+.cap-prev-solid { display: inline-block; background: #000; padding: 1px 5px }
+.cap-prev-underline { display: inline-block; border-bottom: 1px solid var(--brand); padding-bottom: 1px }
+.cap-prev-bounce span:nth-child(2), .cap-prev-sweep span:nth-child(2) { animation-delay: .18s }
+.cap-prev-bounce span:nth-child(3), .cap-prev-sweep span:nth-child(3) { animation-delay: .36s }
