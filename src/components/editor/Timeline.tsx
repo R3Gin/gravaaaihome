@@ -438,12 +438,50 @@ export function Timeline() {
   const scrollRef = useRef<HTMLDivElement>(null);
   const width = Math.max(600, (duration + 4) * zoom);
 
+  /* --- virtualização: só renderiza o que está na janela visível --- */
+  const [view, setView] = useState({ left: 0, width: 1200 });
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    let raf = 0;
+    const read = () => {
+      raf = 0;
+      setView((v) =>
+        v.left === el.scrollLeft && v.width === el.clientWidth
+          ? v
+          : { left: el.scrollLeft, width: el.clientWidth },
+      );
+    };
+    const onScroll = () => {
+      if (!raf) raf = requestAnimationFrame(read);
+    };
+    read();
+    el.addEventListener("scroll", onScroll, { passive: true });
+    const ro = new ResizeObserver(onScroll);
+    ro.observe(el);
+    return () => {
+      el.removeEventListener("scroll", onScroll);
+      ro.disconnect();
+      if (raf) cancelAnimationFrame(raf);
+    };
+  }, []);
+
+  const visible = useMemo(() => {
+    const margin = 600; // px de folga fora da tela
+    return {
+      from: Math.max(0, (view.left - margin) / zoom),
+      to: (view.left + view.width + margin) / zoom,
+    };
+  }, [view, zoom]);
+
   const ticks = useMemo(() => {
     const step = zoom > 120 ? 1 : zoom > 50 ? 2 : zoom > 25 ? 5 : 10;
     const out: number[] = [];
-    for (let t = 0; t <= duration + 4; t += step) out.push(t);
+    const first = Math.floor(visible.from / step) * step;
+    for (let t = Math.max(0, first); t <= Math.min(duration + 4, visible.to); t += step) out.push(t);
     return out;
-  }, [duration, zoom]);
+  }, [duration, zoom, visible]);
+
 
 
   const [scrubbing, setScrubbing] = useState(false);
