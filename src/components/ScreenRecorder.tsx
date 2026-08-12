@@ -914,7 +914,7 @@ export function ScreenRecorder() {
           icon={<MonitorIcon />}
           onClick={startCapture}
           disabled={captureDisabled}
-          title='Dica: escolha "Esta aba" ou "Esta janela" no seletor do navegador para que o painel de controles não apareça na gravação. No modo "Tela inteira", tudo que estiver na sua tela — inclusive o painel flutuante — pode ser capturado.'
+          title='Dica: escolha "Esta aba" para manter o foco no Gravaai. "Esta janela" ou "Tela inteira" podem trocar automaticamente a janela ativa do sistema.'
         >
           {status === "capturing" || status === "recording" ? "Trocar captura" : "Iniciar captura"}
         </ActionButton>
@@ -962,6 +962,19 @@ export function ScreenRecorder() {
           </ActionButton>
         ) : null}
       </div>
+
+      {(status === "idle" || status === "capturing") && (
+        <div className="rounded-lg border border-[var(--border)] bg-[var(--surface-2)] px-3 py-2 text-xs text-[var(--muted-foreground)]">
+          <span className="font-semibold text-[var(--foreground)]">Dica de foco:</span>{" "}
+          escolher{" "}
+          <span className="font-medium text-[var(--foreground)]">"Uma aba do Chrome"</span>{" "}
+          no seletor mantém você aqui no Gravaai durante a gravação. Escolher{" "}
+          <span className="font-medium text-[var(--foreground)]">"Uma janela"</span> ou{" "}
+          <span className="font-medium text-[var(--foreground)]">"Toda a tela"</span>{" "}
+          pode trocar automaticamente para essa janela — o que é normal do navegador. A
+          gravação continua funcionando mesmo assim; é só clicar de volta na aba do Gravaai.
+        </div>
+      )}
     </div>
   );
 }
