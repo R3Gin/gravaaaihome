@@ -793,6 +793,8 @@ export function ScreenRecorder() {
       <FloatingRecorderPanel
         ref={panelRef}
         visible={panelVisible}
+        recording={isRecording}
+        onStart={startRecording}
         paused={paused}
         elapsed={elapsed}
         screenAudioOn={screenAudioEnabled && hasScreenAudioTrack}
