@@ -25,7 +25,7 @@ import { CaptionsPanel } from "@/components/editor/panels/CaptionsPanel";
 import { AudioPanel } from "@/components/editor/panels/AudioPanel";
 import { TransitionsPanel } from "@/components/editor/panels/TransitionsPanel";
 import { AnnotationsPanel } from "@/components/editor/panels/AnnotationsPanel";
-import { useEditor } from "@/state/editor-store";
+import { findClip, useEditor } from "@/state/editor-store";
 import { takeEditorHandoff } from "@/lib/editor-handoff";
 import { exportProject } from "@/lib/export-project";
 import { cn } from "@/lib/utils";
