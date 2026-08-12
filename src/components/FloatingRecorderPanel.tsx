@@ -317,8 +317,9 @@ export const FloatingRecorderPanel = forwardRef<
           <button
             type="button"
             onClick={() => drawing.setActive(!drawing.active)}
-            title={drawing.active ? "Caneta ativa — clique para desativar" : "Desenhar na tela"}
-            aria-label="Caneta"
+            title={drawing.active ? "Anotar ativo — clique para desativar" : "Anotar na tela (caneta, formas, zoom)"}
+            aria-label="Anotar"
+
             className={cn(
               "flex h-8 w-8 items-center justify-center rounded-full border transition-all duration-150 active:scale-[0.98]",
               drawing.active
