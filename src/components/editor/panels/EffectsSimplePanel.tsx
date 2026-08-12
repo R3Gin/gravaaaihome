@@ -170,22 +170,37 @@ function Controls({
   );
 }
 
+function fmt(t: number) {
+  const m = Math.floor(t / 60);
+  const s = Math.floor(t % 60);
+  return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+}
+
 export function EffectsSimplePanel({ clip }: { clip: Clip }) {
   const apply = useEditor((s) => s.applyEffectPreset);
   const pending = useEditor((s) => s.pendingEffectPreset);
   const setPending = useEditor((s) => s.setPendingEffectPreset);
+  const currentTime = useEditor((s) => s.currentTime);
   const [params, setParams] = useState<PresetParams>(DEFAULT_PARAMS);
   const list = presetsFor(clip);
+  const anchor = Math.max(0, Math.min(clip.duration, currentTime - clip.startTime));
 
   return (
     <div className="space-y-4">
       <Chips clip={clip} />
+
+      <div className="rounded-lg border border-[var(--border)] px-2 py-1.5 text-[11px] font-semibold text-[var(--muted-foreground)]">
+        Aplicar na agulha:{" "}
+        <span className="text-[var(--brand)]">{fmt(clip.startTime + anchor)}</span>
+        <span className="text-[10px] font-normal"> (Saída sempre no fim do clipe)</span>
+      </div>
 
       <Controls
         controls={["speed", "intensity", "zoomLevel", "duration"]}
         params={params}
         onChange={(patch) => setParams((p) => ({ ...p, ...patch }))}
       />
+
 
       {CATEGORIES.map((cat) => {
         const items = list.filter((p) => p.category === cat);
