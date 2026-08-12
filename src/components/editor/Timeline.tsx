@@ -98,7 +98,7 @@ function KeyframeLane({
 
     e.preventDefault();
     e.stopPropagation();
-    const additive = e.shiftKey;
+    const additive = e.shiftKey || e.metaKey || e.ctrlKey;
     const already = useEditor.getState().selectedKeyframes.some((k) => k.kfId === kfId);
     if (!already || additive) selectKeyframe(prop.key, kfId, additive);
 
