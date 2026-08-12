@@ -205,8 +205,27 @@ export function drawFrame(
     ctx.globalAlpha = 1;
   }
 
-  /* ---------- overlays (blur / spotlight) ---------- */
+  /* ---------- overlays (blur / spotlight / anotações) ---------- */
   for (const clip of frame.overlays) {
+    if (clip.overlayKind === "annotation") {
+      if (!clip.annotation) continue;
+      ctx.save();
+      ctx.globalAlpha = clip.opacity ?? 1;
+      drawAnnotation(ctx, clip.annotation, W, H);
+      ctx.restore();
+      const b = annotationBounds(clip.annotation);
+      const bx = { x: b.x * W, y: b.y * H, w: b.w * W, h: b.h * H };
+      hits.push({ id: clip.id, kind: "annotation", ...bx });
+      if (clip.id === frame.selectedId) {
+        ctx.save();
+        ctx.strokeStyle = "#e53935";
+        ctx.setLineDash([4, 4]);
+        ctx.lineWidth = 1.5;
+        ctx.strokeRect(bx.x, bx.y, bx.w, bx.h);
+        ctx.restore();
+      }
+      continue;
+    }
     const r = clip.rect ?? { x: 0.1, y: 0.1, w: 0.3, h: 0.3 };
     const px = { x: r.x * W, y: r.y * H, w: r.w * W, h: r.h * H };
     hits.push({ id: clip.id, kind: "overlay", ...px });
