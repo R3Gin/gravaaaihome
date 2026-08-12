@@ -100,6 +100,31 @@ export async function exportProject(
       if (typeof k.value === "number") zoomKeys.push({ t: k.time, scale: Math.max(0.05, k.value) });
     }
     zoomKeys.sort((a, b) => a.t - b.t);
+
+    // pan animado (posição do clipe de vídeo + pan do zoom legado)
+    const panX: { t: number; value: number }[] = [];
+    const panY: { t: number; value: number }[] = [];
+    for (const k of c.zoomKeyframes ?? []) {
+      if (k.x || k.y) {
+        panX.push({ t: k.time, value: k.x ?? 0 });
+        panY.push({ t: k.time, value: k.y ?? 0 });
+      }
+    }
+    for (const k of c.keyframes?.position ?? []) {
+      const v = k.value as { x?: number; y?: number } | undefined;
+      if (v && typeof v === "object") {
+        panX.push({ t: k.time, value: v.x ?? 0 });
+        panY.push({ t: k.time, value: v.y ?? 0 });
+      }
+    }
+    panX.sort((a, b) => a.t - b.t);
+    panY.sort((a, b) => a.t - b.t);
+
+    const opacityKeys = (c.keyframes?.opacity ?? [])
+      .filter((k) => typeof k.value === "number")
+      .map((k) => ({ t: k.time, value: Math.max(0, Math.min(1, k.value as number)) }))
+      .sort((a, b) => a.t - b.t);
+
     return {
       srcStart: c.sourceInStart,
       srcEnd: c.sourceInEnd,
@@ -114,6 +139,9 @@ export async function exportProject(
       transitionDir: c.transitionDir,
       zoomKeys,
       rotateKeys: rotKeys.map((k) => ({ t: k.time, value: k.value as number })),
+      panXKeys: panX,
+      panYKeys: panY,
+      opacityKeys,
       denoise: c.denoise ?? false,
       volume: c.volume ?? 1,
       fadeIn: c.fadeIn ?? 0,

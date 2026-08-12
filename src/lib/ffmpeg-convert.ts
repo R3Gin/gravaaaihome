@@ -331,6 +331,11 @@ export interface TimelineClip {
   zoomKeys: ZoomKey[];
   /** rotação animada (graus) */
   rotateKeys?: ValueKey[];
+  /** deslocamento animado do enquadramento (mesma unidade do preview: 1 = meia largura) */
+  panXKeys?: ValueKey[];
+  panYKeys?: ValueKey[];
+  /** opacidade animada (0–1) */
+  opacityKeys?: ValueKey[];
   /** redução de ruído de fundo (afftdn) */
   denoise?: boolean;
   /** volume linear (1 = original) */
@@ -389,7 +394,7 @@ function zoomExpr(keys: ZoomKey[]): string {
 }
 
 /** Expressão ffmpeg que interpola linearmente uma lista de keyframes em `t`. */
-function valueExpr(keys: ValueKey[]): string {
+function valueExpr(keys: ValueKey[], v = "t"): string {
   const sorted = [...keys].sort((a, b) => a.t - b.t);
   if (sorted.length === 1) return sorted[0].value.toFixed(4);
   let expr = sorted[sorted.length - 1].value.toFixed(4);
@@ -397,11 +402,11 @@ function valueExpr(keys: ValueKey[]): string {
     const a = sorted[i];
     const b = sorted[i + 1];
     const span = Math.max(0.001, b.t - a.t);
-    const lerp = `(${a.value.toFixed(4)}+(${(b.value - a.value).toFixed(4)})*(t-${a.t.toFixed(3)})/${span.toFixed(3)})`;
-    expr = `if(lt(t,${b.t.toFixed(3)}),${lerp},${expr})`;
+    const lerp = `(${a.value.toFixed(4)}+(${(b.value - a.value).toFixed(4)})*(${v}-${a.t.toFixed(3)})/${span.toFixed(3)})`;
+    expr = `if(lt(${v},${b.t.toFixed(3)}),${lerp},${expr})`;
   }
   const first = sorted[0];
-  return `if(lt(t,${first.t.toFixed(3)}),${first.value.toFixed(4)},${expr})`;
+  return `if(lt(${v},${first.t.toFixed(3)}),${first.value.toFixed(4)},${expr})`;
 }
 
 /** Nome do filtro xfade equivalente à transição escolhida. */
@@ -469,16 +474,27 @@ export async function exportTimeline(
           `setpts=(PTS-STARTPTS)/${speed.toFixed(4)}`,
           `scale=${W}:${H}`,
         ];
-        if (clip.zoomKeys.length > 0) {
-          const z = zoomExpr(clip.zoomKeys);
+        const hasPan = (clip.panXKeys?.length ?? 0) > 0 || (clip.panYKeys?.length ?? 0) > 0;
+        if (clip.zoomKeys.length > 0 || hasPan) {
+          const z = clip.zoomKeys.length > 0 ? zoomExpr(clip.zoomKeys) : "1";
+          const px = (clip.panXKeys?.length ?? 0) > 0 ? valueExpr(clip.panXKeys!) : "0";
+          const py = (clip.panYKeys?.length ?? 0) > 0 ? valueExpr(clip.panYKeys!) : "0";
           chain.push(
-            `crop=w='iw/(${z})':h='ih/(${z})':x='(iw-ow)/2':y='(ih-oh)/2'`,
+            `crop=w='iw/(${z})':h='ih/(${z})':x='(iw-ow)/2-(${px})*iw/2':y='(ih-oh)/2-(${py})*ih/2'`,
             `scale=${W}:${H}`,
           );
         }
         if ((clip.rotateKeys?.length ?? 0) > 0) {
           const r = valueExpr(clip.rotateKeys!);
           chain.push(`rotate=a='(${r})*PI/180':ow=${W}:oh=${H}:c=black@0`, `scale=${W}:${H}`);
+        }
+        if ((clip.opacityKeys?.length ?? 0) > 0) {
+          const o = valueExpr(clip.opacityKeys!, "T");
+          const a = `clip(${o},0,1)`;
+          chain.push(
+            "format=gbrp",
+            `geq=r='r(X,Y)*(${a})':g='g(X,Y)*(${a})':b='b(X,Y)*(${a})'`,
+          );
         }
         chain.push(eqExpr(clip.filters), "setsar=1", "format=yuv420p");
         parts.push(`[0:v]${chain.join(",")}[cv${i}]`);
