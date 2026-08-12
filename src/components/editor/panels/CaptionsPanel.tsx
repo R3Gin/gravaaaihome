@@ -31,10 +31,12 @@ const fmt = (t: number) => {
   return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}.${String(c).padStart(2, "0")}`;
 };
 
+const BLOCK_PREVIEW = ["typewriter", "popIn", "none", "simpleFade", "solidBox", "minimalUnderline"];
+
 function StylePreview({ id }: { id: string }) {
   const anim = CAPTION_ANIMS.find((a) => a.id === id);
   if (!anim) return null;
-  if (id === "typewriter") {
+  if (BLOCK_PREVIEW.includes(id)) {
     return <span className={cn("whitespace-nowrap", anim.previewClass)}>Legenda ativa</span>;
   }
   return (
