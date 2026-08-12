@@ -375,71 +375,56 @@ export const FloatingRecorderPanel = forwardRef<
 
       </div>
 
-      {supportsDocumentPip() && (
+      {pipWindow && (
         <>
           <div className="mx-1 h-5 w-px bg-white/10" />
           <button
             type="button"
-            onClick={pipWindow ? closePip : openPip}
-            title={pipWindow ? "Trazer para a aba" : "Flutuar sobre outras janelas"}
-            aria-label={pipWindow ? "Trazer para a aba" : "Flutuar sobre outras janelas"}
+            onClick={closePip}
+            title="Fechar janela flutuante"
+            aria-label="Fechar janela flutuante"
             className={cn(
               "flex h-8 w-8 items-center justify-center rounded-full text-white/60",
               "transition-colors duration-150 hover:bg-white/5 hover:text-white/90",
             )}
           >
-            {pipWindow ? (
-              <ExternalLink className="h-3.5 w-3.5" />
-            ) : (
-              <PictureInPicture2 className="h-3.5 w-3.5" />
-            )}
+            <X className="h-3.5 w-3.5" />
           </button>
         </>
       )}
     </div>
   );
 
-  const Shell = (
-    <div className={cn("flex flex-col", pipWindow ? "h-full w-full" : "w-fit")}>
-      {Panel}
-      <p className="mt-1 max-w-[320px] px-2 text-[10px] leading-tight text-white/50">
-        A gravação continua rodando mesmo que você mude de aba ou janela. Volte para o Gravaai a qualquer momento.
-      </p>
-      {!pipWindow && !supportsDocumentPip() && (
-        <p className="mt-1 max-w-[320px] px-2 text-[10px] leading-tight text-white/50">
-          Seu navegador não suporta janela flutuante do sistema: o painel fica preso à aba do Gravaai.
-        </p>
-      )}
-      {!pipWindow && supportsDocumentPip() && (
-        <button
-          type="button"
-          onClick={() => void openPip().catch(() => {})}
-          className="mt-1 w-fit rounded-full border border-white/15 bg-white/5 px-2.5 py-1 text-[10px] font-medium text-white/70 transition-colors hover:bg-white/10 hover:text-white"
-        >
-          Abrir em janela flutuante do sistema
-        </button>
-      )}
-    </div>
-  );
+  // Navegador COM suporte: a janela real do sistema é a única forma do painel.
+  // Enquanto ela não estiver aberta, nada é renderizado dentro da página.
+  if (pipSupported && !pipWindow) return null;
 
   if (pipWindow) {
     return createPortal(
       <div className="h-full w-full overflow-hidden bg-[var(--recording-panel-bg)]">
-        {Shell}
+        <div className="flex h-full w-full flex-col justify-center">{Panel}</div>
       </div>,
       pipWindow.document.body,
     );
   }
 
+  // Fallback raro: navegador sem Document PiP.
   return createPortal(
     <div
       className="fixed z-[9999]"
       style={{ left: pos.x, top: pos.y }}
     >
-      {Shell}
+      <div className="flex w-fit flex-col">
+        {Panel}
+        <p className="mt-1 max-w-[320px] rounded-lg bg-black/60 px-2 py-1 text-[10px] leading-tight text-[var(--brand)]">
+          Seu navegador não suporta janela flutuante do sistema — atualize para
+          Chrome/Edge recentes.
+        </p>
+      </div>
     </div>,
     document.body,
   );
+
 });
 
 interface ToggleButtonProps {
