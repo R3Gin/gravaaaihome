@@ -222,23 +222,63 @@ export function Teleprompter() {
       } catch {
         /* segue sem microfone */
       }
-      const tracks: MediaStreamTrack[] = [...display.getVideoTracks()];
+      // 3) Composição em canvas: o vídeo gravado sai SEMPRE do canvas.
+      const videoTrack = display.getVideoTracks()[0]!;
+      const settings = videoTrack.getSettings();
+      const outW = settings.width ?? 1280;
+      const outH = settings.height ?? 720;
+
+      let dv = compositeVideoRef.current;
+      if (!dv) {
+        dv = document.createElement("video");
+        dv.muted = true;
+        dv.playsInline = true;
+        compositeVideoRef.current = dv;
+      }
+      dv.srcObject = new MediaStream([videoTrack]);
+      await dv.play().catch(() => {});
+
+      let canvas = compositeCanvasRef.current;
+      if (!canvas) {
+        canvas = document.createElement("canvas");
+        compositeCanvasRef.current = canvas;
+      }
+      canvas.width = outW;
+      canvas.height = outH;
+      const ctx = canvas.getContext("2d")!;
+      if (compositeRafRef.current) cancelAnimationFrame(compositeRafRef.current);
+      const drawFrame = () => {
+        try {
+          ctx.drawImage(dv!, 0, 0, canvas!.width, canvas!.height);
+        } catch {
+          /* frame ainda não pronto */
+        }
+        compositeRafRef.current = requestAnimationFrame(drawFrame);
+      };
+      compositeRafRef.current = requestAnimationFrame(drawFrame);
+
+      const canvasStream = canvas.captureStream(30);
+      compositeStreamRef.current = canvasStream;
+
+      const tracks: MediaStreamTrack[] = [...canvasStream.getVideoTracks()];
       const audioTracks = [...display.getAudioTracks(), ...(mic?.getAudioTracks() ?? [])];
       if (audioTracks.length > 1 && typeof AudioContext !== "undefined") {
-        const ctx = new AudioContext();
-        const dest = ctx.createMediaStreamDestination();
+        const actx = new AudioContext();
+        audioCtxRef.current = actx;
+        const dest = actx.createMediaStreamDestination();
         audioTracks.forEach((t) => {
-          ctx.createMediaStreamSource(new MediaStream([t])).connect(dest);
+          actx.createMediaStreamSource(new MediaStream([t])).connect(dest);
         });
         tracks.push(...dest.stream.getAudioTracks());
       } else {
         tracks.push(...audioTracks);
       }
-      display.getVideoTracks()[0]?.addEventListener("ended", () => stopRecording());
+      videoTrack.addEventListener("ended", () => stopRecording());
       setMode("live");
       setScrolling(true);
       restart();
       startRecording(new MediaStream(tracks));
+
     } catch (err) {
       console.error("[teleprompter] captura falhou", err);
       if (pip) closePip();
