@@ -239,9 +239,10 @@ export function EffectsSimplePanel({ clip }: { clip: Clip }) {
       })}
 
       <p className="text-[10px] leading-relaxed text-[var(--muted-foreground)]">
-        Clique num efeito para aplicá-lo. Nos efeitos de zoom, depois clique no ponto do vídeo que
-        deve ficar em destaque. Para ajustes finos, use a aba Avançado.
+        O efeito começa na posição da agulha. Nos efeitos de zoom, clique no efeito e depois no
+        ponto do vídeo que deve ficar em destaque. Para ajustes finos, use a aba Avançado.
       </p>
+
     </div>
   );
 }
