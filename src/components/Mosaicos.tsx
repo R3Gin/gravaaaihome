@@ -144,13 +144,14 @@ export function Mosaicos() {
           ) : (
             <Link
               key={m.href}
-              to={m.href}
+              to={m.href as MosaicoHref}
               onClick={(event) => {
                 event.preventDefault();
-                openPopup(m.href);
+                openPopup(m.href as MosaicoHref);
               }}
               className="group relative flex flex-col items-start gap-2 rounded-xl border border-white/10 bg-[var(--surface)] p-4 pb-9 text-left transition-all hover:-translate-y-0.5 hover:border-white/20 hover:bg-[var(--surface-2)]"
             >
+
               {content}
             </Link>
           );
