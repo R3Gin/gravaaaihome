@@ -1,8 +1,12 @@
-// Mosaico Teleprompter: roteiro rolando na tela do app enquanto o usuário grava
-// outra tela/janela/aba. O overlay vive nesta página — logo, não entra no vídeo
-// quando a captura é de outra superfície.
+// Mosaico Teleprompter: o roteiro roda em uma JANELA separada do sistema
+// operacional (Document Picture-in-Picture). Como esse conteúdo vive fora do
+// documento do Gravaai, ele nunca é capturado pelo getDisplayMedia — mesmo
+// quando o usuário compartilha "esta aba" ou "esta janela".
+// Fallback (navegadores sem Document PiP): overlay na própria página, com
+// aviso persistente de que ele pode aparecer na gravação.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useNavigate } from "@tanstack/react-router";
 import {
   AlertTriangle,
@@ -18,6 +22,7 @@ import { ActionButton } from "@/components/ActionButton";
 import { Wordmark } from "@/components/Brand";
 import { useRecorderCore } from "@/hooks/useRecorderCore";
 import { setEditorHandoff } from "@/lib/editor-handoff";
+import { openPipWindow, supportsDocumentPip, type PipWindow } from "@/lib/document-pip";
 import { cn } from "@/lib/utils";
 
 const MAX_SECONDS = 30 * 60;
@@ -75,6 +80,8 @@ export function Teleprompter() {
   const [script, setScript] = useState("");
   const [mode, setMode] = useState<"prep" | "live">("prep");
   const [captureError, setCaptureError] = useState<string | null>(null);
+  const [pipWindow, setPipWindow] = useState<PipWindow | null>(null);
+  const [pipSupported, setPipSupported] = useState(true);
 
   // Controles do teleprompter
   const [wpm, setWpm] = useState(140);
@@ -93,6 +100,19 @@ export function Teleprompter() {
 
   const recording = status === "recording";
 
+  useEffect(() => setPipSupported(supportsDocumentPip()), []);
+
+  const closePip = useCallback(() => {
+    setPipWindow((w) => {
+      try {
+        w?.close();
+      } catch {
+        /* noop */
+      }
+      return null;
+    });
+  }, []);
+
   const stopTracks = useCallback(() => {
     displayStreamRef.current?.getTracks().forEach((t) => t.stop());
     micStreamRef.current?.getTracks().forEach((t) => t.stop());
@@ -100,7 +120,13 @@ export function Teleprompter() {
     micStreamRef.current = null;
   }, []);
 
-  useEffect(() => () => stopTracks(), [stopTracks]);
+  useEffect(
+    () => () => {
+      stopTracks();
+      closePip();
+    },
+    [stopTracks, closePip],
+  );
 
   // Rolagem automática baseada em palavras por minuto.
   useEffect(() => {
@@ -119,7 +145,7 @@ export function Teleprompter() {
     };
     rafRef.current = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(rafRef.current);
-  }, [mode, scrolling, recording, wpm, fontSize]);
+  }, [mode, scrolling, recording, wpm, fontSize, pipWindow]);
 
   const nudge = useCallback((dir: 1 | -1) => {
     const el = scrollerRef.current;
@@ -130,7 +156,7 @@ export function Teleprompter() {
     if (scrollerRef.current) scrollerRef.current.scrollTop = 0;
   }, []);
 
-  // Atalhos de teclado
+  // Atalhos de teclado (na página e também dentro da janela PiP)
   useEffect(() => {
     if (mode !== "live") return;
     const onKey = (e: KeyboardEvent) => {
@@ -148,12 +174,27 @@ export function Teleprompter() {
       }
     };
     window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [mode, nudge]);
+    pipWindow?.addEventListener("keydown", onKey as EventListener);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      pipWindow?.removeEventListener("keydown", onKey as EventListener);
+    };
+  }, [mode, nudge, pipWindow]);
 
   const start = useCallback(async () => {
     setCaptureError(null);
+    // 1) Abre o teleprompter em janela própria ANTES de pedir a captura, para
+    //    que ele já esteja fora do documento que será compartilhado.
+    let pip: PipWindow | null = null;
+    if (supportsDocumentPip()) {
+      pip = await openPipWindow({ width: 560, height: 420 });
+      if (pip) {
+        pip.addEventListener("pagehide", () => setPipWindow(null));
+        setPipWindow(pip);
+      }
+    }
     try {
+      // 2) Só depois o usuário escolhe a fonte de captura.
       const display = await navigator.mediaDevices.getDisplayMedia({
         video: { frameRate: 30 },
         audio: true,
@@ -185,14 +226,18 @@ export function Teleprompter() {
       startRecording(new MediaStream(tracks));
     } catch (err) {
       console.error("[teleprompter] captura falhou", err);
-      setCaptureError("Não foi possível iniciar a captura de tela. Permita o compartilhamento e tente novamente.");
+      if (pip) closePip();
+      setCaptureError(
+        "Não foi possível iniciar a captura de tela. Permita o compartilhamento e tente novamente.",
+      );
     }
-  }, [restart, startRecording, stopRecording]);
+  }, [closePip, restart, startRecording, stopRecording]);
 
   const stop = useCallback(() => {
     stopRecording();
     stopTracks();
-  }, [stopRecording, stopTracks]);
+    closePip();
+  }, [closePip, stopRecording, stopTracks]);
 
   // Limite de 30 minutos
   useEffect(() => {
@@ -226,8 +271,8 @@ export function Teleprompter() {
             Leia seu roteiro enquanto grava
           </h1>
           <p className="mt-2 text-sm text-[var(--muted-foreground)]">
-            Cole ou escreva o texto abaixo. Durante a gravação ele rola nesta página — e não aparece
-            no vídeo se você compartilhar outra aba, janela ou tela.
+            Cole ou escreva o texto abaixo. Ao iniciar, o teleprompter abre em uma janela separada
+            do sistema — assim ele nunca entra no vídeo, mesmo que você compartilhe esta aba.
           </p>
 
           <textarea
@@ -240,6 +285,21 @@ export function Teleprompter() {
             <span>{words} palavra{words === 1 ? "" : "s"} · ~{Math.max(1, Math.round(words / 140))} min de leitura</span>
             <span>Limite de gravação: 30 minutos</span>
           </div>
+
+          {pipSupported ? (
+            <p className="mt-4 rounded-lg border border-[var(--border)] bg-[var(--surface)] p-3 text-xs text-[var(--muted-foreground)]">
+              Dica: se você compartilhar a <strong>tela inteira</strong>, posicione a janela do
+              teleprompter fora da área/monitor compartilhado — ou prefira compartilhar apenas uma
+              janela específica.
+            </p>
+          ) : (
+            <p className="mt-4 flex items-start gap-2 rounded-lg border border-[var(--brand)]/40 bg-[var(--brand)]/10 p-3 text-sm text-[var(--brand)]">
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+              Seu navegador não suporta abrir o teleprompter em janela separada. Ele pode aparecer
+              na gravação se você compartilhar esta aba ou a tela inteira — recomendamos
+              compartilhar apenas outra janela/aplicativo específico.
+            </p>
+          )}
 
           {captureError && (
             <p className="mt-4 rounded-lg border border-[var(--brand)]/40 bg-[var(--brand)]/10 p-3 text-sm text-[var(--brand)]">
@@ -262,6 +322,59 @@ export function Teleprompter() {
       </div>
     );
   }
+
+  const controls = (
+    <div className={cn("flex flex-wrap items-end gap-4", pipWindow ? "px-3 pb-3" : "mx-auto max-w-5xl")}>
+      <div className="flex gap-2">
+        <ActionButton
+          tone={scrolling ? "neutral" : "record"}
+          icon={scrolling ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
+          onClick={() => setScrolling((s) => !s)}
+        >
+          {scrolling ? "Pausar" : "Rolar"}
+        </ActionButton>
+        <ActionButton icon={<RotateCcw className="h-4 w-4" />} onClick={restart}>
+          Reiniciar
+        </ActionButton>
+      </div>
+      <Slider label="Velocidade" value={wpm} min={60} max={300} step={10} suffix=" ppm" onChange={setWpm} />
+      <Slider label="Fonte" value={fontSize} min={18} max={72} suffix="px" onChange={setFontSize} />
+      {!pipWindow && (
+        <>
+          <Slider label="Opacidade do fundo" value={opacity} min={0} max={100} suffix="%" onChange={setOpacity} />
+          <label className="flex flex-col gap-1 text-[11px] text-[var(--muted-foreground)]">
+            Posição
+            <select
+              value={position}
+              onChange={(e) => setPosition(e.target.value as Position)}
+              className="h-[34px] rounded-lg border border-[var(--border)] bg-[var(--surface-2)] px-2 text-sm text-[var(--foreground)]"
+            >
+              <option value="top">Topo</option>
+              <option value="center">Centro</option>
+              <option value="bottom">Base</option>
+            </select>
+          </label>
+        </>
+      )}
+      <span className="w-full text-[11px] text-[var(--muted-foreground)]">
+        Atalhos: espaço = play/pause da rolagem · setas = avançar/retroceder
+      </span>
+    </div>
+  );
+
+  const scroller = (
+    <div
+      ref={scrollerRef}
+      className={cn(
+        "overflow-y-auto whitespace-pre-wrap text-center leading-relaxed",
+        pipWindow ? "flex-1" : "max-h-[45vh]",
+      )}
+      style={{ fontSize, lineHeight: 1.5 }}
+    >
+      {script}
+      <div style={{ height: pipWindow ? "60%" : "40vh" }} />
+    </div>
+  );
 
   return (
     <div className="flex min-h-screen flex-col bg-[var(--background)] text-[var(--foreground)]">
@@ -321,61 +434,49 @@ export function Teleprompter() {
         <div className="px-4 py-2 text-xs text-[var(--brand)]">{recorder.error}</div>
       )}
 
-      {/* Palco do teleprompter */}
-      <main className={cn("relative flex flex-1 justify-center px-4", positionClass)}>
-        <div
-          className="w-full max-w-4xl rounded-2xl border border-white/10 p-6"
-          style={{ backgroundColor: `rgba(0,0,0,${opacity / 100})` }}
-        >
-          <p className="mb-3 inline-flex items-center gap-2 rounded-full bg-white/10 px-3 py-1 text-[11px] font-semibold text-[var(--muted-foreground)]">
-            Este texto não aparece na sua gravação
-          </p>
-          <div
-            ref={scrollerRef}
-            className="max-h-[45vh] overflow-y-auto whitespace-pre-wrap text-center leading-relaxed"
-            style={{ fontSize, lineHeight: 1.5 }}
-          >
-            {script}
-            <div style={{ height: "40vh" }} />
+      {pipWindow ? (
+        <>
+          {createPortal(
+            <div className="flex h-full w-full flex-col bg-[var(--background)] p-4 text-[var(--foreground)]">
+              <p className="mb-2 shrink-0 text-[11px] font-semibold text-[var(--muted-foreground)]">
+                Teleprompter · janela separada (não entra na gravação)
+              </p>
+              {scroller}
+              <div className="mt-3 shrink-0 border-t border-[var(--border)] pt-3">{controls}</div>
+            </div>,
+            pipWindow.document.body,
+          )}
+          <main className="flex flex-1 items-center justify-center px-6 text-center">
+            <div className="max-w-md text-sm text-[var(--muted-foreground)]">
+              <p className="font-semibold text-[var(--foreground)]">
+                O roteiro está rolando na janela do teleprompter.
+              </p>
+              <p className="mt-2">
+                Ela vive fora desta página, então não aparece no vídeo. Se estiver compartilhando a
+                tela inteira, mova essa janela para fora da área/monitor capturado.
+              </p>
+            </div>
+          </main>
+        </>
+      ) : (
+        <>
+          <div className="flex items-start gap-2 bg-[var(--brand)]/15 px-4 py-2 text-xs text-[var(--brand)]">
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+            Seu navegador não suporta abrir o teleprompter em janela separada. Ele pode aparecer na
+            gravação se você compartilhar esta aba ou a tela inteira — prefira compartilhar outra
+            janela/aplicativo específico.
           </div>
-        </div>
-      </main>
-
-      {/* Controles */}
-      <footer className="border-t border-[var(--border)] bg-[var(--surface)] px-4 py-3">
-        <div className="mx-auto flex max-w-5xl flex-wrap items-end gap-4">
-          <div className="flex gap-2">
-            <ActionButton
-              tone={scrolling ? "neutral" : "record"}
-              icon={scrolling ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
-              onClick={() => setScrolling((s) => !s)}
+          <main className={cn("relative flex flex-1 justify-center px-4", positionClass)}>
+            <div
+              className="w-full max-w-4xl rounded-2xl border border-white/10 p-6"
+              style={{ backgroundColor: `rgba(0,0,0,${opacity / 100})` }}
             >
-              {scrolling ? "Pausar" : "Rolar"}
-            </ActionButton>
-            <ActionButton icon={<RotateCcw className="h-4 w-4" />} onClick={restart}>
-              Reiniciar
-            </ActionButton>
-          </div>
-          <Slider label="Velocidade" value={wpm} min={60} max={300} step={10} suffix=" ppm" onChange={setWpm} />
-          <Slider label="Fonte" value={fontSize} min={18} max={72} suffix="px" onChange={setFontSize} />
-          <Slider label="Opacidade do fundo" value={opacity} min={0} max={100} suffix="%" onChange={setOpacity} />
-          <label className="flex flex-col gap-1 text-[11px] text-[var(--muted-foreground)]">
-            Posição
-            <select
-              value={position}
-              onChange={(e) => setPosition(e.target.value as Position)}
-              className="h-[34px] rounded-lg border border-[var(--border)] bg-[var(--surface-2)] px-2 text-sm text-[var(--foreground)]"
-            >
-              <option value="top">Topo</option>
-              <option value="center">Centro</option>
-              <option value="bottom">Base</option>
-            </select>
-          </label>
-          <span className="w-full text-[11px] text-[var(--muted-foreground)]">
-            Atalhos: espaço = play/pause da rolagem · setas = avançar/retroceder
-          </span>
-        </div>
-      </footer>
+              {scroller}
+            </div>
+          </main>
+          <footer className="border-t border-[var(--border)] bg-[var(--surface)] px-4 py-3">{controls}</footer>
+        </>
+      )}
     </div>
   );
 }
