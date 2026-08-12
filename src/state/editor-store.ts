@@ -98,7 +98,9 @@ export interface Clip {
   animOut?: PresetConfig;
 
   // overlay
-  overlayKind?: "blur" | "spotlight";
+  overlayKind?: "blur" | "spotlight" | "annotation";
+  /** anotação de pós-produção (caneta, seta, formas, destaque) */
+  annotation?: Annotation;
   /** legenda gerada automaticamente (permite estilizar todas de uma vez) */
   isCaption?: boolean;
   rect?: { x: number; y: number; w: number; h: number };
