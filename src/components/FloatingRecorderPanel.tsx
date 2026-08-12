@@ -373,6 +373,15 @@ export const FloatingRecorderPanel = forwardRef<
           Seu navegador não suporta janela flutuante do sistema: o painel fica preso à aba do Gravaai.
         </p>
       )}
+      {!pipWindow && supportsDocumentPip() && (
+        <button
+          type="button"
+          onClick={() => void openPip().catch(() => {})}
+          className="mt-1 w-fit rounded-full border border-white/15 bg-white/5 px-2.5 py-1 text-[10px] font-medium text-white/70 transition-colors hover:bg-white/10 hover:text-white"
+        >
+          Abrir em janela flutuante do sistema
+        </button>
+      )}
     </div>
   );
 
