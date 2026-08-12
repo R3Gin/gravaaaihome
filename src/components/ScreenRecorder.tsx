@@ -175,6 +175,17 @@ export function ScreenRecorder() {
     statusRef.current = status;
   }, [status]);
 
+  // Ao sair da sessão de captura (parou de gravar / voltou para idle),
+  // libera a webcam e reseta o estado que controla a bolha ao vivo.
+  useEffect(() => {
+    const sessionActive = status === "capturing" || status === "recording";
+    if (!sessionActive && camera.active) {
+      camera.stop();
+      setCameraSettingsOpen(false);
+    }
+  }, [status, camera]);
+
+
   const cleanupAudioGraph = useCallback(() => {
     try { screenSourceRef.current?.disconnect(); } catch { /* noop */ }
     try { micSourceRef.current?.disconnect(); } catch { /* noop */ }
