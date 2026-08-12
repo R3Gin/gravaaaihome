@@ -13,6 +13,8 @@ import {
   drawCameraPipCircle,
 } from "./CameraPip";
 import { CameraSettingsDialog } from "./CameraSettingsDialog";
+import { DrawingOverlayWindow, supportsTransparentPip } from "./DrawingOverlayWindow";
+import { supportsDocumentPip } from "@/lib/document-pip";
 import { Button } from "@/components/ui/button";
 
 function GearIcon() {
@@ -124,6 +126,10 @@ export function ScreenRecorder() {
   const [downloadUrl, setDownloadUrl] = useState<string | null>(null);
   const [convertProgress, setConvertProgress] = useState(0);
   const [downloadExt, setDownloadExt] = useState<"mp4" | "webm">("mp4");
+  // Superfície capturada: "browser" (aba) desenha garantido via canvas;
+  // "window"/"monitor" precisam do overlay PiP sobre a tela.
+  const [displaySurface, setDisplaySurface] = useState<string | null>(null);
+  const [overlayOpen, setOverlayOpen] = useState(false);
 
   const previewRef = useRef<HTMLVideoElement | null>(null);
   const previewContainerRef = useRef<HTMLDivElement | null>(null);
@@ -399,6 +405,12 @@ export function ScreenRecorder() {
         systemAudio: screenAudio ? "include" : "exclude",
       });
       displayStreamRef.current = stream;
+      {
+        const st = stream.getVideoTracks()[0]?.getSettings() as
+          | (MediaTrackSettings & { displaySurface?: string })
+          | undefined;
+        setDisplaySurface(st?.displaySurface ?? null);
+      }
       // If user stops sharing from the browser bar
       stream.getVideoTracks()[0]?.addEventListener("ended", () => {
         if (recorderRef.current && recorderRef.current.state !== "inactive") {
@@ -875,6 +887,60 @@ export function ScreenRecorder() {
       )}
 
       {/* Caneta: controles vivem no painel flutuante de gravação. */}
+      {drawing.active && displaySurface && displaySurface !== "browser" && (
+        <div className="space-y-2 rounded-xl border border-[var(--brand)]/40 bg-[var(--brand)]/10 px-3 py-3 text-sm text-[var(--foreground)]">
+          <p className="font-semibold text-[var(--brand)]">
+            Você está gravando {displaySurface === "monitor" ? "a tela inteira" : "uma janela externa"}
+          </p>
+          <p className="text-xs leading-relaxed text-[var(--muted-foreground)]">
+            Por segurança, o navegador não desenha por cima de outros aplicativos.
+            Para anotar mesmo assim, abra a janela de overlay e posicione-a sobre a
+            área compartilhada — ela é uma janela real do sistema, sempre por cima,
+            e entra na gravação naturalmente.
+          </p>
+          {supportsDocumentPip() ? (
+            <>
+              <Button
+                type="button"
+                size="sm"
+                onClick={() => setOverlayOpen((v) => !v)}
+              >
+                {overlayOpen ? "Fechar overlay de desenho" : "Ativar overlay de desenho sobre a tela"}
+              </Button>
+              <ul className="list-disc space-y-1 pl-4 text-[11px] leading-tight text-[var(--muted-foreground)]">
+                <li>
+                  Compartilhando "tela inteira": funciona automaticamente, onde quer
+                  que você posicione a janela.
+                </li>
+                <li>
+                  Compartilhando "uma janela específica": se o overlay ficar fora dos
+                  limites dessa janela, o desenho não será capturado.
+                </li>
+                <li>
+                  Se você mover ou redimensionar o app gravado, reposicione o overlay
+                  manualmente.
+                </li>
+                {!supportsTransparentPip() && (
+                  <li>
+                    Seu navegador não suporta janela PiP com fundo 100% transparente:
+                    o overlay aparece com um leve véu escuro na gravação.
+                  </li>
+                )}
+              </ul>
+            </>
+          ) : (
+            <p className="text-xs font-medium text-[var(--brand)]">
+              Seu navegador não suporta desenho sobre janelas externas. Isso funciona
+              apenas ao gravar uma aba do Chrome.
+            </p>
+          )}
+        </div>
+      )}
+      <DrawingOverlayWindow
+        open={overlayOpen && isRecording}
+        onClose={() => setOverlayOpen(false)}
+        controller={drawing}
+      />
 
 
       {/* Toggles */}
