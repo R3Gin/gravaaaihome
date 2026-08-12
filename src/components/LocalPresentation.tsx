@@ -269,31 +269,6 @@ export function LocalPresentation() {
             </Button>
             {camera.active && (
               <>
-                {(["none", "blur", "image"] as const).map((m) => (
-                  <Button
-                    key={m}
-                    size="sm"
-                    variant={camera.effect === m ? "default" : "secondary"}
-                    onClick={() => camera.setEffect(m)}
-                  >
-                    {m === "none" ? "Sem efeito" : m === "blur" ? "Desfocar" : "Imagem"}
-                  </Button>
-                ))}
-                {camera.effect === "image" && (
-                  <label className="cursor-pointer text-xs text-white/80 underline">
-                    {camera.bgImageUrl ? "Trocar" : "Imagem"}
-                    <input
-                      type="file"
-                      accept="image/*"
-                      className="hidden"
-                      onChange={(e) => {
-                        const f = e.target.files?.[0];
-                        if (!f) return;
-                        camera.setBgImageUrl(URL.createObjectURL(f));
-                      }}
-                    />
-                  </label>
-                )}
                 <Button
                   size="sm"
                   variant="secondary"
