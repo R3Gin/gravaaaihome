@@ -762,7 +762,9 @@ export function Timeline() {
                     className="relative border-b border-[var(--border)]"
                     style={{ height: LANE_H }}
                   >
-                    {track.type === "audio" ? <AudioWaveform width={width} /> : null}
+                    {track.type === "audio" ? (
+                      <AudioWaveform width={width} viewLeft={view.left} viewWidth={view.width} />
+                    ) : null}
                     {track.clips
                       .filter(
                         (clip) =>
