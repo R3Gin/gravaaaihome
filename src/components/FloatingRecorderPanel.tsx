@@ -141,12 +141,14 @@ export const FloatingRecorderPanel = forwardRef<
       // e desvinculada da aba de origem (o usuário pode navegar livremente).
       // @ts-expect-error - experimental API
       const w: PipWindow = await window.documentPictureInPicture.requestWindow({
-        width: 400,
-        height: 120,
+        width: 340,
+        height: 64,
         disallowReturnToOpener: true,
         preferInitialWindowPlacement: true,
       });
       copyStylesInto(w.document);
+      w.document.body.style.margin = "0";
+      w.document.body.style.overflow = "hidden";
       w.addEventListener("pagehide", () => setPipWindow(null));
       setPipWindow(w);
     } catch (err) {
@@ -154,6 +156,7 @@ export const FloatingRecorderPanel = forwardRef<
       throw err;
     }
   }, [pipWindow]);
+
 
 
 
