@@ -48,17 +48,43 @@ async function getFFmpeg(onLog?: (msg: string) => void): Promise<FFmpeg> {
       // Always surface ffmpeg logs to console for debugging.
       console.log("[ffmpeg]", message);
     });
+    const withTimeout = async <T,>(p: Promise<T>, ms: number, label: string): Promise<T> => {
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      try {
+        return await Promise.race([
+          p,
+          new Promise<never>((_, reject) => {
+            timer = setTimeout(
+              () => reject(new Error(`Timeout ao carregar o processador de vídeo (${label})`)),
+              ms,
+            );
+          }),
+        ]);
+      } finally {
+        if (timer) clearTimeout(timer);
+      }
+    };
     const tryLoadDirect = async (base: string) => {
-      await ff.load({
-        coreURL: `${base}/ffmpeg-core.js`,
-        wasmURL: `${base}/ffmpeg-core.wasm`,
-      });
+      await withTimeout(
+        ff.load({
+          coreURL: `${base}/ffmpeg-core.js`,
+          wasmURL: `${base}/ffmpeg-core.wasm`,
+        }),
+        15000,
+        base,
+      );
     };
     const tryLoadBlob = async (base: string) => {
-      await ff.load({
-        coreURL: await toBlobURL(`${base}/ffmpeg-core.js`, "text/javascript"),
-        wasmURL: await toBlobURL(`${base}/ffmpeg-core.wasm`, "application/wasm"),
-      });
+      await withTimeout(
+        (async () => {
+          await ff.load({
+            coreURL: await toBlobURL(`${base}/ffmpeg-core.js`, "text/javascript"),
+            wasmURL: await toBlobURL(`${base}/ffmpeg-core.wasm`, "application/wasm"),
+          });
+        })(),
+        20000,
+        `${base} (blob)`,
+      );
     };
     // Ordem: CDN direto (mais estável) → fallback CDN direto → blob URL.
     try {
@@ -71,9 +97,17 @@ async function getFFmpeg(onLog?: (msg: string) => void): Promise<FFmpeg> {
         console.log("[ffmpeg] core carregado (jsdelivr direto)");
       } catch (err2) {
         console.warn("[ffmpeg] jsdelivr direto falhou, tentando via blob", err2);
-        await tryLoadBlob(CORE_BASE_CDN);
+        try {
+          await tryLoadBlob(CORE_BASE_CDN);
+        } catch (err3) {
+          console.error("[ffmpeg] todas as tentativas de carregar o core falharam", err3);
+          throw new Error(
+            "Não foi possível carregar o processador de vídeo — tente recarregar a página.",
+          );
+        }
       }
     }
+
     ffmpegInstance = ff;
     return ff;
   })();
