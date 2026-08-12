@@ -14,6 +14,26 @@ export function SilencePanel({ onClose }: { onClose: () => void }) {
   const [minDur, setMinDur] = useState(0.5);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [applying, setApplying] = useState<number | null>(null);
+
+  const nextFrame = () =>
+    new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+
+  /** Aplica os cortes cedendo frames à UI para nada travar em vídeos longos. */
+  const apply = async () => {
+    setApplying(0.05);
+    await nextFrame();
+    setApplying(0.35);
+    await nextFrame();
+    const remapped = cutRanges(silences);
+    setApplying(0.9);
+    await nextFrame();
+    setApplying(1);
+    if (remapped > 0) toast.success("Legendas sincronizadas com os cortes");
+    setApplying(null);
+    onClose();
+  };
+
 
   useEffect(() => {
     if (!sourceBlob) return;
