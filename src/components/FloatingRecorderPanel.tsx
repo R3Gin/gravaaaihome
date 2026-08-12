@@ -441,6 +441,9 @@ export const FloatingRecorderPanel = forwardRef<
           </button>
         </div>
       )}
+      <p className="mt-1 max-w-[320px] px-2 text-[10px] leading-tight text-white/50">
+        A gravação continua rodando mesmo que você mude de aba ou janela. Volte para o Gravaai a qualquer momento.
+      </p>
       {!pipWindow && !supportsDocumentPip() && (
         <p className="mt-1 max-w-[320px] px-2 text-[10px] leading-tight text-white/50">
           Seu navegador não suporta janela flutuante do sistema: o painel fica preso à aba do Gravaai.

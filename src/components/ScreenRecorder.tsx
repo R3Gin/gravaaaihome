@@ -414,9 +414,21 @@ export function ScreenRecorder() {
         }
       }
       setStatus("capturing");
-      // Devolve o foco para a janela do Gravaai após a seleção do picker.
-      try { window.focus(); } catch { /* noop */ }
-      setTimeout(() => { try { window.focus(); } catch { /* noop */ } }, 100);
+      // Devolve o foco para a janela/aba do Gravaai assim que o usuário
+      // confirma a fonte no picker. O navegador pode ter trocado o foco do
+      // SO para a janela escolhida ao compartilhar "janela"; window.focus()
+      // tenta trazer o usuário de volta. Fazemos várias tentativas porque
+      // alguns navegadores só respondem após um micro-task ou pequeno delay.
+      const tryFocus = () => {
+        try {
+          window.focus();
+          if (window.opener) window.opener.focus();
+        } catch {
+          /* noop - restrições de segurança podem bloquear */
+        }
+      };
+      tryFocus();
+      [0, 100, 300, 600].forEach((ms) => setTimeout(tryFocus, ms));
     } catch (err) {
       console.error(err);
       setError("Não foi possível iniciar a captura. Verifique as permissões e tente novamente.");
@@ -902,7 +914,7 @@ export function ScreenRecorder() {
           icon={<MonitorIcon />}
           onClick={startCapture}
           disabled={captureDisabled}
-          title='Dica: escolha "Esta aba" ou "Esta janela" no seletor do navegador para que o painel de controles não apareça na gravação. No modo "Tela inteira", tudo que estiver na sua tela — inclusive o painel flutuante — pode ser capturado.'
+          title='Dica: escolha "Esta aba" para manter o foco no Gravaai. "Esta janela" ou "Tela inteira" podem trocar automaticamente a janela ativa do sistema.'
         >
           {status === "capturing" || status === "recording" ? "Trocar captura" : "Iniciar captura"}
         </ActionButton>
@@ -950,6 +962,19 @@ export function ScreenRecorder() {
           </ActionButton>
         ) : null}
       </div>
+
+      {(status === "idle" || status === "capturing") && (
+        <div className="rounded-lg border border-[var(--border)] bg-[var(--surface-2)] px-3 py-2 text-xs text-[var(--muted-foreground)]">
+          <span className="font-semibold text-[var(--foreground)]">Dica de foco:</span>{" "}
+          escolher{" "}
+          <span className="font-medium text-[var(--foreground)]">"Uma aba do Chrome"</span>{" "}
+          no seletor mantém você aqui no Gravaai durante a gravação. Escolher{" "}
+          <span className="font-medium text-[var(--foreground)]">"Uma janela"</span> ou{" "}
+          <span className="font-medium text-[var(--foreground)]">"Toda a tela"</span>{" "}
+          pode trocar automaticamente para essa janela — o que é normal do navegador. A
+          gravação continua funcionando mesmo assim; é só clicar de volta na aba do Gravaai.
+        </div>
+      )}
     </div>
   );
 }
