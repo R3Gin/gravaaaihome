@@ -835,7 +835,12 @@ export function ScreenRecorder() {
         />
         {/* Bolha PiP da câmera sobreposta ao preview e gravada no MP4. */}
         <CameraPipBubble controller={camera} containerRef={previewContainerRef} />
-        <DrawingCanvas controller={drawing} containerRef={previewContainerRef} />
+        <DrawingCanvas
+          controller={drawing}
+          containerRef={previewContainerRef}
+          zoomTargetRef={previewRef}
+        />
+
         {status === "idle" && (
           <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center gap-3 text-[var(--muted-foreground)]">
             <div className="grid h-14 w-14 place-items-center rounded-full border border-white/15 bg-white/[0.04]">
