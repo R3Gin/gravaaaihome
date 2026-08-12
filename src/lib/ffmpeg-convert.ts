@@ -394,7 +394,7 @@ function zoomExpr(keys: ZoomKey[]): string {
 }
 
 /** Expressão ffmpeg que interpola linearmente uma lista de keyframes em `t`. */
-function valueExpr(keys: ValueKey[]): string {
+function valueExpr(keys: ValueKey[], v = "t"): string {
   const sorted = [...keys].sort((a, b) => a.t - b.t);
   if (sorted.length === 1) return sorted[0].value.toFixed(4);
   let expr = sorted[sorted.length - 1].value.toFixed(4);
@@ -402,11 +402,11 @@ function valueExpr(keys: ValueKey[]): string {
     const a = sorted[i];
     const b = sorted[i + 1];
     const span = Math.max(0.001, b.t - a.t);
-    const lerp = `(${a.value.toFixed(4)}+(${(b.value - a.value).toFixed(4)})*(t-${a.t.toFixed(3)})/${span.toFixed(3)})`;
-    expr = `if(lt(t,${b.t.toFixed(3)}),${lerp},${expr})`;
+    const lerp = `(${a.value.toFixed(4)}+(${(b.value - a.value).toFixed(4)})*(${v}-${a.t.toFixed(3)})/${span.toFixed(3)})`;
+    expr = `if(lt(${v},${b.t.toFixed(3)}),${lerp},${expr})`;
   }
   const first = sorted[0];
-  return `if(lt(t,${first.t.toFixed(3)}),${first.value.toFixed(4)},${expr})`;
+  return `if(lt(${v},${first.t.toFixed(3)}),${first.value.toFixed(4)},${expr})`;
 }
 
 /** Nome do filtro xfade equivalente à transição escolhida. */
@@ -489,7 +489,7 @@ export async function exportTimeline(
           chain.push(`rotate=a='(${r})*PI/180':ow=${W}:oh=${H}:c=black@0`, `scale=${W}:${H}`);
         }
         if ((clip.opacityKeys?.length ?? 0) > 0) {
-          const o = valueExpr(clip.opacityKeys!);
+          const o = valueExpr(clip.opacityKeys!, "T");
           const a = `clip(${o},0,1)`;
           chain.push(
             "format=gbrp",
