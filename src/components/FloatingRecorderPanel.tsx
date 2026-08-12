@@ -22,8 +22,8 @@ import {
   MicOff,
   Camera,
   CameraOff,
-  PictureInPicture2,
-  ExternalLink,
+  X,
+
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
