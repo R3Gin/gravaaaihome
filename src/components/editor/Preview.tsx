@@ -1,6 +1,11 @@
 import { useCallback, useEffect, useRef } from "react";
 import { clipAt, useEditor, type AspectRatio } from "@/state/editor-store";
 import { buildFrame, drawFrame, type HitRegion } from "@/lib/preview-compose";
+import {
+  drawAnnotation,
+  translateAnnotation,
+  type Annotation,
+} from "@/lib/annotations";
 import { cn } from "@/lib/utils";
 
 const ASPECTS: { id: AspectRatio; label: string; ratio: number }[] = [
@@ -24,13 +29,21 @@ export function Preview({ videoRef }: Props) {
   const select = useEditor((s) => s.select);
   const updateClipLive = useEditor((s) => s.updateClipLive);
   const commit = useEditor((s) => s.commit);
+  const addAnnotationClip = useEditor((s) => s.addAnnotationClip);
 
   const stageRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const rafRef = useRef<number | null>(null);
   const drawRafRef = useRef<number | null>(null);
   const hitsRef = useRef<HitRegion[]>([]);
-  const dragRef = useRef<{ id: string; kind: "move" | "resize" } | null>(null);
+  const dragRef = useRef<{
+    id: string;
+    kind: "move" | "resize" | "annotation-move";
+    lastX?: number;
+    lastY?: number;
+  } | null>(null);
+  const draftRef = useRef<Annotation | null>(null);
+  const annotationTool = useEditor((s) => s.annotationTool);
 
   /* ---------------- pipeline única de render ---------------- */
   const paint = useCallback(() => {
@@ -61,6 +74,7 @@ export function Preview({ videoRef }: Props) {
     }
     const frame = buildFrame(s.tracks, s.captionStyle, time, s.selectedClipId);
     hitsRef.current = drawFrame(ctx, v, frame, W, H);
+    if (draftRef.current) drawAnnotation(ctx, draftRef.current, W, H);
   }, [videoRef]);
 
   const schedulePaint = useCallback(() => {
@@ -194,6 +208,38 @@ export function Preview({ videoRef }: Props) {
       if (!box) return;
       const px = e.clientX - box.left;
       const py = e.clientY - box.top;
+      const nx = Math.max(0, Math.min(1, px / box.width));
+      const ny = Math.max(0, Math.min(1, py / box.height));
+      const s = useEditor.getState();
+      const tool = s.annotationTool;
+
+      if (tool) {
+        (e.target as HTMLElement).setPointerCapture?.(e.pointerId);
+        if (tool === "eraser") {
+          const hit = [...hitsRef.current]
+            .reverse()
+            .find(
+              (h) =>
+                h.kind === "annotation" &&
+                px >= h.x &&
+                px <= h.x + h.w &&
+                py >= h.y &&
+                py <= h.y + h.h,
+            );
+          if (hit) s.removeClip(hit.id);
+          return;
+        }
+        draftRef.current = {
+          type: tool,
+          color: s.annotationColor,
+          sizeN: s.annotationSize / 720,
+          fill: s.annotationFill,
+          points: [{ x: nx, y: ny }],
+        };
+        schedulePaint();
+        return;
+      }
+
       const hit = [...hitsRef.current]
         .reverse()
         .find((h) => px >= h.x && px <= h.x + h.w && py >= h.y && py <= h.y + h.h);
@@ -202,23 +248,46 @@ export function Preview({ videoRef }: Props) {
         return;
       }
       select(hit.id);
-      const corner =
-        hit.kind === "overlay" && px > hit.x + hit.w - 16 && py > hit.y + hit.h - 16;
-      dragRef.current = { id: hit.id, kind: corner ? "resize" : "move" };
+      if (hit.kind === "annotation") {
+        dragRef.current = { id: hit.id, kind: "annotation-move", lastX: nx, lastY: ny };
+      } else {
+        const corner =
+          hit.kind === "overlay" && px > hit.x + hit.w - 16 && py > hit.y + hit.h - 16;
+        dragRef.current = { id: hit.id, kind: corner ? "resize" : "move" };
+      }
       (e.target as HTMLElement).setPointerCapture?.(e.pointerId);
     },
-    [select],
+    [schedulePaint, select],
   );
 
   const onPointerMove = useCallback(
     (e: React.PointerEvent) => {
-      const drag = dragRef.current;
       const box = stageRef.current?.getBoundingClientRect();
-      if (!drag || !box) return;
+      if (!box) return;
       const nx = Math.max(0, Math.min(1, (e.clientX - box.left) / box.width));
       const ny = Math.max(0, Math.min(1, (e.clientY - box.top) / box.height));
+
+      const draft = draftRef.current;
+      if (draft) {
+        if (draft.type === "pen") draft.points.push({ x: nx, y: ny });
+        else draft.points[1] = { x: nx, y: ny };
+        schedulePaint();
+        return;
+      }
+
+      const drag = dragRef.current;
+      if (!drag) return;
       const clip = useEditor.getState().tracks.flatMap((t) => t.clips).find((c) => c.id === drag.id);
       if (!clip) return;
+      if (drag.kind === "annotation-move") {
+        if (!clip.annotation) return;
+        const dx = nx - (drag.lastX ?? nx);
+        const dy = ny - (drag.lastY ?? ny);
+        drag.lastX = nx;
+        drag.lastY = ny;
+        updateClipLive(clip.id, { annotation: translateAnnotation(clip.annotation, dx, dy) });
+        return;
+      }
       if (drag.kind === "move") {
         if (clip.type === "text") updateClipLive(clip.id, { position: { x: nx, y: ny } });
         else if (clip.rect)
@@ -235,15 +304,28 @@ export function Preview({ videoRef }: Props) {
         });
       }
     },
-    [updateClipLive],
+    [schedulePaint, updateClipLive],
   );
 
   const endDrag = useCallback(() => {
+    const draft = draftRef.current;
+    if (draft) {
+      draftRef.current = null;
+      const pts = draft.points;
+      const enough =
+        draft.type === "pen"
+          ? pts.length > 1
+          : pts.length > 1 &&
+            (Math.abs(pts[1].x - pts[0].x) > 0.01 || Math.abs(pts[1].y - pts[0].y) > 0.01);
+      if (enough) addAnnotationClip(draft);
+      schedulePaint();
+      return;
+    }
     if (dragRef.current) {
       dragRef.current = null;
       commit();
     }
-  }, [commit]);
+  }, [addAnnotationClip, commit, schedulePaint]);
 
   const ratio = ASPECTS.find((a) => a.id === aspect)?.ratio ?? 16 / 9;
 
@@ -256,7 +338,11 @@ export function Preview({ videoRef }: Props) {
           onPointerMove={onPointerMove}
           onPointerUp={endDrag}
           onPointerLeave={endDrag}
-          className="relative overflow-hidden rounded-xl border border-[var(--border)] bg-black shadow-lg"
+          className={cn(
+            "relative overflow-hidden rounded-xl border border-[var(--border)] bg-black shadow-lg",
+            annotationTool && annotationTool !== "eraser" && "cursor-crosshair",
+            annotationTool === "eraser" && "cursor-cell",
+          )}
           style={{
             aspectRatio: String(ratio),
             width: "min(100%, 1100px)",
