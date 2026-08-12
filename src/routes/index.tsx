@@ -26,15 +26,6 @@ function Index() {
       </header>
 
       <main className="mx-auto max-w-5xl px-4 pb-24 pt-8 sm:px-6 sm:pt-12">
-        <div className="mb-8 max-w-2xl">
-          <h1 className="font-display text-3xl font-extrabold tracking-tight text-balance sm:text-4xl">
-            Grave a sua tela
-          </h1>
-          <p className="mt-3 text-sm text-[var(--muted-foreground)] sm:text-base">
-            Escolha a tela, janela ou aba, misture o áudio do sistema com o microfone e exporte
-            direto do navegador. Nenhum arquivo sai do seu dispositivo.
-          </p>
-        </div>
 
         <ClientOnly fallback={<div className="aspect-video w-full rounded-2xl border border-[var(--border)] bg-[var(--surface)]" />}>
           <ScreenRecorder />
