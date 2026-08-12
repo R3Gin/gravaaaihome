@@ -25,9 +25,12 @@ function GearIcon() {
 }
 import {
   DrawingCanvas,
-  drawStrokes,
+  drawAnnotations,
+  applyZoomTransform,
+  useAnnotationShortcuts,
   useDrawing,
 } from "./DrawingLayer";
+
 import {
   FloatingRecorderPanel,
   type FloatingRecorderPanelHandle,
@@ -151,7 +154,10 @@ export function ScreenRecorder() {
 
   const camera = useCameraPip({ initial: { x: 16, y: 16, size: 140 } });
   const drawing = useDrawing();
-  const drawStrokesRef = drawing.strokesRef;
+  const drawingRef = useRef(drawing);
+  drawingRef.current = drawing;
+  useAnnotationShortcuts(drawing, true);
+
   const panelRef = useRef<FloatingRecorderPanelHandle | null>(null);
   const bubbleRef = useRef(camera.bubble);
   useEffect(() => {
@@ -327,9 +333,20 @@ export function ScreenRecorder() {
 
     if (compositeRafRef.current) cancelAnimationFrame(compositeRafRef.current);
     const drawFrame = () => {
+      const W = canvas!.width;
+      const H = canvas!.height;
+      const z = drawingRef.current.getZoom();
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.save();
+      applyZoomTransform(ctx, z, W, H);
       try {
-        ctx.drawImage(dv!, 0, 0, canvas!.width, canvas!.height);
+        ctx.drawImage(dv!, 0, 0, W, H);
       } catch { /* frame não pronto */ }
+      // Anotações (caneta, seta, formas, destaque) acompanham o zoom.
+      const items = drawingRef.current.itemsRef.current;
+      if (items.length > 0) drawAnnotations(ctx, items, W, H);
+      ctx.restore();
+
       const camVideo = camera.videoRef.current;
       const camCanvas = camera.effectCanvasRef.current;
       const hasEffect = cameraEffectRef.current !== "none" && !!camCanvas;
@@ -344,21 +361,13 @@ export function ScreenRecorder() {
       ) {
         const container = previewContainerRef.current;
         const rect = container?.getBoundingClientRect();
-        const sx = rect && rect.width > 0 ? canvas!.width / rect.width : 1;
-        const sy = rect && rect.height > 0 ? canvas!.height / rect.height : 1;
+        const sx = rect && rect.width > 0 ? W / rect.width : 1;
+        const sy = rect && rect.height > 0 ? H / rect.height : 1;
         const b = bubbleRef.current;
         const bx = b.x * sx;
         const by = b.y * sy;
         const bs = b.size * Math.min(sx, sy);
         drawCameraPipCircle(ctx, camSource, bx, by, bs, cameraStyleRef.current);
-      }
-      // Traços da caneta (mesma escala do container do preview) — vão para o MP4.
-      if (drawStrokesRef.current.length > 0) {
-        const container = previewContainerRef.current;
-        const rect = container?.getBoundingClientRect();
-        const sx = rect && rect.width > 0 ? canvas!.width / rect.width : 1;
-        const sy = rect && rect.height > 0 ? canvas!.height / rect.height : 1;
-        drawStrokes(ctx, drawStrokesRef.current, sx, sy);
       }
       compositeRafRef.current = requestAnimationFrame(drawFrame);
     };
@@ -367,7 +376,8 @@ export function ScreenRecorder() {
     const stream = canvas.captureStream(30);
     compositeStreamRef.current = stream;
     return stream.getVideoTracks()[0] ?? null;
-  }, [camera, drawStrokesRef]);
+  }, [camera]);
+
 
   const startCapture = useCallback(async () => {
     setError(null);
@@ -825,7 +835,12 @@ export function ScreenRecorder() {
         />
         {/* Bolha PiP da câmera sobreposta ao preview e gravada no MP4. */}
         <CameraPipBubble controller={camera} containerRef={previewContainerRef} />
-        <DrawingCanvas controller={drawing} containerRef={previewContainerRef} />
+        <DrawingCanvas
+          controller={drawing}
+          containerRef={previewContainerRef}
+          zoomTargetRef={previewRef}
+        />
+
         {status === "idle" && (
           <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center gap-3 text-[var(--muted-foreground)]">
             <div className="grid h-14 w-14 place-items-center rounded-full border border-white/15 bg-white/[0.04]">
