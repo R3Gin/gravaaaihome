@@ -14,6 +14,7 @@ import {
   type Track,
 } from "@/state/editor-store";
 import { resolveClip } from "@/lib/keyframes";
+import { drawAnnotation, annotationBounds } from "@/lib/annotations";
 import { captionWordFx, toSeconds, CAPTION_END_BUFFER, typewriterText } from "@/lib/caption-styles";
 
 export interface TransitionFx {
@@ -126,7 +127,7 @@ export interface HitRegion {
   y: number;
   w: number;
   h: number;
-  kind: "text" | "overlay";
+  kind: "text" | "overlay" | "annotation";
 }
 
 function withAlpha(hex: string, alpha: number) {
