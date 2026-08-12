@@ -415,6 +415,14 @@ export function ScreenRecorder() {
         }
       }
       setStatus("capturing");
+      // Abre a janela flutuante do SO automaticamente, ainda dentro da
+      // ativação de usuário gerada pela confirmação do picker de captura.
+      // O painel precisa estar montado: aguardamos um frame de render.
+      requestAnimationFrame(() => {
+        panelRef.current?.openPip().catch(() => {
+          /* negado ou sem suporte: fallback é o painel fixo na página */
+        });
+      });
       // Devolve o foco para a janela/aba do Gravaai assim que o usuário
       // confirma a fonte no picker. O navegador pode ter trocado o foco do
       // SO para a janela escolhida ao compartilhar "janela"; window.focus()
