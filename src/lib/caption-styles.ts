@@ -236,12 +236,17 @@ export function captionWordFx(
   const words = text.trim().split(/\s+/).filter(Boolean);
   const n = Math.max(1, words.length);
 
+  const blockAlpha = captionBlockAlpha(anim, q);
+  const staticStyle = isStaticAnim(anim);
+  const blockLocal = easeOut(clamp01(q / 0.22));
+
   const out: WordFx[] = words.map((w, i) => {
     const start = opts.wordByWord ? (i / n) * 0.55 : 0;
     const local = easeOut(clamp01((q - start) / 0.28));
     const activeIndex = Math.floor(q * n);
     const active = i === activeIndex;
     const passed = i <= activeIndex;
+    const sweep = q * n;
     const base: WordFx = {
       text: w,
       alpha: 1,
@@ -251,7 +256,21 @@ export function captionWordFx(
       color: opts.color,
       glow: false,
     };
+    if (staticStyle) return { ...base, alpha: blockAlpha };
     switch (anim) {
+      case "bounce": {
+        const raw = clamp01((q - start) / 0.32);
+        return {
+          ...base,
+          alpha: local,
+          dy: raw < 1 ? -Math.sin(raw * Math.PI * 1.5) * (1 - raw) * 0.45 : 0,
+        };
+      }
+      case "colorSweep":
+        return { ...base, color: sweep >= i + 0.5 ? opts.highlight : opts.color };
+      case "popIn":
+        return { ...base, alpha: blockLocal, scale: 0.9 + blockLocal * 0.1 };
+
       case "karaoke":
         return { ...base, color: passed ? opts.highlight : opts.color, scale: active ? 1.08 : 1 };
       case "slideUp":
