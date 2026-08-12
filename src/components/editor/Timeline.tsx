@@ -198,7 +198,16 @@ function KeyframeLane({
 
 
 /** Waveform do áudio do vídeo, desenhada na faixa "Áudio". */
-function AudioWaveform({ width }: { width: number }) {
+function AudioWaveform({
+  width,
+  viewLeft,
+  viewWidth,
+}: {
+  width: number;
+  viewLeft: number;
+  viewWidth: number;
+}) {
+
   const sourceBlob = useEditor((s) => s.sourceBlob);
   const zoom = useEditor((s) => s.zoom);
   const tracks = useEditor((s) => s.tracks);
