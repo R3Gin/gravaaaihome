@@ -14,6 +14,7 @@ import {
 } from "./CameraPip";
 import { CameraSettingsDialog } from "./CameraSettingsDialog";
 import { Button } from "@/components/ui/button";
+import { getProcessedMicStream } from "@/lib/mic-audio";
 
 function GearIcon() {
   return (
@@ -272,7 +273,7 @@ export function ScreenRecorder() {
 
   const attachMic = useCallback(async () => {
     if (micStreamRef.current) return;
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    const stream = await getProcessedMicStream();
     micStreamRef.current = stream;
     const { ctx, dest } = ensureAudioContext();
     const src = ctx.createMediaStreamSource(stream);

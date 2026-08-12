@@ -9,6 +9,7 @@ import { ChevronLeft, ChevronRight, FileUp, Loader2, Settings } from "lucide-rea
 import { Button } from "@/components/ui/button";
 import { useRecorderCore } from "@/hooks/useRecorderCore";
 import { loadDeck, isSupportedFile, type SlideDeck } from "@/lib/slide-loader";
+import { getProcessedMicStream } from "@/lib/mic-audio";
 import {
   CameraPipBubble,
   drawCameraPipCircle,
@@ -161,7 +162,7 @@ export function LocalPresentation() {
       audioCtxRef.current = audioCtx;
       const dest = audioCtx.createMediaStreamDestination();
       try {
-        const mic = await navigator.mediaDevices.getUserMedia({ audio: true });
+        const mic = await getProcessedMicStream();
         micStreamRef.current = mic;
         const msrc = audioCtx.createMediaStreamSource(mic);
         const mg = audioCtx.createGain();
