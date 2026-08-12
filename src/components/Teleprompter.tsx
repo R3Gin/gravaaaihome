@@ -121,11 +121,19 @@ export function Teleprompter() {
   }, []);
 
   const stopTracks = useCallback(() => {
+    if (compositeRafRef.current) cancelAnimationFrame(compositeRafRef.current);
+    compositeRafRef.current = 0;
+    compositeStreamRef.current?.getTracks().forEach((t) => t.stop());
+    compositeStreamRef.current = null;
+    if (compositeVideoRef.current) compositeVideoRef.current.srcObject = null;
+    audioCtxRef.current?.close().catch(() => {});
+    audioCtxRef.current = null;
     displayStreamRef.current?.getTracks().forEach((t) => t.stop());
     micStreamRef.current?.getTracks().forEach((t) => t.stop());
     displayStreamRef.current = null;
     micStreamRef.current = null;
   }, []);
+
 
   useEffect(
     () => () => {
