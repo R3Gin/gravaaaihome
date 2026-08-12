@@ -414,6 +414,15 @@ export function Preview({ videoRef }: Props) {
               Nenhum vídeo carregado
             </div>
           ) : null}
+
+          {pendingEffectPreset ? (
+            <div className="pointer-events-none absolute inset-x-0 top-0 flex justify-center p-2">
+              <span className="rounded-full bg-[var(--brand)] px-3 py-1 text-[11px] font-semibold text-white shadow">
+                Clique no ponto do vídeo para dar zoom · Esc cancela
+              </span>
+            </div>
+          ) : null}
+
         </div>
       </div>
 
