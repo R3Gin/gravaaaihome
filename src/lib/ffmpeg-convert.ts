@@ -331,6 +331,11 @@ export interface TimelineClip {
   zoomKeys: ZoomKey[];
   /** rotação animada (graus) */
   rotateKeys?: ValueKey[];
+  /** deslocamento animado do enquadramento (mesma unidade do preview: 1 = meia largura) */
+  panXKeys?: ValueKey[];
+  panYKeys?: ValueKey[];
+  /** opacidade animada (0–1) */
+  opacityKeys?: ValueKey[];
   /** redução de ruído de fundo (afftdn) */
   denoise?: boolean;
   /** volume linear (1 = original) */
