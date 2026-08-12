@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { useRecorderCore } from "@/hooks/useRecorderCore";
 import { loadDeck, isSupportedFile, type SlideDeck } from "@/lib/slide-loader";
 import { getProcessedMicStream } from "@/lib/mic-audio";
+import { connectDenoise } from "@/lib/rnnoise";
 import {
   CameraPipBubble,
   drawCameraPipCircle,
@@ -158,7 +159,12 @@ export function LocalPresentation() {
         window.AudioContext ||
         (window as unknown as { webkitAudioContext: typeof AudioContext })
           .webkitAudioContext;
-      const audioCtx = new AudioCtor();
+      let audioCtx: AudioContext;
+      try {
+        audioCtx = new AudioCtor({ sampleRate: 48000 });
+      } catch {
+        audioCtx = new AudioCtor();
+      }
       audioCtxRef.current = audioCtx;
       const dest = audioCtx.createMediaStreamDestination();
       try {
@@ -167,7 +173,9 @@ export function LocalPresentation() {
         const msrc = audioCtx.createMediaStreamSource(mic);
         const mg = audioCtx.createGain();
         mg.gain.value = 0.9;
-        msrc.connect(mg).connect(dest);
+        const { output, mode } = await connectDenoise(audioCtx, msrc);
+        console.info("[rnnoise] microfone da apresentação:", mode);
+        output.connect(mg).connect(dest);
       } catch {
         console.warn("[apresentacao] sem microfone");
       }
