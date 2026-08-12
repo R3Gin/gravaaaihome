@@ -849,8 +849,13 @@ export function ScreenRecorder() {
           autoPlay
           muted
         />
-        {/* Bolha PiP da câmera sobreposta ao preview e gravada no MP4. */}
-        <CameraPipBubble controller={camera} containerRef={previewContainerRef} />
+        {/* Bolha PiP da webcam AO VIVO: só existe durante uma sessão de
+            captura ativa. Nunca aparece sobre o preview de um vídeo já
+            gravado (que já tem a bolha "queimada" no arquivo). */}
+        {isRecordingSessionActive && (
+          <CameraPipBubble controller={camera} containerRef={previewContainerRef} />
+        )}
+
 
         {status === "idle" && (
           <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center gap-3 text-[var(--muted-foreground)]">
