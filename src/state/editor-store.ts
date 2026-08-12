@@ -1095,7 +1095,7 @@ export const useEditor = create<EditorState & EditorActions>((set, get) => {
       const def = inst ? presetById(inst.presetId) : undefined;
       if (!clip || !inst || !def) return;
       const merged: PresetParams = { ...inst.params, ...params };
-      const generated = def.build(clip, merged);
+      const generated = def.build(clip, merged, inst.anchor ?? 0);
       const map: KeyframeMap = {};
       for (const [prop, keys] of Object.entries(clip.keyframes ?? {})) {
         const rest = keys.filter((k) => k.origin !== instanceId);
