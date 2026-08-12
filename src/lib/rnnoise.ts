@@ -92,3 +92,29 @@ export async function connectDenoise(
   source.connect(chain.input);
   return { output: chain.output, mode: "fallback" };
 }
+
+/**
+ * Recebe uma stream de microfone e devolve uma stream já tratada pelo RNNoise
+ * (ou pelo filtro simples, se o WASM não puder ser carregado).
+ */
+export async function denoiseMicStream(mic: MediaStream): Promise<{
+  stream: MediaStream;
+  ctx: AudioContext;
+  mode: "rnnoise" | "fallback";
+}> {
+  const Ctor: typeof AudioContext =
+    window.AudioContext ??
+    (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+  let ctx: AudioContext;
+  try {
+    ctx = new Ctor({ sampleRate: 48000 });
+  } catch {
+    ctx = new Ctor();
+  }
+  const src = ctx.createMediaStreamSource(mic);
+  const dest = ctx.createMediaStreamDestination();
+  const { output, mode } = await connectDenoise(ctx, src);
+  output.connect(dest);
+  console.info("[rnnoise] microfone ao vivo:", mode);
+  return { stream: dest.stream, ctx, mode };
+}
