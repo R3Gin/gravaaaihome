@@ -131,7 +131,7 @@ export function Preview({ videoRef }: Props) {
     return () => document.removeEventListener("visibilitychange", onHidden);
   }, [setPlaying]);
 
-  /* --- loop de reprodução: fonte da verdade é o <video> --- */
+  /* --- loop de reprodução: contínuo, nunca pausa ao trocar de clipe --- */
   useEffect(() => {
     const v = videoRef.current;
     if (!v) return;
@@ -141,14 +141,16 @@ export function Preview({ videoRef }: Props) {
       rafRef.current = null;
       return;
     }
-    const state = useEditor.getState();
     const videoClips = () =>
       [...(useEditor.getState().tracks.find((t) => t.type === "video")?.clips ?? [])].sort(
         (a, b) => a.startTime - b.startTime,
       );
+
+    const state = useEditor.getState();
+    const clips0 = videoClips();
     const startClip =
       clipAt(state.tracks, "video", state.currentTime) ??
-      videoClips().find((c) => c.startTime + c.duration > state.currentTime) ??
+      clips0.find((c) => c.startTime + c.duration > state.currentTime) ??
       null;
     if (!startClip) {
       setPlaying(false);
@@ -156,43 +158,56 @@ export function Preview({ videoRef }: Props) {
     }
     if (state.currentTime < startClip.startTime) setCurrentTime(startClip.startTime + 0.001);
     v.playbackRate = startClip.speed ?? 1;
+    // sempre parte do ponto correto dentro do arquivo de origem
+    const startSource =
+      startClip.sourceInStart +
+      Math.max(0, state.currentTime - startClip.startTime) * (startClip.speed ?? 1);
+    if (Math.abs(v.currentTime - startSource) > 0.05) v.currentTime = startSource;
     void v.play().catch(() => setPlaying(false));
 
     let activeId = startClip.id;
 
+    /** Salta para o próximo clipe da timeline sem pausar o elemento <video>. */
+    const jumpTo = (next: (typeof clips0)[number]) => {
+      activeId = next.id;
+      v.playbackRate = next.speed ?? 1;
+      v.currentTime = next.sourceInStart;
+      setCurrentTime(next.startTime + 0.001);
+      if (v.paused) void v.play().catch(() => undefined);
+    };
+
     const tick = () => {
+      rafRef.current = requestAnimationFrame(tick);
       const s = useEditor.getState();
       const clips = videoClips();
-      const clip =
-        clipAt(s.tracks, "video", s.currentTime) ??
-        clips.find((c) => c.id === activeId) ??
-        clips.find((c) => c.startTime + c.duration > s.currentTime) ??
-        null;
-      if (!clip) {
+      if (clips.length === 0) {
         setPlaying(false);
         return;
       }
+      // clipe "ativo" é só uma referência conceitual: trocar não toca no <video>
+      const clip =
+        clips.find((c) => c.id === activeId) ??
+        clipAt(s.tracks, "video", s.currentTime) ??
+        clips.find((c) => c.startTime + c.duration > s.currentTime) ??
+        clips[clips.length - 1]!;
       activeId = clip.id;
       const speed = clip.speed ?? 1;
       if (v.playbackRate !== speed) v.playbackRate = speed;
-      if (v.paused && !v.ended) void v.play().catch(() => undefined);
+      // o navegador pode pausar por buffering/seek: retomamos sempre
+      if (v.paused) void v.play().catch(() => undefined);
 
-      if (v.currentTime >= clip.sourceInEnd - 0.02) {
-        const next = clips.find(
-          (c) => c.startTime >= clip.startTime + clip.duration - 0.01 && c.id !== clip.id,
-        );
-        if (!next) {
-          setCurrentTime(clip.startTime + clip.duration);
-          setPlaying(false);
+      const reachedEnd = v.currentTime >= clip.sourceInEnd - 0.02 || (v.ended && !v.seeking);
+      if (reachedEnd) {
+        const next = clips.find((c) => c.startTime + 0.001 >= clip.startTime + clip.duration);
+        if (next) {
+          jumpTo(next);
           return;
         }
-        activeId = next.id;
-        v.currentTime = next.sourceInStart;
-        setCurrentTime(next.startTime + 0.001);
-      } else {
-        setCurrentTime(clip.startTime + (v.currentTime - clip.sourceInStart) / speed);
+        setCurrentTime(clip.startTime + clip.duration);
+        setPlaying(false);
+        return;
       }
-      rafRef.current = requestAnimationFrame(tick);
+      setCurrentTime(clip.startTime + (v.currentTime - clip.sourceInStart) / speed);
     };
     rafRef.current = requestAnimationFrame(tick);
     return () => {
@@ -200,6 +215,7 @@ export function Preview({ videoRef }: Props) {
       rafRef.current = null;
     };
   }, [playing, setCurrentTime, setPlaying, videoRef]);
+
 
   /* --- interação: hit-test das áreas desenhadas no canvas --- */
   const onPointerDown = useCallback(
