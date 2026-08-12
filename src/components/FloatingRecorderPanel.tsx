@@ -103,7 +103,7 @@ export const FloatingRecorderPanel = forwardRef<
   FloatingRecorderPanelHandle,
   FloatingRecorderPanelProps
 >(function FloatingRecorderPanel(props, ref) {
-  const { visible } = props;
+  const { visible, recording = true } = props;
   const [pipWindow, setPipWindow] = useState<PipWindow | null>(null);
   const [pos, setPos] = useState({ x: 24, y: 24 });
   const dragRef = useRef<{ dx: number; dy: number } | null>(null);
