@@ -245,19 +245,20 @@ export const FloatingRecorderPanel = forwardRef<
     }
   };
 
-  if (!visible) return null;
+  if (!visible && !pipWindow) return null;
 
   const Panel = (
     <div
       className={cn(
-        "flex items-center gap-2 text-white",
+        "flex items-center text-white",
         "bg-gradient-to-b from-[var(--recording-panel-bg-top)] to-[var(--recording-panel-bg)]",
         pipWindow
-          ? "h-full w-full px-3"
-          : "h-11 rounded-full border border-[var(--recording-panel-border)] px-3 backdrop-blur-xl shadow-[0_10px_30px_-10px_rgba(0,0,0,0.7),0_0_0_1px_rgba(255,255,255,0.04)_inset]",
+          ? "h-full w-full gap-1 px-2"
+          : "h-11 gap-2 rounded-full border border-[var(--recording-panel-border)] px-3 backdrop-blur-xl shadow-[0_10px_30px_-10px_rgba(0,0,0,0.7),0_0_0_1px_rgba(255,255,255,0.04)_inset]",
       )}
       style={{ fontFamily: "system-ui, -apple-system, sans-serif" }}
     >
+
       <div
         onPointerDown={onDragStart}
         onPointerMove={onDragMove}
