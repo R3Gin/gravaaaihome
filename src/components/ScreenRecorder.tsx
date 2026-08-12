@@ -392,6 +392,16 @@ export function ScreenRecorder() {
     }
     downloadBlobRef.current = null;
     rawRecordingSizeRef.current = 0;
+    // Abre a JANELA REAL do sistema (Document PiP) ANTES de qualquer await —
+    // é o único ponto onde a ativação de usuário do clique ainda é válida
+    // com certeza. A janela abre "vazia" e é populada em seguida.
+    let pipOpened = false;
+    try {
+      await panelRef.current?.openPip();
+      pipOpened = true;
+    } catch {
+      /* negado ou sem suporte: fallback é o primeiro clique seguinte */
+    }
     try {
       const stream = await navigator.mediaDevices.getDisplayMedia({
         video: true,
@@ -404,15 +414,14 @@ export function ScreenRecorder() {
         systemAudio: screenAudio ? "include" : "exclude",
       });
       displayStreamRef.current = stream;
-      // Abre a JANELA REAL do sistema (Document PiP) imediatamente após o
-      // picker resolver — é aqui que ainda existe a ativação de usuário
-      // exigida por requestWindow(). Qualquer await antes disso pode fazer
-      // o navegador recusar e cair no painel fixo (fallback).
-      try {
-        await panelRef.current?.openPip();
-      } catch {
-        /* negado ou sem suporte: fallback é o painel fixo na página */
+      if (!pipOpened) {
+        try {
+          await panelRef.current?.openPip();
+        } catch {
+          /* fallback: primeiro clique seguinte */
+        }
       }
+
       {
         const st = stream.getVideoTracks()[0]?.getSettings() as
           | (MediaTrackSettings & { displaySurface?: string })
@@ -444,13 +453,6 @@ export function ScreenRecorder() {
         }
       }
       setStatus("capturing");
-      // Segunda tentativa caso a primeira (logo após o picker) tenha sido
-      // recusada — ainda dentro da mesma ativação de usuário.
-      requestAnimationFrame(() => {
-        panelRef.current?.openPip().catch(() => {
-          /* negado ou sem suporte: fallback é o painel fixo na página */
-        });
-      });
       // Devolve o foco para a janela/aba do Gravaai assim que o usuário
       // confirma a fonte no picker. O navegador pode ter trocado o foco do
       // SO para a janela escolhida ao compartilhar "janela"; window.focus()
@@ -468,10 +470,17 @@ export function ScreenRecorder() {
       [0, 100, 300, 600].forEach((ms) => setTimeout(tryFocus, ms));
     } catch (err) {
       console.error(err);
+      // Cancelou o picker ou falhou: fecha a janela flutuante já aberta.
+      try {
+        panelRef.current?.closePip();
+      } catch {
+        /* noop */
+      }
       setError("Não foi possível iniciar a captura. Verifique as permissões e tente novamente.");
       stopEverything();
       setStatus("idle");
     }
+
   }, [screenAudio, micAudio, attachScreenAudio, attachMic, rebuildOutputStream, stopEverything, downloadUrl, startComposite]);
 
   // React to toggle changes while capturing/recording.

@@ -129,6 +129,7 @@ export const FloatingRecorderPanel = forwardRef<
 
   const openPip = useCallback(async () => {
     if (!supportsDocumentPip()) return;
+    closedByUserRef.current = false;
     // Reaproveita a janela existente do navegador, se houver.
     // @ts-expect-error - experimental API
     const existing: PipWindow | null = window.documentPictureInPicture?.window ?? null;
@@ -141,12 +142,14 @@ export const FloatingRecorderPanel = forwardRef<
       // e desvinculada da aba de origem (o usuário pode navegar livremente).
       // @ts-expect-error - experimental API
       const w: PipWindow = await window.documentPictureInPicture.requestWindow({
-        width: 400,
-        height: 120,
+        width: 340,
+        height: 64,
         disallowReturnToOpener: true,
         preferInitialWindowPlacement: true,
       });
       copyStylesInto(w.document);
+      w.document.body.style.margin = "0";
+      w.document.body.style.overflow = "hidden";
       w.addEventListener("pagehide", () => setPipWindow(null));
       setPipWindow(w);
     } catch (err) {
@@ -154,6 +157,7 @@ export const FloatingRecorderPanel = forwardRef<
       throw err;
     }
   }, [pipWindow]);
+
 
 
 
@@ -167,38 +171,43 @@ export const FloatingRecorderPanel = forwardRef<
     [openPip, closePip],
   );
 
-  // Fecha o PiP quando a gravação termina.
+  // Fecha o PiP quando a sessão termina (visível -> invisível). A janela pode
+  // ser aberta ANTES de a sessão ficar visível (no gesto do usuário), então
+  // nunca fechamos por "ainda não visível".
+  const wasVisibleRef = useRef(false);
   useEffect(() => {
-    if (!visible && pipWindow) {
-      try {
-        pipWindow.close();
-      } catch {
-        /* noop */
-      }
-      setPipWindow(null);
+    if (visible) {
+      wasVisibleRef.current = true;
+      return;
     }
-    if (!visible) closedByUserRef.current = false;
+    if (wasVisibleRef.current) {
+      wasVisibleRef.current = false;
+      if (pipWindow) {
+        try {
+          pipWindow.close();
+        } catch {
+          /* noop */
+        }
+        setPipWindow(null);
+      }
+      closedByUserRef.current = false;
+    }
   }, [visible, pipWindow]);
 
-  // Abertura AUTOMÁTICA da janela real do sistema: única forma de painel
-  // quando o navegador suporta Document PiP. Tenta algumas vezes caso a
-  // primeira chamada (feita pelo gesto do usuário) tenha sido recusada.
+
+  // Fallback de user activation: se a abertura automática (feita no mesmo
+  // gesto do usuário que iniciou a captura) tiver sido recusada, o primeiro
+  // clique seguinte em qualquer lugar da página reabre a janela.
   useEffect(() => {
     if (!visible || pipWindow || !pipSupported || closedByUserRef.current) return;
-    let cancelled = false;
-    let attempts = 0;
-    const tick = () => {
-      if (cancelled || attempts >= 10) return;
-      attempts += 1;
+    const onClick = () => {
+      if (closedByUserRef.current) return;
       openPip().catch(() => {});
     };
-    tick();
-    const id = window.setInterval(tick, 700);
-    return () => {
-      cancelled = true;
-      window.clearInterval(id);
-    };
+    window.addEventListener("pointerdown", onClick, { once: true });
+    return () => window.removeEventListener("pointerdown", onClick);
   }, [visible, pipWindow, pipSupported, openPip]);
+
 
 
   useEffect(() => {
@@ -237,19 +246,20 @@ export const FloatingRecorderPanel = forwardRef<
     }
   };
 
-  if (!visible) return null;
+  if (!visible && !pipWindow) return null;
 
   const Panel = (
     <div
       className={cn(
-        "flex items-center gap-2 text-white",
+        "flex items-center text-white",
         "bg-gradient-to-b from-[var(--recording-panel-bg-top)] to-[var(--recording-panel-bg)]",
         pipWindow
-          ? "h-full w-full px-3"
-          : "h-11 rounded-full border border-[var(--recording-panel-border)] px-3 backdrop-blur-xl shadow-[0_10px_30px_-10px_rgba(0,0,0,0.7),0_0_0_1px_rgba(255,255,255,0.04)_inset]",
+          ? "h-full w-full gap-1 px-2"
+          : "h-11 gap-2 rounded-full border border-[var(--recording-panel-border)] px-3 backdrop-blur-xl shadow-[0_10px_30px_-10px_rgba(0,0,0,0.7),0_0_0_1px_rgba(255,255,255,0.04)_inset]",
       )}
       style={{ fontFamily: "system-ui, -apple-system, sans-serif" }}
     >
+
       <div
         onPointerDown={onDragStart}
         onPointerMove={onDragMove}
@@ -283,7 +293,7 @@ export const FloatingRecorderPanel = forwardRef<
         </span>
       </div>
 
-      <div className="mx-1 h-5 w-px bg-white/10" />
+      <div className="mx-0.5 h-5 w-px bg-white/10" />
 
       <div className="flex items-center gap-1">
         {!recording ? (
@@ -342,7 +352,7 @@ export const FloatingRecorderPanel = forwardRef<
       </div>
 
 
-      <div className="mx-1 h-5 w-px bg-white/10" />
+      <div className="mx-0.5 h-5 w-px bg-white/10" />
 
       <div className="flex items-center gap-1">
         <ToggleButton
@@ -377,7 +387,7 @@ export const FloatingRecorderPanel = forwardRef<
 
       {pipWindow && (
         <>
-          <div className="mx-1 h-5 w-px bg-white/10" />
+          <div className="mx-0.5 h-5 w-px bg-white/10" />
           <button
             type="button"
             onClick={closePip}
