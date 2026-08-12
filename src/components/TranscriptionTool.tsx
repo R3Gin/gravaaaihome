@@ -51,14 +51,32 @@ async function mediaDuration(blob: Blob): Promise<number> {
   });
 }
 
+type Phase = "audio" | "model" | "transcribe" | "finalize";
+
+const PHASE_LABEL: Record<Phase, string> = {
+  model: "Carregando modelo…",
+  audio: "Extraindo áudio…",
+  transcribe: "Transcrevendo…",
+  finalize: "Finalizando…",
+};
+
+/** faixa de progresso global por etapa */
+const PHASE_RANGE: Record<Phase, [number, number]> = {
+  model: [0, 0.2],
+  audio: [0.2, 0.3],
+  transcribe: [0.3, 0.95],
+  finalize: [0.95, 1],
+};
+
 export function TranscriptionTool() {
   const [fileName, setFileName] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const [working, setWorking] = useState(false);
-  const [stage, setStage] = useState<string>("");
+  const [phase, setPhase] = useState<Phase>("audio");
   const [progress, setProgress] = useState(0);
+  const [stalled, setStalled] = useState(false);
 
   const [segments, setSegments] = useState<CaptionSegment[] | null>(null);
 
@@ -66,6 +84,8 @@ export function TranscriptionTool() {
   const [summary, setSummary] = useState<string | null>(null);
 
   const startedRef = useRef(false);
+  const lastFileRef = useRef<{ blob: Blob; name: string } | null>(null);
+  const lastTickRef = useRef(Date.now());
 
   const fullText = useMemo(
     () => (segments ?? []).map((s) => `${fmt(s.start)} — ${s.text.trim()}`).join("\n"),
@@ -77,6 +97,7 @@ export function TranscriptionTool() {
     setSegments(null);
     setSummary(null);
     setFileName(name);
+    lastFileRef.current = { blob, name };
 
     const isMedia =
       blob.type.startsWith("video/") ||
@@ -93,21 +114,28 @@ export function TranscriptionTool() {
       return;
     }
 
+    const bump = (p: Phase, local: number) => {
+      const [a, b] = PHASE_RANGE[p];
+      setProgress(a + (b - a) * Math.min(1, Math.max(0, local)));
+      lastTickRef.current = Date.now();
+      setStalled(false);
+    };
+
     setWorking(true);
-    setProgress(0);
-    setStage("Preparando áudio…");
+    setStalled(false);
+    setPhase("audio");
+    bump("audio", 0);
     try {
       const result = await transcribe(blob, "portuguese", {
-        onStage: (s) =>
-          setStage(
-            s === "audio"
-              ? "Preparando áudio…"
-              : s === "model"
-                ? "Baixando modelo de transcrição…"
-                : "Transcrevendo…",
-          ),
-        onDownload: (p) => setProgress(p),
+        onStage: (s) => {
+          setPhase(s);
+          bump(s, 0);
+        },
+        onDownload: (p) => bump("model", p),
+        onProgress: (p) => bump("transcribe", p),
       });
+      setPhase("finalize");
+      bump("finalize", 1);
       setSegments(result.segments);
       if (result.segments.length === 0) setError("Nenhuma fala reconhecida neste arquivo.");
     } catch (err) {
@@ -115,10 +143,25 @@ export function TranscriptionTool() {
       setError(err instanceof Error ? err.message : "Falha na transcrição.");
     } finally {
       setWorking(false);
-      setStage("");
+      setStalled(false);
       setProgress(0);
     }
   }, []);
+
+  // aviso de travamento: 40s sem nenhum avanço de progresso
+  useEffect(() => {
+    if (!working) return;
+    const id = window.setInterval(() => {
+      if (Date.now() - lastTickRef.current > 40000) setStalled(true);
+    }, 5000);
+    return () => window.clearInterval(id);
+  }, [working]);
+
+  const retry = useCallback(() => {
+    const last = lastFileRef.current;
+    setError(null);
+    if (last) void run(last.blob, last.name);
+  }, [run]);
 
   useEffect(() => {
     if (startedRef.current) return;
@@ -126,6 +169,7 @@ export function TranscriptionTool() {
     const handoff = takeTranscriptHandoff();
     if (handoff) void run(handoff.blob, handoff.name);
   }, [run]);
+
 
   const handleFiles = useCallback(
     (files: FileList | null) => {
