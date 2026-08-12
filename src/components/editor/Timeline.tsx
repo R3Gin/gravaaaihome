@@ -725,7 +725,9 @@ export function Timeline() {
                 className="pointer-events-none absolute left-0 z-20"
                 style={{ top: 28, height: lanesHeight, width }}
               >
-                {silences.map((s, i) => (
+                {silences
+                  .filter((s) => s.end >= visible.from && s.start <= visible.to)
+                  .map((s, i) => (
                   <span
                     key={i}
                     className="absolute top-0 h-full border-x border-amber-300/50 bg-amber-300/20"
