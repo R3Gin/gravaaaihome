@@ -50,6 +50,8 @@ export function AudioPanel() {
   const updateClip = useEditor((s) => s.updateClip);
   const clip = findClip(tracks, selectedClipId);
   const [playingMode, setPlayingMode] = useState<"raw" | "clean" | null>(null);
+  const [progress, setProgress] = useState<number | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const stopRef = useRef<(() => void) | null>(null);
 
   useEffect(() => () => stopRef.current?.(), []);
