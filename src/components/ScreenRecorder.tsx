@@ -770,7 +770,7 @@ export function ScreenRecorder() {
   const isConverting = status === "converting";
   const canRecord = status === "capturing";
   const captureDisabled = status === "recording" || status === "converting";
-  const panelVisible = isRecording;
+  const panelVisible = isRecording || status === "capturing";
   const hasScreenAudioTrack =
     (displayStreamRef.current?.getAudioTracks().length ?? 0) > 0;
   const hasMicTrack = (micStreamRef.current?.getTracks().length ?? 0) > 0;
