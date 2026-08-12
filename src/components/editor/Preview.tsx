@@ -240,7 +240,21 @@ export function Preview({ videoRef }: Props) {
       const nx = Math.max(0, Math.min(1, px / box.width));
       const ny = Math.max(0, Math.min(1, py / box.height));
       const s = useEditor.getState();
+      const pending = s.pendingEffectPreset;
+      if (pending) {
+        const target = s.selectedClipId ?? clipAt(s.tracks, "video", s.currentTime)?.id ?? null;
+        if (target) {
+          if (!s.selectedClipId) s.select(target);
+          s.applyEffectPreset(target, pending.presetId, {
+            ...pending.params,
+            point: { x: nx, y: ny },
+          });
+        }
+        s.setPendingEffectPreset(null);
+        return;
+      }
       const tool = s.annotationTool;
+
 
       if (tool) {
         (e.target as HTMLElement).setPointerCapture?.(e.pointerId);
