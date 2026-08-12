@@ -292,8 +292,18 @@ export function LocalPresentation() {
                     />
                   </label>
                 )}
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  title="Configurações da câmera"
+                  aria-label="Configurações da câmera"
+                  onClick={() => setCameraSettingsOpen(true)}
+                >
+                  <Settings className="h-4 w-4" />
+                </Button>
               </>
             )}
+
             {!isRecording ? (
               <Button
                 size="sm"
