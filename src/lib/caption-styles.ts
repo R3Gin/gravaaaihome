@@ -83,15 +83,48 @@ export function renderCaptionWords(
   const words = text.trim().split(/\s+/).filter(Boolean);
   const n = Math.max(1, words.length);
 
+  const blockAlpha = captionBlockAlpha(anim, q);
+  const staticStyle = isStaticAnim(anim);
+  const blockLocal = easeOut(clamp01(q / 0.22));
+
   const out = words.map((w, i) => {
+    if (staticStyle) {
+      return {
+        text: w,
+        style: { opacity: blockAlpha, color: opts.color } as CSSProperties,
+      };
+    }
     // janela de entrada de cada palavra (metade inicial do clipe)
     const start = opts.wordByWord ? (i / n) * 0.55 : 0;
     const local = easeOut(clamp01((q - start) / 0.28));
     const activeIndex = Math.floor(q * n);
     const active = i === activeIndex;
     const passed = i <= activeIndex;
+    const sweep = q * n;
 
     switch (anim) {
+      case "bounce": {
+        const raw = clamp01((q - start) / 0.32);
+        const dy = raw < 1 ? -Math.sin(raw * Math.PI * 1.5) * (1 - raw) * 0.45 : 0;
+        return {
+          text: w,
+          style: { opacity: local, transform: `translateY(${dy}em)` } as CSSProperties,
+        };
+      }
+      case "colorSweep":
+        return {
+          text: w,
+          style: { color: sweep >= i + 0.5 ? opts.highlight : opts.color } as CSSProperties,
+        };
+      case "popIn":
+        return {
+          text: w,
+          style: {
+            opacity: blockLocal,
+            transform: `scale(${0.9 + blockLocal * 0.1})`,
+          } as CSSProperties,
+        };
+
       case "karaoke":
         return {
           text: w,
