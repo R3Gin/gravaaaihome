@@ -12,6 +12,14 @@ import { KeyframeSpeedModal } from "@/components/editor/KeyframeSpeedModal";
 import { getPeaks, type Peaks } from "@/lib/waveform";
 import { cn } from "@/lib/utils";
 
+const ANNOTATION_LABEL: Record<string, string> = {
+  pen: "caneta",
+  arrow: "seta",
+  rect: "retângulo",
+  ellipse: "círculo",
+  highlight: "destaque",
+};
+
 
 const LABEL_W = 96;
 const LANE_H = 56;
@@ -390,7 +398,7 @@ function ClipBox({ clip, track }: { clip: Clip; track: Track }) {
         {clip.type === "text"
           ? clip.textContent
           : clip.overlayKind === "annotation"
-            ? (clip.annotation?.tool ?? "anotação")
+            ? ANNOTATION_LABEL[clip.annotation?.type ?? "pen"]
             : (clip.overlayKind ?? track.label)}
       </span>
       {selected && tool !== "blade" ? (
