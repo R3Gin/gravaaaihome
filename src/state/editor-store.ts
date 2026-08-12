@@ -408,6 +408,7 @@ export const useEditor = create<EditorState & EditorActions>((set, get) => {
     kfExpanded: "none",
     selectedKeyframes: [],
     kfClipboard: [],
+    pendingEffectPreset: null,
     annotationTool: null,
     annotationColor: "#ef4444",
     annotationSize: 6,
