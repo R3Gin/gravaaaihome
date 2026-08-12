@@ -1083,7 +1083,7 @@ export const useEditor = create<EditorState & EditorActions>((set, get) => {
 
       const presets: AppliedPreset[] = [
         ...(clip.effectPresets ?? []).filter((p) => p.category !== def.category),
-        { id: instanceId, presetId, category: def.category, params: merged },
+        { id: instanceId, presetId, category: def.category, params: merged, anchor },
       ];
       get().updateClip(clipId, { keyframes: map, effectPresets: presets });
       set({ pendingEffectPreset: null, selectedKeyframes: [] });
