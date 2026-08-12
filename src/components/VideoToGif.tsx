@@ -50,6 +50,7 @@ export function VideoToGif() {
 
   const [generating, setGenerating] = useState(false);
   const [progress, setProgress] = useState(0);
+  const [stage, setStage] = useState("");
   const [gifUrl, setGifUrl] = useState<string | null>(null);
   const [gifSize, setGifSize] = useState(0);
 
@@ -225,13 +226,17 @@ export function VideoToGif() {
     if (!blob || tooLong || clipDuration < 0.2) return;
     setGenerating(true);
     setProgress(0);
+    setStage("Preparando…");
     setError(null);
     resetGif();
     try {
       const gif = await videoToGif(
         blob,
         { start, end, speed, quality },
-        (r) => setProgress(r),
+        (r, s) => {
+          setProgress(r);
+          if (s) setStage(s);
+        },
       );
       const url = URL.createObjectURL(gif);
       gifUrlRef.current = url;
@@ -239,7 +244,11 @@ export function VideoToGif() {
       setGifSize(gif.size);
     } catch (err) {
       console.error(err);
-      setError("Não foi possível gerar o GIF. Tente um trecho menor ou qualidade mais leve.");
+      setError(
+        err instanceof Error && err.message
+          ? err.message
+          : "Não foi possível gerar o GIF. Tente um trecho menor ou qualidade mais leve.",
+      );
     } finally {
       setGenerating(false);
     }
@@ -285,8 +294,15 @@ export function VideoToGif() {
         </header>
 
         {error ? (
-          <div className="mb-4 rounded-lg border border-[var(--brand)]/40 bg-[var(--brand)]/10 px-4 py-3 text-sm text-[var(--brand)]">
-            {error}
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-[var(--brand)]/40 bg-[var(--brand)]/10 px-4 py-3 text-sm text-[var(--brand)]">
+            <span>{error}</span>
+            <button
+              onClick={() => void generate()}
+              disabled={generating || !blob}
+              className="inline-flex items-center gap-1.5 rounded-md bg-[var(--brand)] px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-40"
+            >
+              <RotateCcw className="h-3.5 w-3.5" /> Tentar novamente
+            </button>
           </div>
         ) : null}
 
@@ -490,7 +506,7 @@ export function VideoToGif() {
                     />
                   </div>
                   <div className="mt-1 text-xs text-[var(--muted-foreground)]">
-                    {Math.round(progress * 100)}% — processamento local
+                    {Math.round(progress * 100)}% — {stage || "processamento local"}
                   </div>
                 </div>
               ) : null}
