@@ -30,6 +30,7 @@ import { cn } from "@/lib/utils";
 
 export interface FloatingRecorderPanelProps {
   visible: boolean;
+  recording?: boolean;
   paused: boolean;
   elapsed: number;
   screenAudioOn: boolean;
@@ -38,6 +39,7 @@ export interface FloatingRecorderPanelProps {
   hasScreenAudio: boolean;
   hasMic: boolean;
   hasCamera: boolean;
+  onStart?: () => void;
   onPauseResume: () => void;
   onStop: () => void;
   onToggleScreenAudio: () => void;
@@ -101,7 +103,7 @@ export const FloatingRecorderPanel = forwardRef<
   FloatingRecorderPanelHandle,
   FloatingRecorderPanelProps
 >(function FloatingRecorderPanel(props, ref) {
-  const { visible } = props;
+  const { visible, recording = true } = props;
   const [pipWindow, setPipWindow] = useState<PipWindow | null>(null);
   const [pos, setPos] = useState({ x: 24, y: 24 });
   const dragRef = useRef<{ dx: number; dy: number } | null>(null);
@@ -214,14 +216,19 @@ export const FloatingRecorderPanel = forwardRef<
           pipWindow ? "cursor-default" : "cursor-grab active:cursor-grabbing",
         )}
       >
-        <span className="relative inline-flex h-2 w-2 items-center justify-center" title={props.paused ? "Pausado" : "Gravando"}>
-            {!props.paused && (
+        <span
+          className="relative inline-flex h-2 w-2 items-center justify-center"
+          title={!recording ? "Pronto para gravar" : props.paused ? "Pausado" : "Gravando"}
+        >
+            {recording && !props.paused && (
               <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[var(--recording-rec-dot)] opacity-75" />
             )}
             <span
               className={cn(
               "relative inline-flex h-2 w-2 rounded-full",
-                props.paused
+                !recording
+                  ? "bg-white/30"
+                  : props.paused
                   ? "bg-[var(--recording-pause-dot)] shadow-[0_0_8px_var(--recording-pause-dot-glow)]"
                   : "bg-[var(--recording-rec-dot)] shadow-[0_0_10px_var(--recording-rec-dot-glow)]",
               )}
@@ -235,40 +242,61 @@ export const FloatingRecorderPanel = forwardRef<
       <div className="mx-1 h-5 w-px bg-white/10" />
 
       <div className="flex items-center gap-1">
-        <button
-          type="button"
-          onClick={props.onPauseResume}
-          title={props.paused ? "Retomar" : "Pausar"}
-          aria-label={props.paused ? "Retomar" : "Pausar"}
-          className={cn(
-            "flex h-8 w-8 items-center justify-center rounded-full",
-            "border border-[var(--recording-btn-neutral-border)] bg-[var(--recording-btn-neutral-bg)] text-white/90",
-            "transition-all duration-150 hover:bg-[var(--recording-btn-neutral-bg-hover)] hover:border-[var(--recording-btn-neutral-border-hover)]",
-            "active:scale-[0.98]",
-          )}
-        >
-          {props.paused ? (
-            <Play className="h-3.5 w-3.5" fill="currentColor" />
-          ) : (
-            <Pause className="h-3.5 w-3.5" fill="currentColor" />
-          )}
-        </button>
-        <button
-          type="button"
-          onClick={props.onStop}
-          title="Parar gravação"
-          aria-label="Parar gravação"
-          className={cn(
-            "flex h-8 w-8 items-center justify-center rounded-full text-white",
-            "bg-gradient-to-b from-[var(--recording-btn-danger-from)] to-[var(--recording-btn-danger-to)]",
-            "shadow-[0_1px_0_rgba(255,255,255,0.15)_inset,0_4px_12px_-2px_var(--recording-btn-danger-glow)]",
-            "transition-all duration-150 hover:from-[var(--recording-btn-danger-from-hover)] hover:to-[var(--recording-btn-danger-to-hover)] hover:brightness-110",
-            "active:scale-[0.98]",
-          )}
-        >
-          <Square className="h-3 w-3" fill="currentColor" />
-        </button>
+        {!recording ? (
+          <button
+            type="button"
+            onClick={props.onStart}
+            title="Iniciar gravação"
+            aria-label="Iniciar gravação"
+            className={cn(
+              "flex h-8 items-center gap-1.5 rounded-full px-3 text-xs font-medium text-white",
+              "bg-gradient-to-b from-[var(--recording-btn-danger-from)] to-[var(--recording-btn-danger-to)]",
+              "shadow-[0_1px_0_rgba(255,255,255,0.15)_inset,0_4px_12px_-2px_var(--recording-btn-danger-glow)]",
+              "transition-all duration-150 hover:brightness-110 active:scale-[0.98]",
+            )}
+          >
+            <span className="inline-block h-2.5 w-2.5 rounded-full bg-white" />
+            Gravar
+          </button>
+        ) : (
+          <>
+            <button
+              type="button"
+              onClick={props.onPauseResume}
+              title={props.paused ? "Retomar" : "Pausar"}
+              aria-label={props.paused ? "Retomar" : "Pausar"}
+              className={cn(
+                "flex h-8 w-8 items-center justify-center rounded-full",
+                "border border-[var(--recording-btn-neutral-border)] bg-[var(--recording-btn-neutral-bg)] text-white/90",
+                "transition-all duration-150 hover:bg-[var(--recording-btn-neutral-bg-hover)] hover:border-[var(--recording-btn-neutral-border-hover)]",
+                "active:scale-[0.98]",
+              )}
+            >
+              {props.paused ? (
+                <Play className="h-3.5 w-3.5" fill="currentColor" />
+              ) : (
+                <Pause className="h-3.5 w-3.5" fill="currentColor" />
+              )}
+            </button>
+            <button
+              type="button"
+              onClick={props.onStop}
+              title="Parar gravação"
+              aria-label="Parar gravação"
+              className={cn(
+                "flex h-8 w-8 items-center justify-center rounded-full text-white",
+                "bg-gradient-to-b from-[var(--recording-btn-danger-from)] to-[var(--recording-btn-danger-to)]",
+                "shadow-[0_1px_0_rgba(255,255,255,0.15)_inset,0_4px_12px_-2px_var(--recording-btn-danger-glow)]",
+                "transition-all duration-150 hover:from-[var(--recording-btn-danger-from-hover)] hover:to-[var(--recording-btn-danger-to-hover)] hover:brightness-110",
+                "active:scale-[0.98]",
+              )}
+            >
+              <Square className="h-3 w-3" fill="currentColor" />
+            </button>
+          </>
+        )}
       </div>
+
 
       <div className="mx-1 h-5 w-px bg-white/10" />
 
