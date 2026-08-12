@@ -669,7 +669,15 @@ export const useEditor = create<EditorState & EditorActions>((set, get) => {
     cutRanges: (ranges) => {
       const ordered = [...ranges].filter((r) => r.end - r.start > 0.05).sort((a, b) => a.start - b.start);
       if (ordered.length === 0) return 0;
+      // funde intervalos sobrepostos uma única vez (evita trabalho repetido)
+      const merged: { start: number; end: number }[] = [];
+      for (const r of ordered) {
+        const last = merged[merged.length - 1];
+        if (last && r.start <= last.end) last.end = Math.max(last.end, r.end);
+        else merged.push({ start: r.start, end: r.end });
+      }
       const captionsBefore = allClips(get().tracks).filter((c) => c.isCaption).length;
+
       write((tracks) =>
         mapTracks(tracks, (clips, track) => {
           if (track.type === "text") {
