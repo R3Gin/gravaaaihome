@@ -44,6 +44,19 @@ export function Preview({ videoRef }: Props) {
   } | null>(null);
   const draftRef = useRef<Annotation | null>(null);
   const annotationTool = useEditor((s) => s.annotationTool);
+  const pendingEffectPreset = useEditor((s) => s.pendingEffectPreset);
+  const setPendingEffectPreset = useEditor((s) => s.setPendingEffectPreset);
+
+  /* Esc cancela o modo "clique no ponto" dos presets de zoom */
+  useEffect(() => {
+    if (!pendingEffectPreset) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setPendingEffectPreset(null);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [pendingEffectPreset, setPendingEffectPreset]);
+
 
   /* ---------------- pipeline única de render ---------------- */
   const paint = useCallback(() => {
@@ -227,7 +240,21 @@ export function Preview({ videoRef }: Props) {
       const nx = Math.max(0, Math.min(1, px / box.width));
       const ny = Math.max(0, Math.min(1, py / box.height));
       const s = useEditor.getState();
+      const pending = s.pendingEffectPreset;
+      if (pending) {
+        const target = s.selectedClipId ?? clipAt(s.tracks, "video", s.currentTime)?.id ?? null;
+        if (target) {
+          if (!s.selectedClipId) s.select(target);
+          s.applyEffectPreset(target, pending.presetId, {
+            ...pending.params,
+            point: { x: nx, y: ny },
+          });
+        }
+        s.setPendingEffectPreset(null);
+        return;
+      }
       const tool = s.annotationTool;
+
 
       if (tool) {
         (e.target as HTMLElement).setPointerCapture?.(e.pointerId);
@@ -358,6 +385,8 @@ export function Preview({ videoRef }: Props) {
             "relative overflow-hidden rounded-xl border border-[var(--border)] bg-black shadow-lg",
             annotationTool && annotationTool !== "eraser" && "cursor-crosshair",
             annotationTool === "eraser" && "cursor-cell",
+            pendingEffectPreset && "cursor-crosshair ring-2 ring-[var(--brand)]",
+
           )}
           style={{
             aspectRatio: String(ratio),
@@ -385,6 +414,15 @@ export function Preview({ videoRef }: Props) {
               Nenhum vídeo carregado
             </div>
           ) : null}
+
+          {pendingEffectPreset ? (
+            <div className="pointer-events-none absolute inset-x-0 top-0 flex justify-center p-2">
+              <span className="rounded-full bg-[var(--brand)] px-3 py-1 text-[11px] font-semibold text-white shadow">
+                Clique no ponto do vídeo para dar zoom · Esc cancela
+              </span>
+            </div>
+          ) : null}
+
         </div>
       </div>
 

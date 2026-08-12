@@ -1,4 +1,6 @@
+import { useState } from "react";
 import { ChevronLeft, ChevronRight, Diamond, Plus } from "lucide-react";
+import { EffectsSimplePanel } from "@/components/editor/panels/EffectsSimplePanel";
 import { findClip, useEditor, type Clip } from "@/state/editor-store";
 import {
   animatablePropsFor,
@@ -258,6 +260,7 @@ export function Inspector() {
   const addZoomKeyframe = useEditor((s) => s.addZoomKeyframe);
   const removeZoomKeyframe = useEditor((s) => s.removeZoomKeyframe);
   const clip = findClip(tracks, selectedClipId);
+  const [mode, setMode] = useState<"simple" | "advanced">("simple");
 
   return (
     <aside className="flex w-72 shrink-0 flex-col border-l border-[var(--border)] bg-[var(--surface-2)]">
@@ -271,10 +274,33 @@ export function Inspector() {
           </p>
         ) : (
           <>
-            <KeyframeEditor clip={clip} />
-            <AnimSection clip={clip} />
+            <div className="grid grid-cols-2 gap-1 rounded-lg border border-[var(--border)] p-1">
+              {(["simple", "advanced"] as const).map((m) => (
+                <button
+                  key={m}
+                  onClick={() => setMode(m)}
+                  className={cn(
+                    "rounded-md px-2 py-1.5 text-[11px] font-bold",
+                    mode === m
+                      ? "bg-[var(--brand)] text-white"
+                      : "text-[var(--muted-foreground)] hover:text-[var(--foreground)]",
+                  )}
+                >
+                  {m === "simple" ? "Simples" : "Avançado"}
+                </button>
+              ))}
+            </div>
+            {mode === "simple" ? (
+              <EffectsSimplePanel clip={clip} />
+            ) : (
+              <>
+                <KeyframeEditor clip={clip} />
+                <AnimSection clip={clip} />
+              </>
+            )}
           </>
         )}
+
 
         {clip?.type === "video" ? (
           <>

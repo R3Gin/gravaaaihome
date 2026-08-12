@@ -31,6 +31,11 @@ import {
 } from "@/lib/caption-chunking";
 import type { WordTiming } from "@/lib/captions";
 import type { Annotation, AnnotationTool } from "@/lib/annotations";
+import {
+  presetById,
+  type EffectCategory,
+  type PresetParams,
+} from "@/lib/effect-presets";
 
 
 
@@ -52,6 +57,17 @@ export interface ZoomKeyframe {
   scale: number;
   x: number;
   y: number;
+}
+
+/** instância de preset de efeito aplicada a um clipe (modo Simples) */
+export interface AppliedPreset {
+  /** id da instância (marca os keyframes gerados via `origin`) */
+  id: string;
+  presetId: string;
+  category: EffectCategory;
+  params: PresetParams;
+  /** o usuário editou manualmente algum keyframe gerado */
+  edited?: boolean;
 }
 
 export interface Clip {
@@ -110,6 +126,8 @@ export interface Clip {
   isCaption?: boolean;
   rect?: { x: number; y: number; w: number; h: number };
   strength?: number;
+  /** presets de efeito aplicados no modo Simples */
+  effectPresets?: AppliedPreset[];
 }
 
 export interface Track {
@@ -197,6 +215,8 @@ export interface EditorState {
   selectedKeyframes: { prop: string; kfId: string }[];
   /** keyframes copiados (Ctrl/Cmd+C) — colados no playhead */
   kfClipboard: { prop: string; offset: number; value: KeyValue; easing: Easing }[];
+  /** preset de zoom aguardando o clique no ponto do preview (modo Simples) */
+  pendingEffectPreset: { presetId: string; params: PresetParams } | null;
   /** ferramenta de anotação ativa no preview (null = seleção normal) */
   annotationTool: AnnotationTool | null;
   annotationColor: string;
@@ -280,6 +300,14 @@ export interface EditorActions {
   ) => void;
   /** presets de animação de entrada/saída de texto */
   setTextPreset: (clipId: string, side: "in" | "out", cfg: Partial<PresetConfig>) => void;
+
+  /* --- presets de efeito (modo Simples) --- */
+  /** aplica/substitui um preset de efeito, gerando keyframes automaticamente */
+  applyEffectPreset: (clipId: string, presetId: string, params?: PresetParams) => void;
+  updateEffectPresetParams: (clipId: string, instanceId: string, params: PresetParams) => void;
+  removeEffectPreset: (clipId: string, instanceId: string) => void;
+  /** arma o modo "clique no ponto do preview" para presets de zoom */
+  setPendingEffectPreset: (value: { presetId: string; params: PresetParams } | null) => void;
 
   removeKeyframe: (clipId: string, prop: string, kfId: string) => void;
   removeSelectedKeyframes: () => void;
@@ -388,6 +416,7 @@ export const useEditor = create<EditorState & EditorActions>((set, get) => {
     kfExpanded: "none",
     selectedKeyframes: [],
     kfClipboard: [],
+    pendingEffectPreset: null,
     annotationTool: null,
     annotationColor: "#ef4444",
     annotationSize: 6,
@@ -888,12 +917,22 @@ export const useEditor = create<EditorState & EditorActions>((set, get) => {
     setKeyframeValue: (clipId, prop, kfId, value, live) => {
       const clip = findClip(get().tracks, clipId);
       if (!clip?.keyframes?.[prop]) return;
+      const touched = clip.keyframes[prop].find((k) => k.id === kfId);
       const map: KeyframeMap = {
         ...clip.keyframes,
         [prop]: clip.keyframes[prop].map((k) => (k.id === kfId ? { ...k, value } : k)),
       };
-      (live ? get().updateClipLive : get().updateClip)(clipId, { keyframes: map });
+      const presets = touched?.origin
+        ? (clip.effectPresets ?? []).map((p) =>
+            p.id === touched.origin ? { ...p, edited: true } : p,
+          )
+        : clip.effectPresets;
+      (live ? get().updateClipLive : get().updateClip)(clipId, {
+        keyframes: map,
+        ...(presets ? { effectPresets: presets } : {}),
+      });
     },
+
 
 
     togglePropertyAnimation: (clipId, prop) => {
@@ -1011,6 +1050,81 @@ export const useEditor = create<EditorState & EditorActions>((set, get) => {
         revealMode: revealModeFor(inPreset, outPreset),
       });
     },
+
+    /* ---------------- presets de efeito (modo Simples) ---------------- */
+
+    applyEffectPreset: (clipId, presetId, params) => {
+      const clip = findClip(get().tracks, clipId);
+      const def = presetById(presetId);
+      if (!clip || !def) return;
+      const merged: PresetParams = { ...params };
+      const instanceId = `fx-${uid()}`;
+      const generated = def.build(clip, merged);
+
+      // remove presets anteriores da mesma categoria (e seus keyframes)
+      const previous = (clip.effectPresets ?? []).filter((p) => p.category === def.category);
+      const drop = new Set(previous.map((p) => p.id));
+      const map: KeyframeMap = {};
+      for (const [prop, keys] of Object.entries(clip.keyframes ?? {})) {
+        const rest = keys.filter((k) => !k.origin || !drop.has(k.origin));
+        if (rest.length) map[prop] = rest;
+      }
+      // aplica os novos: substitui keyframes automáticos das mesmas props
+      for (const [prop, keys] of Object.entries(generated)) {
+        const tagged = keys.map((k) => ({ ...k, origin: instanceId }));
+        const manual = (map[prop] ?? []).filter((k) => !k.origin);
+        map[prop] = sortKeys([...manual, ...tagged]);
+      }
+
+      const presets: AppliedPreset[] = [
+        ...(clip.effectPresets ?? []).filter((p) => p.category !== def.category),
+        { id: instanceId, presetId, category: def.category, params: merged },
+      ];
+      get().updateClip(clipId, { keyframes: map, effectPresets: presets });
+      set({ pendingEffectPreset: null, selectedKeyframes: [] });
+    },
+
+    updateEffectPresetParams: (clipId, instanceId, params) => {
+      const clip = findClip(get().tracks, clipId);
+      const inst = clip?.effectPresets?.find((p) => p.id === instanceId);
+      const def = inst ? presetById(inst.presetId) : undefined;
+      if (!clip || !inst || !def) return;
+      const merged: PresetParams = { ...inst.params, ...params };
+      const generated = def.build(clip, merged);
+      const map: KeyframeMap = {};
+      for (const [prop, keys] of Object.entries(clip.keyframes ?? {})) {
+        const rest = keys.filter((k) => k.origin !== instanceId);
+        if (rest.length) map[prop] = rest;
+      }
+      for (const [prop, keys] of Object.entries(generated)) {
+        const tagged = keys.map((k) => ({ ...k, origin: instanceId }));
+        map[prop] = sortKeys([...(map[prop] ?? []).filter((k) => !k.origin), ...tagged]);
+      }
+      get().updateClip(clipId, {
+        keyframes: map,
+        effectPresets: (clip.effectPresets ?? []).map((p) =>
+          p.id === instanceId ? { ...p, params: merged, edited: false } : p,
+        ),
+      });
+    },
+
+    removeEffectPreset: (clipId, instanceId) => {
+      const clip = findClip(get().tracks, clipId);
+      if (!clip) return;
+      const map: KeyframeMap = {};
+      for (const [prop, keys] of Object.entries(clip.keyframes ?? {})) {
+        const rest = keys.filter((k) => k.origin !== instanceId);
+        if (rest.length) map[prop] = rest;
+      }
+      get().updateClip(clipId, {
+        keyframes: map,
+        effectPresets: (clip.effectPresets ?? []).filter((p) => p.id !== instanceId),
+      });
+      set({ selectedKeyframes: [] });
+    },
+
+    setPendingEffectPreset: (value) => set({ pendingEffectPreset: value }),
+
 
 
 

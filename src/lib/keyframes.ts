@@ -36,6 +36,8 @@ export interface Keyframe {
   continuous?: boolean;
   /** marca keyframes criados por um preset de animação de texto */
   preset?: "in" | "out";
+  /** id da instância de preset de efeito (modo Simples) que criou este keyframe */
+  origin?: string;
 }
 
 export type KeyframeMap = Record<string, Keyframe[]>;
