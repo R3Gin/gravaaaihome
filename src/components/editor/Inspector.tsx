@@ -1,4 +1,7 @@
+import { useState } from "react";
 import { ChevronLeft, ChevronRight, Diamond, Plus } from "lucide-react";
+import { cn } from "@/lib/utils";
+import { EffectsSimplePanel } from "@/components/editor/panels/EffectsSimplePanel";
 import { findClip, useEditor, type Clip } from "@/state/editor-store";
 import {
   animatablePropsFor,
@@ -258,6 +261,7 @@ export function Inspector() {
   const addZoomKeyframe = useEditor((s) => s.addZoomKeyframe);
   const removeZoomKeyframe = useEditor((s) => s.removeZoomKeyframe);
   const clip = findClip(tracks, selectedClipId);
+  const [mode, setMode] = useState<"simple" | "advanced">("simple");
 
   return (
     <aside className="flex w-72 shrink-0 flex-col border-l border-[var(--border)] bg-[var(--surface-2)]">
