@@ -4,6 +4,8 @@
  * por Blob para não decodificar o mesmo arquivo várias vezes.
  */
 
+import { peaksInWorker } from "@/lib/audio-worker-client";
+
 export type Peaks = {
   /** picos normalizados (0..1), um por bucket */
   data: Float32Array;
@@ -24,6 +26,11 @@ async function compute(blob: Blob): Promise<Peaks | null> {
     const ctx = new Ctx();
     const buffer = await ctx.decodeAudioData(await blob.arrayBuffer());
     void ctx.close();
+
+    // cálculo dos picos no worker (não bloqueia a UI em vídeos longos)
+    const copy = buffer.getChannelData(0).slice();
+    const res = await peaksInWorker(copy, buffer.sampleRate, BUCKETS_PER_SECOND);
+    if (res) return { data: res.data, duration: res.duration };
 
     const channel = buffer.getChannelData(0);
     const duration = buffer.duration;
@@ -48,6 +55,7 @@ async function compute(blob: Blob): Promise<Peaks | null> {
     return null;
   }
 }
+
 
 export function getPeaks(blob: Blob): Promise<Peaks | null> {
   const hit = cache.get(blob);

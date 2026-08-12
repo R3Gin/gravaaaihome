@@ -198,7 +198,16 @@ function KeyframeLane({
 
 
 /** Waveform do áudio do vídeo, desenhada na faixa "Áudio". */
-function AudioWaveform({ width }: { width: number }) {
+function AudioWaveform({
+  width,
+  viewLeft,
+  viewWidth,
+}: {
+  width: number;
+  viewLeft: number;
+  viewWidth: number;
+}) {
+
   const sourceBlob = useEditor((s) => s.sourceBlob);
   const zoom = useEditor((s) => s.zoom);
   const tracks = useEditor((s) => s.tracks);
@@ -228,35 +237,42 @@ function AudioWaveform({ width }: { width: number }) {
     };
   }, [sourceBlob]);
 
+  /* Só a janela visível vai para o canvas: em vídeos longos a largura total
+     estoura o limite de pixels do navegador e come memória à toa. */
+  const winLeft = Math.max(0, Math.min(viewLeft, Math.max(0, width - 1)));
+  const winWidth = Math.max(1, Math.min(viewWidth || 1200, width - winLeft));
+
   const draw = useCallback(() => {
     const canvas = canvasRef.current;
     if (!canvas || !peaks) return;
     const dpr = window.devicePixelRatio || 1;
     const h = LANE_H - 10;
-    canvas.width = Math.max(1, Math.floor(width * dpr));
+    canvas.width = Math.max(1, Math.floor(winWidth * dpr));
     canvas.height = Math.floor(h * dpr);
-    canvas.style.width = `${width}px`;
+    canvas.style.width = `${winWidth}px`;
     canvas.style.height = `${h}px`;
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
     ctx.scale(dpr, dpr);
-    ctx.clearRect(0, 0, width, h);
+    ctx.clearRect(0, 0, winWidth, h);
     ctx.fillStyle = "rgba(16,185,129,0.75)";
 
     const mid = h / 2;
     for (const clip of videoClips) {
-      const x0 = clip.startTime * zoom;
+      const x0 = clip.startTime * zoom - winLeft;
       const w = clip.duration * zoom;
-      if (w < 1) continue;
+      if (w < 1 || x0 + w < 0 || x0 > winWidth) continue;
       const cols = Math.max(1, Math.floor(w));
       for (let i = 0; i < cols; i++) {
+        const x = x0 + i;
+        if (x < 0 || x > winWidth) continue;
         const t = clip.sourceInStart + ((i / cols) * (clip.sourceInEnd - clip.sourceInStart));
         const idx = Math.min(peaks.data.length - 1, Math.max(0, Math.round((t / peaks.duration) * peaks.data.length)));
         const amp = (peaks.data[idx] ?? 0) * (mid - 2);
-        ctx.fillRect(x0 + i, mid - amp, 1, Math.max(1, amp * 2));
+        ctx.fillRect(x, mid - amp, 1, Math.max(1, amp * 2));
       }
     }
-  }, [peaks, videoClips, width, zoom]);
+  }, [peaks, videoClips, winLeft, winWidth, zoom]);
 
   useEffect(() => {
     draw();
@@ -279,10 +295,11 @@ function AudioWaveform({ width }: { width: number }) {
           Analisando áudio…
         </span>
       ) : null}
-      <canvas ref={canvasRef} className="block" />
+      <canvas ref={canvasRef} className="block absolute" style={{ left: winLeft }} />
     </div>
   );
 }
+
 
 
 function ClipBox({ clip, track }: { clip: Clip; track: Track }) {
@@ -438,12 +455,50 @@ export function Timeline() {
   const scrollRef = useRef<HTMLDivElement>(null);
   const width = Math.max(600, (duration + 4) * zoom);
 
+  /* --- virtualização: só renderiza o que está na janela visível --- */
+  const [view, setView] = useState({ left: 0, width: 1200 });
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    let raf = 0;
+    const read = () => {
+      raf = 0;
+      setView((v) =>
+        v.left === el.scrollLeft && v.width === el.clientWidth
+          ? v
+          : { left: el.scrollLeft, width: el.clientWidth },
+      );
+    };
+    const onScroll = () => {
+      if (!raf) raf = requestAnimationFrame(read);
+    };
+    read();
+    el.addEventListener("scroll", onScroll, { passive: true });
+    const ro = new ResizeObserver(onScroll);
+    ro.observe(el);
+    return () => {
+      el.removeEventListener("scroll", onScroll);
+      ro.disconnect();
+      if (raf) cancelAnimationFrame(raf);
+    };
+  }, []);
+
+  const visible = useMemo(() => {
+    const margin = 600; // px de folga fora da tela
+    return {
+      from: Math.max(0, (view.left - margin) / zoom),
+      to: (view.left + view.width + margin) / zoom,
+    };
+  }, [view, zoom]);
+
   const ticks = useMemo(() => {
     const step = zoom > 120 ? 1 : zoom > 50 ? 2 : zoom > 25 ? 5 : 10;
     const out: number[] = [];
-    for (let t = 0; t <= duration + 4; t += step) out.push(t);
+    const first = Math.floor(visible.from / step) * step;
+    for (let t = Math.max(0, first); t <= Math.min(duration + 4, visible.to); t += step) out.push(t);
     return out;
-  }, [duration, zoom]);
+  }, [duration, zoom, visible]);
+
 
 
   const [scrubbing, setScrubbing] = useState(false);
@@ -687,7 +742,9 @@ export function Timeline() {
                 className="pointer-events-none absolute left-0 z-20"
                 style={{ top: 28, height: lanesHeight, width }}
               >
-                {silences.map((s, i) => (
+                {silences
+                  .filter((s) => s.end >= visible.from && s.start <= visible.to)
+                  .map((s, i) => (
                   <span
                     key={i}
                     className="absolute top-0 h-full border-x border-amber-300/50 bg-amber-300/20"
@@ -705,10 +762,20 @@ export function Timeline() {
                     className="relative border-b border-[var(--border)]"
                     style={{ height: LANE_H }}
                   >
-                    {track.type === "audio" ? <AudioWaveform width={width} /> : null}
-                    {track.clips.map((clip) => (
-                      <ClipBox key={clip.id} clip={clip} track={track} />
-                    ))}
+                    {track.type === "audio" ? (
+                      <AudioWaveform width={width} viewLeft={view.left} viewWidth={view.width} />
+                    ) : null}
+                    {track.clips
+                      .filter(
+                        (clip) =>
+                          clip.id === selectedClipId ||
+                          (clip.startTime + clip.duration >= visible.from &&
+                            clip.startTime <= visible.to),
+                      )
+                      .map((clip) => (
+                        <ClipBox key={clip.id} clip={clip} track={track} />
+                      ))}
+
                   </div>
                   {selectedClip?.trackId === track.id
                     ? kfRows.map((p) => (
