@@ -5,7 +5,7 @@
 //   e useRecorderCore (mesmo fluxo de MP4 da página principal).
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ChevronLeft, ChevronRight, FileUp, Loader2 } from "lucide-react";
+import { ChevronLeft, ChevronRight, FileUp, Loader2, Settings } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useRecorderCore } from "@/hooks/useRecorderCore";
 import { loadDeck, isSupportedFile, type SlideDeck } from "@/lib/slide-loader";
@@ -14,6 +14,7 @@ import {
   drawCameraPipCircle,
   useCameraPip,
 } from "./CameraPip";
+import { CameraSettingsDialog } from "./CameraSettingsDialog";
 
 function formatTime(sec: number) {
   const m = Math.floor(sec / 60).toString().padStart(2, "0");
@@ -36,6 +37,7 @@ export function LocalPresentation() {
   const displayCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const camera = useCameraPip({ initial: { x: 24, y: 24, size: 180 } });
+  const [cameraSettingsOpen, setCameraSettingsOpen] = useState(false);
 
   const compositeCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const micStreamRef = useRef<MediaStream | null>(null);
@@ -369,6 +371,12 @@ export function LocalPresentation() {
                 className="absolute inset-0 h-full w-full"
               />
               <CameraPipBubble controller={camera} containerRef={stageRef} />
+              <CameraSettingsDialog
+                open={cameraSettingsOpen}
+                onOpenChange={setCameraSettingsOpen}
+                controller={camera}
+                containerRef={stageRef}
+              />
             </div>
             <div className="flex items-center gap-3 text-sm">
               <Button
