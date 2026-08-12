@@ -28,6 +28,7 @@ import {
   type CaptionBlockSize,
 } from "@/lib/caption-chunking";
 import type { WordTiming } from "@/lib/captions";
+import type { Annotation, AnnotationTool } from "@/lib/annotations";
 
 
 
