@@ -25,6 +25,11 @@ async function compute(blob: Blob): Promise<Peaks | null> {
     const buffer = await ctx.decodeAudioData(await blob.arrayBuffer());
     void ctx.close();
 
+    // cálculo dos picos no worker (não bloqueia a UI em vídeos longos)
+    const copy = buffer.getChannelData(0).slice();
+    const res = await peaksInWorker(copy, buffer.sampleRate, BUCKETS_PER_SECOND);
+    if (res) return { data: res.data, duration: res.duration };
+
     const channel = buffer.getChannelData(0);
     const duration = buffer.duration;
     const buckets = Math.max(1, Math.round(duration * BUCKETS_PER_SECOND));
@@ -48,6 +53,7 @@ async function compute(blob: Blob): Promise<Peaks | null> {
     return null;
   }
 }
+
 
 export function getPeaks(blob: Blob): Promise<Peaks | null> {
   const hit = cache.get(blob);
