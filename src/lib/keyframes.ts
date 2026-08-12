@@ -422,6 +422,7 @@ export function modifiedProps(clip: Clip): AnimProp[] {
     fontSize: 48,
     blur: 0,
     reveal: 1,
+    zoom: 1,
     strength: clip.overlayKind === "blur" ? 12 : 0.7,
   };
   return animatablePropsFor(clip).filter((p) => {
