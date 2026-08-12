@@ -45,10 +45,29 @@ export async function transcribe(
     throw new Error("Não encontrei áudio nesse vídeo.");
   }
 
+  // diagnóstico do áudio extraído (16 kHz, mono, PCM float32)
+  const duration = audio.length / 16000;
+  let sum = 0;
+  let peak = 0;
+  for (let i = 0; i < audio.length; i += 7) {
+    const v = Math.abs(audio[i]);
+    sum += v * v;
+    if (v > peak) peak = v;
+  }
+  const rms = Math.sqrt(sum / Math.ceil(audio.length / 7));
+  console.info(
+    `[legendas] áudio: ${duration.toFixed(2)}s @16000Hz mono · rms=${rms.toFixed(5)} pico=${peak.toFixed(3)}`,
+  );
+  if (peak < 0.005 || rms < 0.0008) {
+    throw new Error(
+      "Não foi possível transcrever este áudio — tente novamente ou verifique se há fala audível no vídeo.",
+    );
+  }
+
   const worker = new Worker(new URL("./whisper.worker.ts", import.meta.url), { type: "module" });
 
   try {
-    return await new Promise<TranscribeResult>((resolve, reject) => {
+    const result = await new Promise<TranscribeResult>((resolve, reject) => {
       worker.onmessage = (e: MessageEvent) => {
         const msg = e.data as
           | { type: "stage"; stage: "model" | "transcribe" | "finalize" }
@@ -65,10 +84,74 @@ export async function transcribe(
       worker.onerror = () => reject(new Error("O modelo de transcrição não pôde ser carregado."));
       worker.postMessage({ type: "transcribe", audio, language: lang }, [audio.buffer]);
     });
+    return validateTranscript(result, duration);
   } finally {
     worker.terminate();
   }
 }
+
+const TRANSCRIBE_FAILED =
+  "Não foi possível transcrever este áudio — tente novamente ou verifique se há fala audível no vídeo.";
+
+/** texto suspeito: vazio, só símbolos/tokens especiais ou uma letra solta. */
+function isJunk(text: string) {
+  const t = text.trim();
+  if (t.length === 0) return true;
+  if (/^[<[(].*[>\])]$/.test(t)) return true; // tokens tipo <|nospeech|>, [Música]
+  const letters = t.replace(/[^\p{L}\p{N}]/gu, "");
+  if (letters.length === 0) return true;
+  if (letters.length < 2) return true; // "N", "."
+  if (/^(.)\1+$/u.test(letters)) return true; // "aaaa", "....."
+  return false;
+}
+
+/**
+ * Descarta segmentos inválidos e rejeita resultados globalmente degradados
+ * (ex.: um único bloco cobrindo o vídeo inteiro com texto placeholder).
+ */
+export function validateTranscript(
+  result: TranscribeResult,
+  audioDuration: number,
+): TranscribeResult {
+  const segments = result.segments.filter(
+    (s) =>
+      Number.isFinite(s.start) &&
+      Number.isFinite(s.end) &&
+      s.end > s.start &&
+      !isJunk(s.text),
+  );
+  const words = result.words.filter(
+    (w) => Number.isFinite(w.start) && Number.isFinite(w.end) && w.word.trim().length > 0,
+  );
+
+  console.info(
+    `[legendas] whisper: ${result.segments.length} segmentos brutos → ${segments.length} válidos · ${words.length} palavras com timing`,
+  );
+
+  if (segments.length === 0) throw new Error(TRANSCRIBE_FAILED);
+
+  // densidade mínima de texto: fala real gera ~8+ caracteres por segundo falado
+  const chars = segments.reduce((n, s) => n + s.text.trim().length, 0);
+  const covered = segments.reduce((n, s) => n + (s.end - s.start), 0);
+  if (chars < Math.max(6, Math.min(audioDuration, covered) * 1.2)) {
+    console.warn(`[legendas] texto curto demais (${chars} caracteres para ${covered.toFixed(1)}s)`);
+    throw new Error(TRANSCRIBE_FAILED);
+  }
+
+  // um único bloco cobrindo praticamente todo o áudio = segmentação colapsada
+  if (
+    segments.length === 1 &&
+    audioDuration > 8 &&
+    segments[0].end - segments[0].start > audioDuration * 0.9 &&
+    words.length === 0
+  ) {
+    console.warn("[legendas] segmentação colapsada em um único bloco — resultado rejeitado");
+    throw new Error(TRANSCRIBE_FAILED);
+  }
+
+  return { segments, words };
+}
+
 
 
 /** Alternativa sem modelo: blocos de fala vazios para preencher à mão. */
