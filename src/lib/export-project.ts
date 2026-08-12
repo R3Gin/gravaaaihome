@@ -6,6 +6,7 @@ import {
   type TimelineClip,
 } from "@/lib/ffmpeg-convert";
 import type { AspectRatio, Clip, Track } from "@/state/editor-store";
+import { drawAnnotation } from "@/lib/annotations";
 
 function frameSize(aspect: AspectRatio, base: { width: number; height: number }): OutputFrame {
   const h = Math.max(360, Math.min(1080, base.height || 720));
@@ -47,6 +48,25 @@ async function textToPng(clip: Clip, W: number, H: number): Promise<TextOverlayI
     end: clip.startTime + clip.duration,
     x: Math.max(0, Math.min(W - canvas.width, cx)),
     y: Math.max(0, Math.min(H - canvas.height, cy)),
+  };
+}
+
+async function annotationToPng(clip: Clip, W: number, H: number): Promise<TextOverlayImage | null> {
+  if (!clip.annotation) return null;
+  const canvas = document.createElement("canvas");
+  canvas.width = W;
+  canvas.height = H;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return null;
+  drawAnnotation(ctx, clip.annotation, W, H);
+  const png = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/png"));
+  if (!png) return null;
+  return {
+    png,
+    start: clip.startTime,
+    end: clip.startTime + clip.duration,
+    x: 0,
+    y: 0,
   };
 }
 
@@ -105,7 +125,14 @@ export async function exportProject(
     if (png) texts.push(png);
   }
 
-  const blurs: BlurRegion[] = (tracks.find((t) => t.type === "overlay")?.clips ?? [])
+  const overlayClips = tracks.find((t) => t.type === "overlay")?.clips ?? [];
+  for (const clip of overlayClips) {
+    if (clip.overlayKind !== "annotation") continue;
+    const png = await annotationToPng(clip, W, H);
+    if (png) texts.push(png);
+  }
+
+  const blurs: BlurRegion[] = (overlayClips)
     .filter((c) => c.overlayKind === "blur" && c.rect)
     .map((c) => ({
       x: (c.rect!.x) * W,

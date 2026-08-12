@@ -370,9 +370,11 @@ export function Inspector() {
 
         {clip?.type === "overlay" ? (
           <p className="text-xs text-[var(--muted-foreground)]">
-            {clip.overlayKind === "blur"
-              ? "Arraste e redimensione a área desfocada no preview."
-              : "Arraste o destaque no preview para escolher a área iluminada."}
+            {clip.overlayKind === "annotation"
+              ? "Arraste a anotação no preview para reposicioná-la. Ajuste as bordas do clipe na timeline para definir quando ela aparece."
+              : clip.overlayKind === "blur"
+                ? "Arraste e redimensione a área desfocada no preview."
+                : "Arraste o destaque no preview para escolher a área iluminada."}
           </p>
         ) : null}
       </div>

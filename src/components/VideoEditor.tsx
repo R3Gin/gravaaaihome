@@ -14,6 +14,7 @@ import {
   Upload,
   Volume2,
   Blend,
+  PenTool,
   X,
 } from "lucide-react";
 import { Preview } from "@/components/editor/Preview";
@@ -23,6 +24,7 @@ import { SilencePanel } from "@/components/editor/panels/SilencePanel";
 import { CaptionsPanel } from "@/components/editor/panels/CaptionsPanel";
 import { AudioPanel } from "@/components/editor/panels/AudioPanel";
 import { TransitionsPanel } from "@/components/editor/panels/TransitionsPanel";
+import { AnnotationsPanel } from "@/components/editor/panels/AnnotationsPanel";
 import { useEditor } from "@/state/editor-store";
 import { takeEditorHandoff } from "@/lib/editor-handoff";
 import { exportProject } from "@/lib/export-project";
@@ -34,6 +36,7 @@ type PanelId =
   | "captions"
   | "audio"
   | "transitions"
+  | "annotations"
   | "text"
   | "effects"
   | null;
@@ -44,6 +47,7 @@ const TOOLS: { id: Exclude<PanelId, null>; label: string; icon: typeof Upload }[
   { id: "captions", label: "Legendas", icon: Captions },
   { id: "audio", label: "Áudio", icon: Volume2 },
   { id: "transitions", label: "Transições", icon: Blend },
+  { id: "annotations", label: "Anotações", icon: PenTool },
   { id: "text", label: "Texto", icon: Type },
   { id: "effects", label: "Efeitos", icon: Shapes },
 ];
@@ -320,6 +324,8 @@ export function VideoEditor() {
               {panel === "audio" ? <AudioPanel /> : null}
 
               {panel === "transitions" ? <TransitionsPanel /> : null}
+
+              {panel === "annotations" ? <AnnotationsPanel /> : null}
 
 
 

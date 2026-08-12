@@ -24,11 +24,8 @@ import {
   CameraOff,
   PictureInPicture2,
   ExternalLink,
-  Pen,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { ANNOTATION_TOOLS, PEN_COLORS, type DrawingController } from "./DrawingLayer";
-import { Trash2 } from "lucide-react";
 
 
 export interface FloatingRecorderPanelProps {
@@ -41,7 +38,6 @@ export interface FloatingRecorderPanelProps {
   hasScreenAudio: boolean;
   hasMic: boolean;
   hasCamera: boolean;
-  drawing?: DrawingController;
   onPauseResume: () => void;
   onStop: () => void;
   onToggleScreenAudio: () => void;
@@ -105,7 +101,7 @@ export const FloatingRecorderPanel = forwardRef<
   FloatingRecorderPanelHandle,
   FloatingRecorderPanelProps
 >(function FloatingRecorderPanel(props, ref) {
-  const { visible, drawing } = props;
+  const { visible } = props;
   const [pipWindow, setPipWindow] = useState<PipWindow | null>(null);
   const [pos, setPos] = useState({ x: 24, y: 24 });
   const dragRef = useRef<{ dx: number; dy: number } | null>(null);
@@ -142,15 +138,6 @@ export const FloatingRecorderPanel = forwardRef<
     }
   }, [pipWindow]);
 
-  // Cresce/encolhe a janela PiP conforme a barra de desenho abre/fecha.
-  useEffect(() => {
-    if (!pipWindow) return;
-    try {
-      pipWindow.resizeTo(380, drawing?.active ? 230 : 64);
-    } catch {
-      /* alguns navegadores bloqueiam resize */
-    }
-  }, [pipWindow, drawing?.active]);
 
 
   useImperativeHandle(
@@ -313,23 +300,6 @@ export const FloatingRecorderPanel = forwardRef<
           MutedIcon={CameraOff}
           onClick={props.onToggleCamera}
         />
-        {drawing && (
-          <button
-            type="button"
-            onClick={() => drawing.setActive(!drawing.active)}
-            title={drawing.active ? "Anotar ativo — clique para desativar" : "Anotar na tela (caneta, formas, zoom)"}
-            aria-label="Anotar"
-
-            className={cn(
-              "flex h-8 w-8 items-center justify-center rounded-full border transition-all duration-150 active:scale-[0.98]",
-              drawing.active
-                ? "border-[var(--recording-btn-danger-to)] bg-[var(--recording-btn-danger-to)]/25 text-white shadow-[0_0_10px_-2px_var(--recording-btn-danger-glow)]"
-                : "border-[var(--recording-btn-neutral-border)] bg-[var(--recording-btn-neutral-bg)] text-white/90 hover:bg-[var(--recording-btn-neutral-bg-hover)]",
-            )}
-          >
-            <Pen className="h-3.5 w-3.5" />
-          </button>
-        )}
 
       </div>
 
@@ -360,130 +330,6 @@ export const FloatingRecorderPanel = forwardRef<
   const Shell = (
     <div className={cn("flex flex-col", pipWindow ? "h-full w-full" : "w-fit")}>
       {Panel}
-      {drawing?.active && (
-        <div
-          className={cn(
-            "flex flex-wrap items-center gap-2 px-3 py-2 text-white",
-            pipWindow
-              ? "bg-[var(--recording-panel-bg)]"
-              : "mt-2 w-[360px] rounded-2xl border border-[var(--recording-panel-border)] bg-[var(--recording-panel-bg)] backdrop-blur-xl shadow-[0_10px_30px_-10px_rgba(0,0,0,0.7)]",
-          )}
-        >
-          <div className="flex w-full flex-wrap items-center gap-1">
-            {ANNOTATION_TOOLS.map(({ id, label, key, Icon }) => (
-              <button
-                key={id}
-                type="button"
-                onClick={() => drawing.setTool(id)}
-                title={`${label} (${key})`}
-                aria-label={label}
-                className={cn(
-                  "flex h-7 w-7 items-center justify-center rounded-full border transition-colors",
-                  drawing.tool === id
-                    ? "border-[var(--recording-btn-danger-to)] bg-[var(--recording-btn-danger-to)]/25 text-white"
-                    : "border-[var(--recording-btn-neutral-border)] bg-[var(--recording-btn-neutral-bg)] text-white/90 hover:bg-[var(--recording-btn-neutral-bg-hover)]",
-                )}
-              >
-                <Icon className="h-3.5 w-3.5" />
-              </button>
-            ))}
-            <button
-              type="button"
-              onClick={drawing.clear}
-              title="Limpar tudo"
-              aria-label="Limpar tudo"
-              className="flex h-7 w-7 items-center justify-center rounded-full border border-[var(--recording-btn-neutral-border)] bg-[var(--recording-btn-neutral-bg)] text-white/90 transition-colors hover:bg-[var(--recording-btn-neutral-bg-hover)]"
-            >
-              <Trash2 className="h-3.5 w-3.5" />
-            </button>
-          </div>
-
-          <div className="flex items-center gap-1.5">
-            {PEN_COLORS.map((c) => (
-              <button
-                key={c}
-                type="button"
-                title={`Cor ${c}`}
-                aria-label={`Cor ${c}`}
-                onClick={() => drawing.setColor(c)}
-                className={cn(
-                  "h-5 w-5 rounded-full border transition-transform",
-                  drawing.color === c ? "scale-110 border-white" : "border-white/20",
-                )}
-                style={{ backgroundColor: c }}
-              />
-            ))}
-            <input
-              type="color"
-              value={drawing.color}
-              onChange={(e) => drawing.setColor(e.target.value)}
-              title="Cor personalizada"
-              className="h-5 w-6 cursor-pointer rounded border border-white/20 bg-transparent p-0"
-            />
-          </div>
-          <input
-            type="range"
-            min={2}
-            max={24}
-            value={drawing.size}
-            onChange={(e) => drawing.setSize(Number(e.target.value))}
-            title="Espessura"
-            className="h-1.5 w-16 cursor-pointer appearance-none rounded-full bg-white/15 accent-[var(--recording-btn-danger-to)]"
-          />
-          <span className="w-4 font-mono text-[11px] text-white/80">{drawing.size}</span>
-          <button
-            type="button"
-            onClick={() => drawing.setFillShapes(!drawing.fillShapes)}
-            title="Preencher formas"
-            className={cn(
-              "rounded-full border px-2 py-1 text-[10px] font-semibold transition-colors",
-              drawing.fillShapes
-                ? "border-[var(--recording-btn-danger-to)] bg-[var(--recording-btn-danger-to)]/25 text-white"
-                : "border-[var(--recording-btn-neutral-border)] text-white/70 hover:bg-white/5",
-            )}
-          >
-            Preencher
-          </button>
-
-          {(drawing.tool === "zoom" || drawing.zoomActive) && (
-            <div className="flex w-full items-center gap-2">
-              <span className="text-[10px] text-white/60">
-                Zoom {drawing.zoomLevel.toFixed(1)}x
-              </span>
-              <input
-                type="range"
-                min={1.2}
-                max={4}
-                step={0.1}
-                value={drawing.zoomLevel}
-                onChange={(e) => drawing.setZoomLevel(Number(e.target.value))}
-                title="Nível de zoom"
-                className="h-1.5 flex-1 cursor-pointer appearance-none rounded-full bg-white/15 accent-[var(--recording-btn-danger-to)]"
-              />
-              <button
-                type="button"
-                onClick={drawing.resetZoom}
-                disabled={!drawing.zoomActive}
-                className="rounded-full border border-[var(--recording-btn-neutral-border)] px-2 py-1 text-[10px] font-semibold text-white/80 transition-colors hover:bg-white/5 disabled:opacity-40"
-              >
-                Resetar zoom
-              </button>
-            </div>
-          )}
-
-          <button
-            type="button"
-            onClick={() => drawing.setActive(false)}
-            className="ml-auto rounded-full border border-[var(--recording-btn-neutral-border)] px-2 py-1 text-[11px] font-semibold text-white/70 transition-colors hover:bg-white/5"
-          >
-            Sair
-          </button>
-          <p className="w-full text-[10px] leading-tight text-white/40">
-            Atalhos: P caneta · A seta · R retângulo · C círculo · H destaque · Z zoom · E borracha · 0 resetar zoom
-          </p>
-        </div>
-      )}
-
       <p className="mt-1 max-w-[320px] px-2 text-[10px] leading-tight text-white/50">
         A gravação continua rodando mesmo que você mude de aba ou janela. Volte para o Gravaai a qualquer momento.
       </p>

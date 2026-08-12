@@ -28,6 +28,7 @@ import {
   type CaptionBlockSize,
 } from "@/lib/caption-chunking";
 import type { WordTiming } from "@/lib/captions";
+import type { Annotation, AnnotationTool } from "@/lib/annotations";
 
 
 
@@ -98,7 +99,9 @@ export interface Clip {
   animOut?: PresetConfig;
 
   // overlay
-  overlayKind?: "blur" | "spotlight";
+  overlayKind?: "blur" | "spotlight" | "annotation";
+  /** anotação de pós-produção (caneta, seta, formas, destaque) */
+  annotation?: Annotation;
   /** legenda gerada automaticamente (permite estilizar todas de uma vez) */
   isCaption?: boolean;
   rect?: { x: number; y: number; w: number; h: number };
@@ -188,6 +191,14 @@ export interface EditorState {
   kfExpanded: "none" | "animated" | "all";
   /** keyframes selecionados na timeline (permite mover/deletar em conjunto) */
   selectedKeyframes: { prop: string; kfId: string }[];
+  /** ferramenta de anotação ativa no preview (null = seleção normal) */
+  annotationTool: AnnotationTool | null;
+  annotationColor: string;
+  /** espessura em px relativos a um quadro de 720px de altura */
+  annotationSize: number;
+  annotationFill: boolean;
+  /** duração padrão (s) de cada anotação criada */
+  annotationDuration: number;
 }
 
 
@@ -215,6 +226,12 @@ export interface EditorActions {
   trimClip: (id: string, side: "start" | "end", newTime: number) => void;
   addTextClip: (text?: string) => void;
   addOverlayClip: (kind: "blur" | "spotlight") => void;
+  /** cria um clipe de anotação na faixa de efeitos, começando no playhead */
+  addAnnotationClip: (annotation: Annotation) => void;
+  setAnnotationTool: (tool: AnnotationTool | null) => void;
+  setAnnotationStyle: (
+    patch: Partial<{ color: string; size: number; fill: boolean; duration: number }>,
+  ) => void;
   addZoomKeyframe: (clipId: string, timelineTime: number) => void;
   removeZoomKeyframe: (clipId: string, index: number) => void;
   /** Remove trechos e devolve quantas legendas foram remapeadas. */
@@ -356,6 +373,11 @@ export const useEditor = create<EditorState & EditorActions>((set, get) => {
     captionStyle: DEFAULT_CAPTION_STYLE,
     kfExpanded: "none",
     selectedKeyframes: [],
+    annotationTool: null,
+    annotationColor: "#ef4444",
+    annotationSize: 6,
+    annotationFill: false,
+    annotationDuration: 3,
 
 
     loadSource: (url, duration, size, name) => {
@@ -591,6 +613,40 @@ export const useEditor = create<EditorState & EditorActions>((set, get) => {
       );
       set({ selectedClipId: clip.id });
     },
+
+    addAnnotationClip: (annotation) => {
+      const { currentTime, annotationDuration, duration } = get();
+      const dur = Math.max(MIN_CLIP, annotationDuration);
+      const clip: Clip = {
+        id: uid(),
+        trackId: OVERLAY_TRACK,
+        type: "overlay",
+        sourceUrl: "",
+        startTime: currentTime,
+        duration: Math.max(MIN_CLIP, Math.min(dur, Math.max(dur, duration - currentTime))),
+        sourceInStart: 0,
+        sourceInEnd: dur,
+        overlayKind: "annotation",
+        annotation,
+      };
+      write((tracks) =>
+        mapTracks(tracks, (clips, track) =>
+          track.id === OVERLAY_TRACK ? [...clips, clip] : clips,
+        ),
+      );
+      set({ selectedClipId: clip.id });
+    },
+
+    setAnnotationTool: (annotationTool) => set({ annotationTool }),
+
+    setAnnotationStyle: (patch) =>
+      set((s) => ({
+        annotationColor: patch.color ?? s.annotationColor,
+        annotationSize: patch.size ?? s.annotationSize,
+        annotationFill: patch.fill ?? s.annotationFill,
+        annotationDuration: patch.duration ?? s.annotationDuration,
+      })),
+
 
     addZoomKeyframe: (clipId, timelineTime) => {
       const clip = findClip(get().tracks, clipId);

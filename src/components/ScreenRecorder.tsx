@@ -13,8 +13,6 @@ import {
   drawCameraPipCircle,
 } from "./CameraPip";
 import { CameraSettingsDialog } from "./CameraSettingsDialog";
-import { DrawingOverlayWindow, supportsTransparentPip } from "./DrawingOverlayWindow";
-import { supportsDocumentPip } from "@/lib/document-pip";
 import { Button } from "@/components/ui/button";
 
 function GearIcon() {
@@ -25,13 +23,6 @@ function GearIcon() {
     </svg>
   );
 }
-import {
-  DrawingCanvas,
-  drawAnnotations,
-  applyZoomTransform,
-  useAnnotationShortcuts,
-  useDrawing,
-} from "./DrawingLayer";
 
 import {
   FloatingRecorderPanel,
@@ -129,7 +120,6 @@ export function ScreenRecorder() {
   // Superfície capturada: "browser" (aba) desenha garantido via canvas;
   // "window"/"monitor" precisam do overlay PiP sobre a tela.
   const [displaySurface, setDisplaySurface] = useState<string | null>(null);
-  const [overlayOpen, setOverlayOpen] = useState(false);
 
   const previewRef = useRef<HTMLVideoElement | null>(null);
   const previewContainerRef = useRef<HTMLDivElement | null>(null);
@@ -159,10 +149,6 @@ export function ScreenRecorder() {
   const compositeRafRef = useRef<number>(0);
 
   const camera = useCameraPip({ initial: { x: 16, y: 16, size: 140 } });
-  const drawing = useDrawing();
-  const drawingRef = useRef(drawing);
-  drawingRef.current = drawing;
-  useAnnotationShortcuts(drawing, true);
 
   const panelRef = useRef<FloatingRecorderPanelHandle | null>(null);
   const bubbleRef = useRef(camera.bubble);
@@ -341,17 +327,10 @@ export function ScreenRecorder() {
     const drawFrame = () => {
       const W = canvas!.width;
       const H = canvas!.height;
-      const z = drawingRef.current.getZoom();
       ctx.setTransform(1, 0, 0, 1, 0, 0);
-      ctx.save();
-      applyZoomTransform(ctx, z, W, H);
       try {
         ctx.drawImage(dv!, 0, 0, W, H);
       } catch { /* frame não pronto */ }
-      // Anotações (caneta, seta, formas, destaque) acompanham o zoom.
-      const items = drawingRef.current.itemsRef.current;
-      if (items.length > 0) drawAnnotations(ctx, items, W, H);
-      ctx.restore();
 
       const camVideo = camera.videoRef.current;
       const camCanvas = camera.effectCanvasRef.current;
@@ -827,8 +806,6 @@ export function ScreenRecorder() {
         onToggleScreenAudio={toggleScreenAudioMute}
         onToggleMic={toggleMicMute}
         onToggleCamera={toggleCameraFromPanel}
-        drawing={drawing}
-
       />
       {/* Preview */}
       <div
@@ -847,11 +824,6 @@ export function ScreenRecorder() {
         />
         {/* Bolha PiP da câmera sobreposta ao preview e gravada no MP4. */}
         <CameraPipBubble controller={camera} containerRef={previewContainerRef} />
-        <DrawingCanvas
-          controller={drawing}
-          containerRef={previewContainerRef}
-          zoomTargetRef={previewRef}
-        />
 
         {status === "idle" && (
           <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center gap-3 text-[var(--muted-foreground)]">
@@ -885,63 +857,6 @@ export function ScreenRecorder() {
           {camera.error}
         </div>
       )}
-
-      {/* Caneta: controles vivem no painel flutuante de gravação. */}
-      {drawing.active && displaySurface && displaySurface !== "browser" && (
-        <div className="space-y-2 rounded-xl border border-[var(--brand)]/40 bg-[var(--brand)]/10 px-3 py-3 text-sm text-[var(--foreground)]">
-          <p className="font-semibold text-[var(--brand)]">
-            Você está gravando {displaySurface === "monitor" ? "a tela inteira" : "uma janela externa"}
-          </p>
-          <p className="text-xs leading-relaxed text-[var(--muted-foreground)]">
-            Por segurança, o navegador não desenha por cima de outros aplicativos.
-            Para anotar mesmo assim, abra a janela de overlay e posicione-a sobre a
-            área compartilhada — ela é uma janela real do sistema, sempre por cima,
-            e entra na gravação naturalmente.
-          </p>
-          {supportsDocumentPip() ? (
-            <>
-              <Button
-                type="button"
-                size="sm"
-                onClick={() => setOverlayOpen((v) => !v)}
-              >
-                {overlayOpen ? "Fechar overlay de desenho" : "Ativar overlay de desenho sobre a tela"}
-              </Button>
-              <ul className="list-disc space-y-1 pl-4 text-[11px] leading-tight text-[var(--muted-foreground)]">
-                <li>
-                  Compartilhando "tela inteira": funciona automaticamente, onde quer
-                  que você posicione a janela.
-                </li>
-                <li>
-                  Compartilhando "uma janela específica": se o overlay ficar fora dos
-                  limites dessa janela, o desenho não será capturado.
-                </li>
-                <li>
-                  Se você mover ou redimensionar o app gravado, reposicione o overlay
-                  manualmente.
-                </li>
-                {!supportsTransparentPip() && (
-                  <li>
-                    Seu navegador não suporta janela PiP com fundo 100% transparente:
-                    o overlay aparece com um leve véu escuro na gravação.
-                  </li>
-                )}
-              </ul>
-            </>
-          ) : (
-            <p className="text-xs font-medium text-[var(--brand)]">
-              Seu navegador não suporta desenho sobre janelas externas. Isso funciona
-              apenas ao gravar uma aba do Chrome.
-            </p>
-          )}
-        </div>
-      )}
-      <DrawingOverlayWindow
-        open={overlayOpen && isRecording}
-        onClose={() => setOverlayOpen(false)}
-        controller={drawing}
-      />
-
 
       {/* Toggles */}
       <div className="grid gap-3 sm:grid-cols-3">
