@@ -191,6 +191,14 @@ export interface EditorState {
   kfExpanded: "none" | "animated" | "all";
   /** keyframes selecionados na timeline (permite mover/deletar em conjunto) */
   selectedKeyframes: { prop: string; kfId: string }[];
+  /** ferramenta de anotação ativa no preview (null = seleção normal) */
+  annotationTool: AnnotationTool | null;
+  annotationColor: string;
+  /** espessura em px relativos a um quadro de 720px de altura */
+  annotationSize: number;
+  annotationFill: boolean;
+  /** duração padrão (s) de cada anotação criada */
+  annotationDuration: number;
 }
 
 
