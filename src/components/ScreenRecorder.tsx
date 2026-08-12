@@ -795,7 +795,11 @@ export function ScreenRecorder() {
   const isConverting = status === "converting";
   const canRecord = status === "capturing";
   const captureDisabled = status === "recording" || status === "converting";
+  // Sessão de captura ao vivo: do momento em que a tela é capturada até a
+  // gravação parar. Só nesse intervalo a webcam ao vivo pode ser exibida.
+  const isRecordingSessionActive = status === "capturing" || status === "recording";
   const panelVisible = isRecording || status === "capturing";
+
   const hasScreenAudioTrack =
     (displayStreamRef.current?.getAudioTracks().length ?? 0) > 0;
   const hasMicTrack = (micStreamRef.current?.getTracks().length ?? 0) > 0;
