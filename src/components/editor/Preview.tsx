@@ -43,7 +43,7 @@ export function Preview({ videoRef }: Props) {
     lastY?: number;
   } | null>(null);
   const draftRef = useRef<Annotation | null>(null);
-  const diagnosticActiveClipRef = useRef<string | null>(null);
+  
   const annotationTool = useEditor((s) => s.annotationTool);
   const pendingEffectPreset = useEditor((s) => s.pendingEffectPreset);
   const setPendingEffectPreset = useEditor((s) => s.setPendingEffectPreset);
