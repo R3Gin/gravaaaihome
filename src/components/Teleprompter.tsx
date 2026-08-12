@@ -94,6 +94,13 @@ export function Teleprompter() {
   const displayStreamRef = useRef<MediaStream | null>(null);
   const micStreamRef = useRef<MediaStream | null>(null);
   const rafRef = useRef(0);
+  // Composição: a gravação SEMPRE sai do canvas, nunca da stream crua.
+  const compositeCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const compositeVideoRef = useRef<HTMLVideoElement | null>(null);
+  const compositeRafRef = useRef(0);
+  const compositeStreamRef = useRef<MediaStream | null>(null);
+  const audioCtxRef = useRef<AudioContext | null>(null);
+
 
   const recorder = useRecorderCore({ fileNameBase: "gravaai-teleprompter" });
   const { status, elapsed, stopRecording, startRecording, download, reset } = recorder;
