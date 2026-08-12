@@ -794,7 +794,18 @@ export const useEditor = create<EditorState & EditorActions>((set, get) => {
       const chunked = words?.length
         ? chunkCaptionWords(words, preset)
         : chunkSegmentsByText(rawSegments, preset);
-      const base = chunked.length ? chunked : rawSegments;
+      console.info(
+        `[legendas] chunking (${style.blockSize ?? "medio"}): ${rawSegments.length} segmentos + ${
+          words?.length ?? 0
+        } palavras → ${chunked.length} blocos`,
+      );
+      // sem fallback silencioso para "um bloco cobrindo tudo": erro visível
+      if (chunked.length === 0) {
+        throw new Error(
+          "Não foi possível transcrever este áudio — tente novamente ou verifique se há fala audível no vídeo.",
+        );
+      }
+      const base = chunked;
       // legendas vêm do áudio original: aplica os cortes já feitos
       const removed = get().removedRanges;
       const segments = removed.length ? remapCaptionsAfterCuts(base, removed) : base;

@@ -109,10 +109,13 @@ self.onmessage = async (event: MessageEvent<InMsg>) => {
           start: c.timestamp[0] ?? 0,
           end: c.timestamp[1] ?? Math.min(total, (c.timestamp[0] ?? 0) + 0.3),
         }));
-    } catch {
+    } catch (err) {
+      console.warn("[legendas] timestamps por palavra falharam, usando frases:", err);
       words = [];
       result = { text: "" };
     }
+
+    console.info("[legendas] worker: palavras com timestamp =", words.length);
 
     if (words.length === 0) {
       // fallback: timestamps por frase
@@ -160,11 +163,24 @@ self.onmessage = async (event: MessageEvent<InMsg>) => {
         .filter((s) => s.text.trim().length > 0);
     }
 
-    post({
-      type: "done",
-      segments: segments.length ? segments : [{ start: 0, end: total, text: result.text }],
-      words,
-    });
+    // Nunca degradar para "um bloco cobrindo o vídeo inteiro": se não há
+    // segmentos com tempo, o resultado é inválido e vira erro visível.
+    segments = segments.filter(
+      (s) => s.text.trim().length > 0 && Number.isFinite(s.start) && s.end > s.start,
+    );
+
+    console.info("[legendas] worker: segmentos =", segments.length, "| duração áudio =", total.toFixed(2), "s");
+
+    if (segments.length === 0) {
+      post({
+        type: "error",
+        message:
+          "Não foi possível transcrever este áudio — tente novamente ou verifique se há fala audível no vídeo.",
+      });
+      return;
+    }
+
+    post({ type: "done", segments, words });
   } catch (err) {
     post({ type: "error", message: err instanceof Error ? err.message : "Falha na transcrição." });
   }

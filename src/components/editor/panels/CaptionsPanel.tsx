@@ -107,8 +107,8 @@ export function CaptionsPanel() {
     try {
       addCaptionClips(await speechPlaceholders(sourceBlob));
       setTab("lista");
-    } catch {
-      setError("Não consegui analisar o áudio desse vídeo.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Não consegui analisar o áudio desse vídeo.");
     } finally {
       setBusy(false);
     }
