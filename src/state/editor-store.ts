@@ -66,9 +66,12 @@ export interface AppliedPreset {
   presetId: string;
   category: EffectCategory;
   params: PresetParams;
+  /** tempo local (s) da agulha quando o efeito foi aplicado */
+  anchor?: number;
   /** o usuário editou manualmente algum keyframe gerado */
   edited?: boolean;
 }
+
 
 export interface Clip {
   id: string;
@@ -1059,7 +1062,9 @@ export const useEditor = create<EditorState & EditorActions>((set, get) => {
       if (!clip || !def) return;
       const merged: PresetParams = { ...params };
       const instanceId = `fx-${uid()}`;
-      const generated = def.build(clip, merged);
+      const anchor = Math.max(0, Math.min(clip.duration, get().currentTime - clip.startTime));
+      const generated = def.build(clip, merged, anchor);
+
 
       // remove presets anteriores da mesma categoria (e seus keyframes)
       const previous = (clip.effectPresets ?? []).filter((p) => p.category === def.category);
@@ -1078,7 +1083,7 @@ export const useEditor = create<EditorState & EditorActions>((set, get) => {
 
       const presets: AppliedPreset[] = [
         ...(clip.effectPresets ?? []).filter((p) => p.category !== def.category),
-        { id: instanceId, presetId, category: def.category, params: merged },
+        { id: instanceId, presetId, category: def.category, params: merged, anchor },
       ];
       get().updateClip(clipId, { keyframes: map, effectPresets: presets });
       set({ pendingEffectPreset: null, selectedKeyframes: [] });
@@ -1090,7 +1095,7 @@ export const useEditor = create<EditorState & EditorActions>((set, get) => {
       const def = inst ? presetById(inst.presetId) : undefined;
       if (!clip || !inst || !def) return;
       const merged: PresetParams = { ...inst.params, ...params };
-      const generated = def.build(clip, merged);
+      const generated = def.build(clip, merged, inst.anchor ?? 0);
       const map: KeyframeMap = {};
       for (const [prop, keys] of Object.entries(clip.keyframes ?? {})) {
         const rest = keys.filter((k) => k.origin !== instanceId);
