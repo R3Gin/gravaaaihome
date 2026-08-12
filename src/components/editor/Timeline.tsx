@@ -144,8 +144,54 @@ function KeyframeLane({
     window.addEventListener("pointerup", up);
   };
 
+  const laneRef = useRef<HTMLDivElement>(null);
+  const [marquee, setMarquee] = useState<{ x1: number; x2: number } | null>(null);
+
+  /** arrastar no vazio da trilha: caixa de seleção (marquee) */
+  const startMarquee = (e: React.PointerEvent) => {
+    if (e.button !== 0) return;
+    const el = laneRef.current;
+    if (!el) return;
+    e.stopPropagation();
+    const box = el.getBoundingClientRect();
+    const x0 = e.clientX - box.left;
+    const additive = e.shiftKey || e.metaKey || e.ctrlKey;
+    if (!additive) useEditor.getState().clearKeyframeSelection();
+    let x1 = x0;
+    let dragged = false;
+    setMarquee({ x1: x0, x2: x0 });
+
+    const move = (ev: PointerEvent) => {
+      x1 = ev.clientX - box.left;
+      if (Math.abs(x1 - x0) > 3) dragged = true;
+      setMarquee({ x1: Math.min(x0, x1), x2: Math.max(x0, x1) });
+    };
+    const up = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      setMarquee(null);
+      if (!dragged) return;
+      const from = Math.min(x0, x1);
+      const to = Math.max(x0, x1);
+      const hits = keys
+        .filter((k) => {
+          const x = (clip.startTime + k.time) * zoom;
+          return x >= from && x <= to;
+        })
+        .map((k) => ({ prop: prop.key, kfId: k.id }));
+      useEditor.getState().selectKeyframes(hits, additive);
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+  };
+
   return (
-    <div className="relative border-b border-[var(--border)]/60 bg-[var(--surface-2)]" style={{ height: KF_H }}>
+    <div
+      ref={laneRef}
+      onPointerDown={startMarquee}
+      className="relative border-b border-[var(--border)]/60 bg-[var(--surface-2)]"
+      style={{ height: KF_H }}
+    >
       <span
         className="absolute inset-y-0 left-0 border-l-2 border-[var(--brand)]/30"
         style={{ left: clip.startTime * zoom, width: Math.max(4, clip.duration * zoom) }}
@@ -155,21 +201,32 @@ function KeyframeLane({
         const next = keys[i + 1];
         const x1 = (clip.startTime + k.time) * zoom;
         const x2 = (clip.startTime + next.time) * zoom;
+        const bothSel =
+          selected.some((s) => s.kfId === k.id) && selected.some((s) => s.kfId === next.id);
         return (
           <span
             key={`ln-${k.id}`}
-            className="pointer-events-none absolute top-1/2 h-px bg-[var(--brand)]/60"
+            className={cn(
+              "pointer-events-none absolute top-1/2 -translate-y-1/2",
+              bothSel ? "h-[3px] rounded-full bg-amber-300" : "h-px bg-[var(--brand)]/60",
+            )}
             style={{ left: x1, width: Math.max(0, x2 - x1) }}
           />
         );
       })}
+      {marquee ? (
+        <span
+          className="pointer-events-none absolute inset-y-1 border border-amber-300/70 bg-amber-300/15"
+          style={{ left: marquee.x1, width: Math.max(1, marquee.x2 - marquee.x1) }}
+        />
+      ) : null}
       {keys.map((k) => {
         const isSel = selected.some((s) => s.kfId === k.id);
         return (
           <span
             key={k.id}
             data-kf-id={k.id}
-            title={`${prop.label} · ${k.time.toFixed(2)}s · ${k.easing}\nDuplo clique: velocidade do quadro-chave · Alt+arrastar: tangentes`}
+            title={`${prop.label} · ${k.time.toFixed(2)}s · ${k.easing}\nClique: selecionar · Shift/Ctrl+clique: somar à seleção · Duplo clique: velocidade · Alt+arrastar: tangentes`}
             onPointerDown={startDrag(k.id)}
             onDoubleClick={(e) => {
               e.stopPropagation();
@@ -180,14 +237,13 @@ function KeyframeLane({
               onMenu({ x: e.clientX, y: e.clientY, prop: prop.key, kfId: k.id });
             }}
             className={cn(
-              "absolute top-1/2 h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rotate-45 cursor-ew-resize border",
+              "absolute top-1/2 -translate-x-1/2 -translate-y-1/2 rotate-45 cursor-ew-resize border",
               isSel
-                ? "border-white bg-white"
-                : "border-[var(--brand)] bg-[var(--brand)]",
+                ? "z-10 h-3.5 w-3.5 border-2 border-amber-300 bg-white shadow-[0_0_0_2px_rgba(253,224,71,0.45)]"
+                : "h-2.5 w-2.5 border-[var(--brand)] bg-[var(--brand)]",
               k.easing === "hold" && "rounded-none",
-              k.easing === "custom" && "ring-1 ring-sky-300",
+              k.easing === "custom" && !isSel && "ring-1 ring-sky-300",
             )}
-
             style={{ left: (clip.startTime + k.time) * zoom }}
           />
         );
@@ -195,6 +251,7 @@ function KeyframeLane({
     </div>
   );
 }
+
 
 
 /** Waveform do áudio do vídeo, desenhada na faixa "Áudio". */
