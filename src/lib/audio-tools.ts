@@ -30,7 +30,7 @@ async function decode(blob: Blob): Promise<AudioBuffer | null> {
   }
 }
 
-/** RMS por janela de ~30ms, normalizado pelo pico. */
+/** RMS por janela de ~30ms, normalizado pelo pico (fallback local). */
 async function envelope(blob: Blob) {
   const buf = await decode(blob);
   if (!buf) return null;
@@ -52,22 +52,16 @@ async function envelope(blob: Blob) {
   return { values: out.map((v) => v / peak), step: win / rate, duration: buf.duration };
 }
 
-/**
- * @param sensitivity 0 (pouco sensível) a 1 (muito sensível)
- */
-export async function detectSilences(
-  blob: Blob,
+function silencesFromEnvelope(
+  env: { values: number[]; step: number; duration: number },
   sensitivity: number,
-  minDuration = 0.4,
-): Promise<Segment[]> {
-  const env = await envelope(blob);
-  if (!env) return [];
-  // pouco sensível => limiar baixo (só corta silêncio absoluto)
+  minDuration: number,
+): Segment[] {
   const threshold = 0.008 + sensitivity * 0.12;
   const segs: Segment[] = [];
   let runStart: number | null = null;
   for (let i = 0; i < env.values.length; i++) {
-    const quiet = env.values[i] < threshold;
+    const quiet = env.values[i]! < threshold;
     const t = i * env.step;
     if (quiet && runStart === null) runStart = t;
     if (!quiet && runStart !== null) {
@@ -80,6 +74,27 @@ export async function detectSilences(
   }
   return segs;
 }
+
+/**
+ * Detecta silêncios. O cálculo pesado (RMS) roda em Web Worker; a thread
+ * principal só decodifica o áudio e recebe os intervalos prontos.
+ * @param sensitivity 0 (pouco sensível) a 1 (muito sensível)
+ */
+export async function detectSilences(
+  blob: Blob,
+  sensitivity: number,
+  minDuration = 0.4,
+): Promise<Segment[]> {
+  const buf = await decode(blob);
+  if (!buf) return [];
+  const copy = buf.getChannelData(0).slice();
+  const res = await silencesInWorker(copy, buf.sampleRate, sensitivity, minDuration);
+  if (res) return res.segments;
+  const env = await envelope(blob);
+  if (!env) return [];
+  return silencesFromEnvelope(env, sensitivity, minDuration);
+}
+
 
 /** Trechos com fala = complemento dos silêncios, fatiados em blocos curtos. */
 export async function detectSpeechBlocks(
