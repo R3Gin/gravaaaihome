@@ -237,35 +237,42 @@ function AudioWaveform({
     };
   }, [sourceBlob]);
 
+  /* Só a janela visível vai para o canvas: em vídeos longos a largura total
+     estoura o limite de pixels do navegador e come memória à toa. */
+  const winLeft = Math.max(0, Math.min(viewLeft, Math.max(0, width - 1)));
+  const winWidth = Math.max(1, Math.min(viewWidth || 1200, width - winLeft));
+
   const draw = useCallback(() => {
     const canvas = canvasRef.current;
     if (!canvas || !peaks) return;
     const dpr = window.devicePixelRatio || 1;
     const h = LANE_H - 10;
-    canvas.width = Math.max(1, Math.floor(width * dpr));
+    canvas.width = Math.max(1, Math.floor(winWidth * dpr));
     canvas.height = Math.floor(h * dpr);
-    canvas.style.width = `${width}px`;
+    canvas.style.width = `${winWidth}px`;
     canvas.style.height = `${h}px`;
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
     ctx.scale(dpr, dpr);
-    ctx.clearRect(0, 0, width, h);
+    ctx.clearRect(0, 0, winWidth, h);
     ctx.fillStyle = "rgba(16,185,129,0.75)";
 
     const mid = h / 2;
     for (const clip of videoClips) {
-      const x0 = clip.startTime * zoom;
+      const x0 = clip.startTime * zoom - winLeft;
       const w = clip.duration * zoom;
-      if (w < 1) continue;
+      if (w < 1 || x0 + w < 0 || x0 > winWidth) continue;
       const cols = Math.max(1, Math.floor(w));
       for (let i = 0; i < cols; i++) {
+        const x = x0 + i;
+        if (x < 0 || x > winWidth) continue;
         const t = clip.sourceInStart + ((i / cols) * (clip.sourceInEnd - clip.sourceInStart));
         const idx = Math.min(peaks.data.length - 1, Math.max(0, Math.round((t / peaks.duration) * peaks.data.length)));
         const amp = (peaks.data[idx] ?? 0) * (mid - 2);
-        ctx.fillRect(x0 + i, mid - amp, 1, Math.max(1, amp * 2));
+        ctx.fillRect(x, mid - amp, 1, Math.max(1, amp * 2));
       }
     }
-  }, [peaks, videoClips, width, zoom]);
+  }, [peaks, videoClips, winLeft, winWidth, zoom]);
 
   useEffect(() => {
     draw();
@@ -288,10 +295,11 @@ function AudioWaveform({
           Analisando áudio…
         </span>
       ) : null}
-      <canvas ref={canvasRef} className="block" />
+      <canvas ref={canvasRef} className="block absolute" style={{ left: winLeft }} />
     </div>
   );
 }
+
 
 
 function ClipBox({ clip, track }: { clip: Clip; track: Track }) {
