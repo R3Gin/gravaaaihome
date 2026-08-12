@@ -384,6 +384,15 @@ export function ScreenRecorder() {
         systemAudio: screenAudio ? "include" : "exclude",
       });
       displayStreamRef.current = stream;
+      // Abre a JANELA REAL do sistema (Document PiP) imediatamente após o
+      // picker resolver — é aqui que ainda existe a ativação de usuário
+      // exigida por requestWindow(). Qualquer await antes disso pode fazer
+      // o navegador recusar e cair no painel fixo (fallback).
+      try {
+        await panelRef.current?.openPip();
+      } catch {
+        /* negado ou sem suporte: fallback é o painel fixo na página */
+      }
       {
         const st = stream.getVideoTracks()[0]?.getSettings() as
           | (MediaTrackSettings & { displaySurface?: string })
