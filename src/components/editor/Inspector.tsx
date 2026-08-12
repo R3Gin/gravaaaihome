@@ -13,6 +13,7 @@ import {
   type PresetId,
 } from "@/lib/text-presets";
 import { cn } from "@/lib/utils";
+import { KeyframeEditor } from "./KeyframeEditor";
 
 
 function Row({ label, children }: { label: string; children: React.ReactNode }) {
