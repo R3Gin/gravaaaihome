@@ -71,11 +71,35 @@ export function AudioPanel() {
       return;
     }
     if (!sourceBlob) return;
-    setPlayingMode(mode);
     const start = clip.sourceInStart;
     const end = Math.min(clip.sourceInEnd, start + 6);
-    stopRef.current = await playAudioPreview(sourceBlob, start, end, mode === "clean");
-    window.setTimeout(() => setPlayingMode(null), (end - start) * 1000 + 200);
+
+    if (mode === "raw") {
+      setPlayingMode("raw");
+      stopRef.current = await playAudioPreview(sourceBlob, start, end, false);
+      window.setTimeout(() => setPlayingMode(null), (end - start) * 1000 + 200);
+      return;
+    }
+
+    // "Depois": RNNoise (WASM) em Web Worker, carregado sob demanda.
+    setNotice(null);
+    setProgress(0);
+    try {
+      const samples = await renderMono48k(sourceBlob, start, end);
+      if (!samples) throw new Error("Não foi possível ler o áudio do clipe.");
+      const clean = await denoiseSamplesRnnoise(samples, 48000, (p) => setProgress(p));
+      setProgress(null);
+      setPlayingMode("clean");
+      stopRef.current = playSamples(clean, 48000);
+      window.setTimeout(() => setPlayingMode(null), (end - start) * 1000 + 200);
+    } catch (err) {
+      console.warn("[rnnoise] fallback para filtro simples:", err);
+      setProgress(null);
+      setNotice("Versão avançada indisponível — usando o filtro simples.");
+      setPlayingMode("clean");
+      stopRef.current = await playAudioPreview(sourceBlob, start, end, true);
+      window.setTimeout(() => setPlayingMode(null), (end - start) * 1000 + 200);
+    }
   };
 
   const volume = clip.volume ?? 1;
