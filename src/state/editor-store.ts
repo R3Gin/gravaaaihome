@@ -614,6 +614,40 @@ export const useEditor = create<EditorState & EditorActions>((set, get) => {
       set({ selectedClipId: clip.id });
     },
 
+    addAnnotationClip: (annotation) => {
+      const { currentTime, annotationDuration, duration } = get();
+      const dur = Math.max(MIN_CLIP, annotationDuration);
+      const clip: Clip = {
+        id: uid(),
+        trackId: OVERLAY_TRACK,
+        type: "overlay",
+        sourceUrl: "",
+        startTime: currentTime,
+        duration: Math.max(MIN_CLIP, Math.min(dur, Math.max(dur, duration - currentTime))),
+        sourceInStart: 0,
+        sourceInEnd: dur,
+        overlayKind: "annotation",
+        annotation,
+      };
+      write((tracks) =>
+        mapTracks(tracks, (clips, track) =>
+          track.id === OVERLAY_TRACK ? [...clips, clip] : clips,
+        ),
+      );
+      set({ selectedClipId: clip.id });
+    },
+
+    setAnnotationTool: (annotationTool) => set({ annotationTool }),
+
+    setAnnotationStyle: (patch) =>
+      set((s) => ({
+        annotationColor: patch.color ?? s.annotationColor,
+        annotationSize: patch.size ?? s.annotationSize,
+        annotationFill: patch.fill ?? s.annotationFill,
+        annotationDuration: patch.duration ?? s.annotationDuration,
+      })),
+
+
     addZoomKeyframe: (clipId, timelineTime) => {
       const clip = findClip(get().tracks, clipId);
       if (!clip) return;
