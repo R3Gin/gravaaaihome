@@ -7,6 +7,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { getProcessedMicStream } from "@/lib/mic-audio";
 import { useNavigate } from "@tanstack/react-router";
 import {
   AlertTriangle,

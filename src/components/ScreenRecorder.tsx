@@ -14,6 +14,7 @@ import {
 } from "./CameraPip";
 import { CameraSettingsDialog } from "./CameraSettingsDialog";
 import { Button } from "@/components/ui/button";
+import { getProcessedMicStream } from "@/lib/mic-audio";
 
 function GearIcon() {
   return (
