@@ -38,7 +38,7 @@ function ensure(): Worker | null {
 }
 
 function run<T extends AnalysisResponse>(
-  payload: Omit<Extract<AnalysisRequest, { type: T["type"] }>, "id">,
+  payload: Omit<AnalysisRequest, "id">,
 ): Promise<T | null> {
   const w = ensure();
   if (!w) return Promise.resolve(null);
@@ -50,6 +50,7 @@ function run<T extends AnalysisResponse>(
     w.postMessage(msg, [msg.channel.buffer]);
   });
 }
+
 
 export function silencesInWorker(
   channel: Float32Array,
