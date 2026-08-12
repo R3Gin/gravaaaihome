@@ -384,6 +384,15 @@ export function ScreenRecorder() {
         systemAudio: screenAudio ? "include" : "exclude",
       });
       displayStreamRef.current = stream;
+      // Abre a JANELA REAL do sistema (Document PiP) imediatamente após o
+      // picker resolver — é aqui que ainda existe a ativação de usuário
+      // exigida por requestWindow(). Qualquer await antes disso pode fazer
+      // o navegador recusar e cair no painel fixo (fallback).
+      try {
+        await panelRef.current?.openPip();
+      } catch {
+        /* negado ou sem suporte: fallback é o painel fixo na página */
+      }
       {
         const st = stream.getVideoTracks()[0]?.getSettings() as
           | (MediaTrackSettings & { displaySurface?: string })
@@ -415,9 +424,8 @@ export function ScreenRecorder() {
         }
       }
       setStatus("capturing");
-      // Abre a janela flutuante do SO automaticamente, ainda dentro da
-      // ativação de usuário gerada pela confirmação do picker de captura.
-      // O painel precisa estar montado: aguardamos um frame de render.
+      // Segunda tentativa caso a primeira (logo após o picker) tenha sido
+      // recusada — ainda dentro da mesma ativação de usuário.
       requestAnimationFrame(() => {
         panelRef.current?.openPip().catch(() => {
           /* negado ou sem suporte: fallback é o painel fixo na página */
