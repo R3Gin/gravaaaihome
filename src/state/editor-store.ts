@@ -1062,7 +1062,9 @@ export const useEditor = create<EditorState & EditorActions>((set, get) => {
       if (!clip || !def) return;
       const merged: PresetParams = { ...params };
       const instanceId = `fx-${uid()}`;
-      const generated = def.build(clip, merged);
+      const anchor = Math.max(0, Math.min(clip.duration, get().currentTime - clip.startTime));
+      const generated = def.build(clip, merged, anchor);
+
 
       // remove presets anteriores da mesma categoria (e seus keyframes)
       const previous = (clip.effectPresets ?? []).filter((p) => p.category === def.category);
