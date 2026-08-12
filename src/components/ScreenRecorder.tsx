@@ -25,9 +25,12 @@ function GearIcon() {
 }
 import {
   DrawingCanvas,
-  drawStrokes,
+  drawAnnotations,
+  applyZoomTransform,
+  useAnnotationShortcuts,
   useDrawing,
 } from "./DrawingLayer";
+
 import {
   FloatingRecorderPanel,
   type FloatingRecorderPanelHandle,
