@@ -392,6 +392,16 @@ export function ScreenRecorder() {
     }
     downloadBlobRef.current = null;
     rawRecordingSizeRef.current = 0;
+    // Abre a JANELA REAL do sistema (Document PiP) ANTES de qualquer await —
+    // é o único ponto onde a ativação de usuário do clique ainda é válida
+    // com certeza. A janela abre "vazia" e é populada em seguida.
+    let pipOpened = false;
+    try {
+      await panelRef.current?.openPip();
+      pipOpened = true;
+    } catch {
+      /* negado ou sem suporte: fallback é o primeiro clique seguinte */
+    }
     try {
       const stream = await navigator.mediaDevices.getDisplayMedia({
         video: true,
@@ -404,15 +414,14 @@ export function ScreenRecorder() {
         systemAudio: screenAudio ? "include" : "exclude",
       });
       displayStreamRef.current = stream;
-      // Abre a JANELA REAL do sistema (Document PiP) imediatamente após o
-      // picker resolver — é aqui que ainda existe a ativação de usuário
-      // exigida por requestWindow(). Qualquer await antes disso pode fazer
-      // o navegador recusar e cair no painel fixo (fallback).
-      try {
-        await panelRef.current?.openPip();
-      } catch {
-        /* negado ou sem suporte: fallback é o painel fixo na página */
+      if (!pipOpened) {
+        try {
+          await panelRef.current?.openPip();
+        } catch {
+          /* fallback: primeiro clique seguinte */
+        }
       }
+
       {
         const st = stream.getVideoTracks()[0]?.getSettings() as
           | (MediaTrackSettings & { displaySurface?: string })
