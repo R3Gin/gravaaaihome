@@ -129,6 +129,7 @@ export const FloatingRecorderPanel = forwardRef<
 
   const openPip = useCallback(async () => {
     if (!supportsDocumentPip()) return;
+    closedByUserRef.current = false;
     // Reaproveita a janela existente do navegador, se houver.
     // @ts-expect-error - experimental API
     const existing: PipWindow | null = window.documentPictureInPicture?.window ?? null;
