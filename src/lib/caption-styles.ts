@@ -141,3 +141,80 @@ export function toSeconds(value: number | string | null | undefined): number {
 
 /** Margem para evitar piscada na troca de segmentos. */
 export const CAPTION_END_BUFFER = 0.05;
+
+/* ------------------------------------------------------------------ */
+/* Versão numérica das animações, para a pipeline única do <canvas>.   */
+/* ------------------------------------------------------------------ */
+
+export interface WordFx {
+  text: string;
+  alpha: number;
+  scale: number;
+  /** deslocamento vertical em "em" */
+  dy: number;
+  /** rotação em graus */
+  rotate: number;
+  color: string;
+  glow: boolean;
+}
+
+const fxCache = new Map<string, WordFx[]>();
+
+export function captionWordFx(
+  anim: CaptionAnim,
+  text: string,
+  progress: number,
+  opts: { highlight: string; color: string; wordByWord: boolean },
+): WordFx[] {
+  const q = quantizeProgress(progress);
+  const key = `fx|${anim}|${opts.color}|${opts.highlight}|${opts.wordByWord ? 1 : 0}|${q.toFixed(4)}|${text}`;
+  const hit = fxCache.get(key);
+  if (hit) return hit;
+
+  const words = text.trim().split(/\s+/).filter(Boolean);
+  const n = Math.max(1, words.length);
+
+  const out: WordFx[] = words.map((w, i) => {
+    const start = opts.wordByWord ? (i / n) * 0.55 : 0;
+    const local = easeOut(clamp01((q - start) / 0.28));
+    const activeIndex = Math.floor(q * n);
+    const active = i === activeIndex;
+    const passed = i <= activeIndex;
+    const base: WordFx = {
+      text: w,
+      alpha: 1,
+      scale: 1,
+      dy: 0,
+      rotate: 0,
+      color: opts.color,
+      glow: false,
+    };
+    switch (anim) {
+      case "karaoke":
+        return { ...base, color: passed ? opts.highlight : opts.color, scale: active ? 1.08 : 1 };
+      case "slideUp":
+        return { ...base, alpha: local, dy: (1 - local) * 0.5 };
+      case "glow":
+        return {
+          ...base,
+          alpha: local,
+          color: active ? opts.highlight : opts.color,
+          glow: active,
+        };
+      case "shakeDrop":
+        return {
+          ...base,
+          alpha: local,
+          dy: (local - 1) * 0.6,
+          rotate: local < 1 ? Math.sin(local * 28) * (1 - local) * 6 : 0,
+        };
+      case "wordPop":
+      default:
+        return { ...base, alpha: local, scale: local < 1 ? 0.5 + local * 0.62 : 1 };
+    }
+  });
+
+  if (fxCache.size > CACHE_MAX) fxCache.clear();
+  fxCache.set(key, out);
+  return out;
+}
