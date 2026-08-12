@@ -251,8 +251,16 @@ export function TranscriptionTool() {
         </header>
 
         {error ? (
-          <div className="mb-4 rounded-lg border border-[var(--brand)]/40 bg-[var(--brand)]/10 px-4 py-3 text-sm text-[var(--brand)]">
-            {error}
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-[var(--brand)]/40 bg-[var(--brand)]/10 px-4 py-3 text-sm text-[var(--brand)]">
+            <span>{error}</span>
+            {lastFileRef.current && !working ? (
+              <button
+                onClick={retry}
+                className="rounded-lg bg-[var(--brand)] px-3 py-1.5 text-xs font-semibold text-white"
+              >
+                Tentar novamente
+              </button>
+            ) : null}
           </div>
         ) : null}
 
@@ -293,21 +301,52 @@ export function TranscriptionTool() {
 
         {working ? (
           <div className="rounded-2xl border border-white/10 bg-[var(--surface)] p-6">
-            <div className="mb-3 flex items-center gap-2 text-sm">
-              <Loader2 className="h-4 w-4 animate-spin text-[var(--brand)]" />
-              {stage || "Processando…"}
+            <div className="mb-3 flex items-center justify-between gap-2 text-sm">
+              <span className="flex items-center gap-2">
+                <Loader2 className="h-4 w-4 animate-spin text-[var(--brand)]" />
+                {PHASE_LABEL[phase]}
+              </span>
+              <span className="font-mono text-xs text-[var(--muted-foreground)]">
+                {Math.round(progress * 100)}%
+              </span>
             </div>
             <div className="h-2 w-full overflow-hidden rounded-full bg-white/10">
               <div
                 className="h-full rounded-full bg-[var(--brand)] transition-[width]"
-                style={{ width: progress > 0 ? `${Math.round(progress * 100)}%` : "35%" }}
+                style={{ width: `${Math.max(2, Math.round(progress * 100))}%` }}
               />
             </div>
-            <p className="mt-2 text-xs text-[var(--muted-foreground)]">
-              Pode levar de alguns segundos a poucos minutos, dependendo do tamanho e da sua máquina.
-            </p>
+            {stalled ? (
+              <div className="mt-3 rounded-lg border border-[var(--brand)]/40 bg-[var(--brand)]/10 px-3 py-2 text-xs text-[var(--brand)]">
+                Isso está demorando mais que o esperado — seu navegador pode não suportar aceleração
+                por GPU. Deseja continuar mesmo assim?
+                <div className="mt-2 flex gap-2">
+                  <button
+                    onClick={() => {
+                      lastTickRef.current = Date.now();
+                      setStalled(false);
+                    }}
+                    className="rounded-md bg-[var(--brand)] px-3 py-1 font-semibold text-white"
+                  >
+                    Continuar
+                  </button>
+                  <button
+                    onClick={() => window.location.reload()}
+                    className="rounded-md bg-white/10 px-3 py-1 text-[var(--foreground)]"
+                  >
+                    Cancelar
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <p className="mt-2 text-xs text-[var(--muted-foreground)]">
+                Pode levar de alguns segundos a poucos minutos, dependendo do tamanho e da sua
+                máquina.
+              </p>
+            )}
           </div>
         ) : null}
+
 
         {segments && !working ? (
           <div className="space-y-5">
