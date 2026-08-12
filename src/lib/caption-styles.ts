@@ -6,28 +6,57 @@ export type CaptionAnim =
   | "slideUp"
   | "typewriter"
   | "glow"
-  | "shakeDrop";
+  | "shakeDrop"
+  | "bounce"
+  | "colorSweep"
+  | "popIn"
+  // estáticos
+  | "none"
+  | "simpleFade"
+  | "solidBox"
+  | "minimalUnderline";
 
 export const CAPTION_ANIMS: {
   id: CaptionAnim;
   label: string;
   hint: string;
+  kind: "animated" | "static";
   /** classe de animação CSS usada só na miniatura de preview */
   previewClass: string;
 }[] = [
-  { id: "wordPop", label: "Word Pop", hint: "Palavras entram com quique", previewClass: "cap-prev-pop" },
-  { id: "karaoke", label: "Karaokê", hint: "Realce palavra por palavra", previewClass: "cap-prev-karaoke" },
-  { id: "slideUp", label: "Slide Up", hint: "Sobe com fade", previewClass: "cap-prev-slide" },
-  { id: "typewriter", label: "Máquina", hint: "Letra por letra", previewClass: "cap-prev-type" },
-  { id: "glow", label: "Glow Flash", hint: "Brilho pulsante", previewClass: "cap-prev-glow" },
-  { id: "shakeDrop", label: "Shake & Drop", hint: "Cai tremendo", previewClass: "cap-prev-shake" },
+  { id: "wordPop", label: "Word Pop", hint: "Palavras entram com quique", kind: "animated", previewClass: "cap-prev-pop" },
+  { id: "karaoke", label: "Karaokê", hint: "Realce palavra por palavra", kind: "animated", previewClass: "cap-prev-karaoke" },
+  { id: "slideUp", label: "Slide Up", hint: "Sobe com fade", kind: "animated", previewClass: "cap-prev-slide" },
+  { id: "typewriter", label: "Máquina", hint: "Letra por letra", kind: "animated", previewClass: "cap-prev-type" },
+  { id: "glow", label: "Glow Flash", hint: "Brilho pulsante", kind: "animated", previewClass: "cap-prev-glow" },
+  { id: "shakeDrop", label: "Shake & Drop", hint: "Cai tremendo", kind: "animated", previewClass: "cap-prev-shake" },
+  { id: "bounce", label: "Bounce", hint: "Palavras saltam com mola", kind: "animated", previewClass: "cap-prev-bounce" },
+  { id: "colorSweep", label: "Color Sweep", hint: "Cor varre da esquerda p/ direita", kind: "animated", previewClass: "cap-prev-sweep" },
+  { id: "popIn", label: "Pop In", hint: "Bloco entra com leve escala", kind: "animated", previewClass: "cap-prev-popin" },
+  { id: "none", label: "Sem efeito", hint: "Texto fixo, sem animação", kind: "static", previewClass: "cap-prev-none" },
+  { id: "simpleFade", label: "Fade simples", hint: "Bloco inteiro com fade suave", kind: "static", previewClass: "cap-prev-fade" },
+  { id: "solidBox", label: "Caixa sólida", hint: "Fundo opaco, estilo TV", kind: "static", previewClass: "cap-prev-solid" },
+  { id: "minimalUnderline", label: "Sublinhado", hint: "Linha fina sob o texto", kind: "static", previewClass: "cap-prev-underline" },
 ];
+
+export const STATIC_ANIMS: CaptionAnim[] = ["none", "simpleFade", "solidBox", "minimalUnderline"];
+export const isStaticAnim = (a: CaptionAnim) => STATIC_ANIMS.includes(a);
 
 /** duração da troca entre blocos de legenda (ms) */
 export const CAPTION_SWITCH_MS = 110;
 
 const easeOut = (t: number) => 1 - Math.pow(1 - t, 3);
 const clamp01 = (v: number) => Math.max(0, Math.min(1, v));
+
+/** alpha do bloco inteiro (usado pelos estilos estáticos) */
+export function captionBlockAlpha(anim: CaptionAnim, progress: number) {
+  const p = clamp01(progress);
+  if (anim !== "simpleFade") return 1;
+  const inA = clamp01(p / 0.12);
+  const outA = clamp01((1 - p) / 0.12);
+  return Math.min(inA, outA);
+}
+
 
 export interface WordRender {
   text: string;
