@@ -1,6 +1,5 @@
 import { useState } from "react";
 import { ChevronLeft, ChevronRight, Diamond, Plus } from "lucide-react";
-import { cn } from "@/lib/utils";
 import { EffectsSimplePanel } from "@/components/editor/panels/EffectsSimplePanel";
 import { findClip, useEditor, type Clip } from "@/state/editor-store";
 import {
