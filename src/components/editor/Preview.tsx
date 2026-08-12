@@ -48,31 +48,8 @@ export function Preview({ videoRef }: Props) {
   const pendingEffectPreset = useEditor((s) => s.pendingEffectPreset);
   const setPendingEffectPreset = useEditor((s) => s.setPendingEffectPreset);
 
-  /* Telemetria temporária para diagnosticar transições entre clipes. */
-  useEffect(() => {
-    const video = videoRef.current;
-    if (!video) return;
-    const report = (event: Event) => {
-      console.debug("[editor-playback] video-event", {
-        event: event.type,
-        currentTime: video.currentTime,
-        paused: video.paused,
-        seeking: video.seeking,
-        readyState: video.readyState,
-        src: video.currentSrc || video.getAttribute("src"),
-      });
-    };
-    const events = ["play", "playing", "pause", "seeking", "seeked", "waiting", "stalled", "ended"];
-    events.forEach((event) => video.addEventListener(event, report));
-    console.debug("[editor-playback] video-mounted", {
-      element: video,
-      src: video.currentSrc || video.getAttribute("src"),
-    });
-    return () => {
-      events.forEach((event) => video.removeEventListener(event, report));
-      console.debug("[editor-playback] video-unmounted", { element: video });
-    };
-  }, [sourceUrl, videoRef]);
+
+
 
   /* Esc cancela o modo "clique no ponto" dos presets de zoom */
   useEffect(() => {
