@@ -387,7 +387,11 @@ function ClipBox({ clip, track }: { clip: Clip; track: Track }) {
       }}
     >
       <span className="pointer-events-none truncate">
-        {clip.type === "text" ? clip.textContent : clip.overlayKind ?? track.label}
+        {clip.type === "text"
+          ? clip.textContent
+          : clip.overlayKind === "annotation"
+            ? (clip.annotation?.tool ?? "anotação")
+            : (clip.overlayKind ?? track.label)}
       </span>
       {selected && tool !== "blade" ? (
         <>
