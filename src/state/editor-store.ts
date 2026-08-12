@@ -66,9 +66,12 @@ export interface AppliedPreset {
   presetId: string;
   category: EffectCategory;
   params: PresetParams;
+  /** tempo local (s) da agulha quando o efeito foi aplicado */
+  anchor?: number;
   /** o usuário editou manualmente algum keyframe gerado */
   edited?: boolean;
 }
+
 
 export interface Clip {
   id: string;
