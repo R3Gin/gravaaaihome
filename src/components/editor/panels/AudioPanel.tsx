@@ -134,7 +134,7 @@ export function AudioPanel() {
             <button
               key={mode}
               onClick={() => void preview(mode)}
-              disabled={!sourceBlob}
+              disabled={!sourceBlob || progress !== null}
               className={cn(
                 "flex flex-1 items-center justify-center gap-1.5 rounded-md border px-2 py-1.5 text-[11px] font-semibold disabled:opacity-40",
                 playingMode === mode
@@ -147,9 +147,23 @@ export function AudioPanel() {
             </button>
           ))}
         </div>
+        {progress !== null && (
+          <div className="space-y-1">
+            <p className="text-[10px] text-[var(--muted-foreground)]">
+              Carregando processador de áudio… {Math.round(progress * 100)}%
+            </p>
+            <div className="h-1 w-full overflow-hidden rounded-full bg-[var(--border)]">
+              <div
+                className="h-full bg-[var(--brand)] transition-[width]"
+                style={{ width: `${Math.max(4, progress * 100)}%` }}
+              />
+            </div>
+          </div>
+        )}
+        {notice && <p className="text-[10px] text-[var(--brand)]">{notice}</p>}
         <p className="text-[10px] leading-relaxed text-[var(--muted-foreground)]">
-          Prévia dos primeiros 6 segundos do clipe. Na exportação é aplicado filtro passa-alta,
-          redução de ruído e normalização.
+          Prévia dos primeiros 6 segundos com RNNoise (IA local, roda no seu navegador). Na
+          exportação é aplicada redução de ruído e normalização.
         </p>
       </div>
 
