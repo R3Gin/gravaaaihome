@@ -453,13 +453,6 @@ export function ScreenRecorder() {
         }
       }
       setStatus("capturing");
-      // Segunda tentativa caso a primeira (logo após o picker) tenha sido
-      // recusada — ainda dentro da mesma ativação de usuário.
-      requestAnimationFrame(() => {
-        panelRef.current?.openPip().catch(() => {
-          /* negado ou sem suporte: fallback é o painel fixo na página */
-        });
-      });
       // Devolve o foco para a janela/aba do Gravaai assim que o usuário
       // confirma a fonte no picker. O navegador pode ter trocado o foco do
       // SO para a janela escolhida ao compartilhar "janela"; window.focus()
@@ -477,10 +470,17 @@ export function ScreenRecorder() {
       [0, 100, 300, 600].forEach((ms) => setTimeout(tryFocus, ms));
     } catch (err) {
       console.error(err);
+      // Cancelou o picker ou falhou: fecha a janela flutuante já aberta.
+      try {
+        panelRef.current?.closePip();
+      } catch {
+        /* noop */
+      }
       setError("Não foi possível iniciar a captura. Verifique as permissões e tente novamente.");
       stopEverything();
       setStatus("idle");
     }
+
   }, [screenAudio, micAudio, attachScreenAudio, attachMic, rebuildOutputStream, stopEverything, downloadUrl, startComposite]);
 
   // React to toggle changes while capturing/recording.
