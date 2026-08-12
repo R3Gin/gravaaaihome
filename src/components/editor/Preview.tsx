@@ -209,21 +209,14 @@ export function Preview({ videoRef }: Props) {
 
     /** Salta para o próximo clipe da timeline sem pausar o elemento <video>. */
     const jumpTo = (next: (typeof clips0)[number]) => {
-      console.debug("[editor-playback] clip-transition", {
-        fromClipId: activeId,
-        toClipId: next.id,
-        sourceUrlUnchanged: next.sourceUrl === v.getAttribute("src"),
-        sourceTimeBefore: v.currentTime,
-        sourceTimeTarget: next.sourceInStart,
-        pausedBefore: v.paused,
-        seekingBefore: v.seeking,
-        readyState: v.readyState,
-        operation: "set playbackRate + set currentTime + sync UI; play only if paused",
-      });
       activeId = next.id;
-      diagnosticActiveClipRef.current = next.id;
-      v.playbackRate = next.speed ?? 1;
-      v.currentTime = next.sourceInStart;
+      const rate = next.speed ?? 1;
+      if (v.playbackRate !== rate) v.playbackRate = rate;
+      // Só reposiciona o arquivo quando o próximo clipe NÃO é contíguo:
+      // trechos contíguos continuam tocando sem seek algum.
+      if (Math.abs(v.currentTime - next.sourceInStart) > 0.06) {
+        v.currentTime = next.sourceInStart;
+      }
       setCurrentTime(next.startTime + 0.001);
       if (v.paused) void v.play().catch(() => undefined);
     };
@@ -242,22 +235,11 @@ export function Preview({ videoRef }: Props) {
         clipAt(s.tracks, "video", s.currentTime) ??
         clips.find((c) => c.startTime + c.duration > s.currentTime) ??
         clips[clips.length - 1]!;
-      if (diagnosticActiveClipRef.current !== clip.id) {
-        console.debug("[editor-playback] active-clip-derived", {
-          previousClipId: diagnosticActiveClipRef.current,
-          activeClipId: clip.id,
-          sourceUrl: clip.sourceUrl,
-          sourceInStart: clip.sourceInStart,
-          sourceInEnd: clip.sourceInEnd,
-          videoCurrentTime: v.currentTime,
-        });
-        diagnosticActiveClipRef.current = clip.id;
-      }
       activeId = clip.id;
       const speed = clip.speed ?? 1;
       if (v.playbackRate !== speed) v.playbackRate = speed;
       // o navegador pode pausar por buffering/seek: retomamos sempre
-      if (v.paused) void v.play().catch(() => undefined);
+      if (v.paused && !v.seeking) void v.play().catch(() => undefined);
 
       const reachedEnd = v.currentTime >= clip.sourceInEnd - 0.02 || (v.ended && !v.seeking);
       if (reachedEnd) {
@@ -272,6 +254,7 @@ export function Preview({ videoRef }: Props) {
       }
       setCurrentTime(clip.startTime + (v.currentTime - clip.sourceInStart) / speed);
     };
+
     rafRef.current = requestAnimationFrame(tick);
     return () => {
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
