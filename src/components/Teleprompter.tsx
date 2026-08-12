@@ -8,6 +8,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { getProcessedMicStream } from "@/lib/mic-audio";
+import { denoiseMicStream } from "@/lib/rnnoise";
 import { useNavigate } from "@tanstack/react-router";
 import {
   AlertTriangle,
@@ -220,6 +221,12 @@ export function Teleprompter() {
       try {
         mic = await getProcessedMicStream();
         micStreamRef.current = mic;
+        try {
+          const denoised = await denoiseMicStream(mic);
+          mic = denoised.stream;
+        } catch {
+          /* segue com o microfone bruto */
+        }
       } catch {
         /* segue sem microfone */
       }

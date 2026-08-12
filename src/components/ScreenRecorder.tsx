@@ -15,6 +15,7 @@ import {
 import { CameraSettingsDialog } from "./CameraSettingsDialog";
 import { Button } from "@/components/ui/button";
 import { getProcessedMicStream } from "@/lib/mic-audio";
+import { connectDenoise } from "@/lib/rnnoise";
 
 function GearIcon() {
   return (
@@ -240,7 +241,11 @@ export function ScreenRecorder() {
         window.AudioContext ??
         (window as unknown as { webkitAudioContext: typeof AudioContext })
           .webkitAudioContext;
-      audioCtxRef.current = new Ctx();
+      try {
+        audioCtxRef.current = new Ctx({ sampleRate: 48000 });
+      } catch {
+        audioCtxRef.current = new Ctx();
+      }
       destRef.current = audioCtxRef.current.createMediaStreamDestination();
     }
     return { ctx: audioCtxRef.current!, dest: destRef.current! };
@@ -279,7 +284,10 @@ export function ScreenRecorder() {
     const src = ctx.createMediaStreamSource(stream);
     const gain = ctx.createGain();
     gain.gain.value = 0.7;
-    src.connect(gain).connect(dest);
+    // Segunda camada de tratamento: RNNoise (WASM) — fallback: filtro simples.
+    const { output, mode } = await connectDenoise(ctx, src);
+    console.info("[rnnoise] microfone da gravação:", mode);
+    output.connect(gain).connect(dest);
     micSourceRef.current = src;
     micGainRef.current = gain;
   }, [ensureAudioContext]);

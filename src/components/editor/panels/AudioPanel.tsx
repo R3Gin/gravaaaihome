@@ -1,7 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 import { Pause, Play } from "lucide-react";
 import { findClip, useEditor } from "@/state/editor-store";
-import { playAudioPreview } from "@/lib/audio-tools";
+import {
+  denoiseSamplesRnnoise,
+  playAudioPreview,
+  playSamples,
+  renderMono48k,
+} from "@/lib/audio-tools";
 import { cn } from "@/lib/utils";
 
 function Slider({
@@ -45,6 +50,8 @@ export function AudioPanel() {
   const updateClip = useEditor((s) => s.updateClip);
   const clip = findClip(tracks, selectedClipId);
   const [playingMode, setPlayingMode] = useState<"raw" | "clean" | null>(null);
+  const [progress, setProgress] = useState<number | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const stopRef = useRef<(() => void) | null>(null);
 
   useEffect(() => () => stopRef.current?.(), []);
@@ -64,11 +71,35 @@ export function AudioPanel() {
       return;
     }
     if (!sourceBlob) return;
-    setPlayingMode(mode);
     const start = clip.sourceInStart;
     const end = Math.min(clip.sourceInEnd, start + 6);
-    stopRef.current = await playAudioPreview(sourceBlob, start, end, mode === "clean");
-    window.setTimeout(() => setPlayingMode(null), (end - start) * 1000 + 200);
+
+    if (mode === "raw") {
+      setPlayingMode("raw");
+      stopRef.current = await playAudioPreview(sourceBlob, start, end, false);
+      window.setTimeout(() => setPlayingMode(null), (end - start) * 1000 + 200);
+      return;
+    }
+
+    // "Depois": RNNoise (WASM) em Web Worker, carregado sob demanda.
+    setNotice(null);
+    setProgress(0);
+    try {
+      const samples = await renderMono48k(sourceBlob, start, end);
+      if (!samples) throw new Error("Não foi possível ler o áudio do clipe.");
+      const clean = await denoiseSamplesRnnoise(samples, 48000, (p) => setProgress(p));
+      setProgress(null);
+      setPlayingMode("clean");
+      stopRef.current = playSamples(clean, 48000);
+      window.setTimeout(() => setPlayingMode(null), (end - start) * 1000 + 200);
+    } catch (err) {
+      console.warn("[rnnoise] fallback para filtro simples:", err);
+      setProgress(null);
+      setNotice("Versão avançada indisponível — usando o filtro simples.");
+      setPlayingMode("clean");
+      stopRef.current = await playAudioPreview(sourceBlob, start, end, true);
+      window.setTimeout(() => setPlayingMode(null), (end - start) * 1000 + 200);
+    }
   };
 
   const volume = clip.volume ?? 1;
@@ -103,7 +134,7 @@ export function AudioPanel() {
             <button
               key={mode}
               onClick={() => void preview(mode)}
-              disabled={!sourceBlob}
+              disabled={!sourceBlob || progress !== null}
               className={cn(
                 "flex flex-1 items-center justify-center gap-1.5 rounded-md border px-2 py-1.5 text-[11px] font-semibold disabled:opacity-40",
                 playingMode === mode
@@ -116,9 +147,23 @@ export function AudioPanel() {
             </button>
           ))}
         </div>
+        {progress !== null && (
+          <div className="space-y-1">
+            <p className="text-[10px] text-[var(--muted-foreground)]">
+              Carregando processador de áudio… {Math.round(progress * 100)}%
+            </p>
+            <div className="h-1 w-full overflow-hidden rounded-full bg-[var(--border)]">
+              <div
+                className="h-full bg-[var(--brand)] transition-[width]"
+                style={{ width: `${Math.max(4, progress * 100)}%` }}
+              />
+            </div>
+          </div>
+        )}
+        {notice && <p className="text-[10px] text-[var(--brand)]">{notice}</p>}
         <p className="text-[10px] leading-relaxed text-[var(--muted-foreground)]">
-          Prévia dos primeiros 6 segundos do clipe. Na exportação é aplicado filtro passa-alta,
-          redução de ruído e normalização.
+          Prévia dos primeiros 6 segundos com RNNoise (IA local, roda no seu navegador). Na
+          exportação é aplicada redução de ruído e normalização.
         </p>
       </div>
 

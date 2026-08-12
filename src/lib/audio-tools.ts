@@ -205,3 +205,86 @@ export async function playAudioPreview(
   src.onended = stop;
   return stop;
 }
+
+/* ------------------------- RNNoise (pós-produção) ------------------------ */
+
+/** Renderiza um trecho do áudio em mono 48 kHz (formato exigido pelo RNNoise). */
+export async function renderMono48k(
+  blob: Blob,
+  start: number,
+  end: number,
+): Promise<Float32Array | null> {
+  const buf = await decode(blob);
+  if (!buf) return null;
+  const OfflineCtx =
+    window.OfflineAudioContext ??
+    (window as unknown as { webkitOfflineAudioContext?: typeof OfflineAudioContext })
+      .webkitOfflineAudioContext;
+  if (!OfflineCtx) return null;
+  const dur = Math.max(0.1, Math.min(buf.duration - start, end - start));
+  const ctx = new OfflineCtx(1, Math.ceil(dur * 48000), 48000);
+  const src = ctx.createBufferSource();
+  src.buffer = buf;
+  src.connect(ctx.destination);
+  src.start(0, Math.max(0, start), dur);
+  const rendered = await ctx.startRendering();
+  return rendered.getChannelData(0).slice();
+}
+
+/** Aplica RNNoise no buffer inteiro dentro de um Web Worker. */
+export function denoiseSamplesRnnoise(
+  samples: Float32Array,
+  sampleRate: number,
+  onProgress?: (p: number) => void,
+): Promise<Float32Array> {
+  return new Promise((resolve, reject) => {
+    const worker = new Worker(new URL("./rnnoise.worker.ts", import.meta.url), {
+      type: "module",
+    });
+    worker.onmessage = (e: MessageEvent) => {
+      const data = e.data as { type: string; value?: number; samples?: Float32Array; message?: string };
+      if (data.type === "progress") onProgress?.(data.value ?? 0);
+      else if (data.type === "done") {
+        worker.terminate();
+        resolve(data.samples!);
+      } else if (data.type === "error") {
+        worker.terminate();
+        reject(new Error(data.message ?? "Falha no RNNoise"));
+      }
+    };
+    worker.onerror = (err) => {
+      worker.terminate();
+      reject(new Error(err.message || "Falha no worker do RNNoise"));
+    };
+    const copy = samples.slice();
+    worker.postMessage({ samples: copy, sampleRate }, [copy.buffer]);
+  });
+}
+
+/** Toca um Float32Array (mono) em 48 kHz e devolve uma função de parada. */
+export function playSamples(samples: Float32Array, sampleRate = 48000): () => void {
+  const Ctx =
+    window.AudioContext ??
+    (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+  if (!Ctx) return () => {};
+  const ctx = new Ctx();
+  const buf = ctx.createBuffer(1, samples.length, sampleRate);
+  buf.getChannelData(0).set(samples);
+  const src = ctx.createBufferSource();
+  src.buffer = buf;
+  src.connect(ctx.destination);
+  src.start();
+  let stopped = false;
+  const stop = () => {
+    if (stopped) return;
+    stopped = true;
+    try {
+      src.stop();
+    } catch {
+      /* já parou */
+    }
+    void ctx.close();
+  };
+  src.onended = stop;
+  return stop;
+}
