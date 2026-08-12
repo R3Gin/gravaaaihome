@@ -74,13 +74,25 @@ self.onmessage = async (event: MessageEvent<InMsg>) => {
     const model = await ensureModel();
     post({ type: "stage", stage: "transcribe" });
 
+    const total = audio.length / 16000;
+    // cada chunk cobre ~20s úteis (30s - 2x5s de stride)
+    const expectedChunks = Math.max(1, Math.ceil(total / 20));
+    let seen = 0;
+    const resetProgress = () => {
+      seen = 0;
+    };
+    const chunk_callback = () => {
+      seen += 1;
+      post({ type: "progress", progress: Math.min(0.99, seen / expectedChunks) });
+    };
+
     const base = {
       chunk_length_s: 30,
       stride_length_s: 5,
+      chunk_callback,
       ...(language ? { language, task: "transcribe" } : {}),
     };
 
-    const total = audio.length / 16000;
     let words: { word: string; start: number; end: number }[] = [];
     let result: { text: string; chunks?: Chunk[] };
 
@@ -104,11 +116,16 @@ self.onmessage = async (event: MessageEvent<InMsg>) => {
 
     if (words.length === 0) {
       // fallback: timestamps por frase
+      resetProgress();
       result = (await model(audio, { ...base, return_timestamps: true })) as {
         text: string;
         chunks?: Chunk[];
       };
     }
+
+    post({ type: "progress", progress: 1 });
+    post({ type: "stage", stage: "finalize" });
+
 
     // segmentos por frase: das palavras (agrupando por pontuação forte) ou dos chunks
     let segments: { start: number; end: number; text: string }[];
