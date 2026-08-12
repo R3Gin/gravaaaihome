@@ -746,9 +746,17 @@ export function Timeline() {
                     style={{ height: LANE_H }}
                   >
                     {track.type === "audio" ? <AudioWaveform width={width} /> : null}
-                    {track.clips.map((clip) => (
-                      <ClipBox key={clip.id} clip={clip} track={track} />
-                    ))}
+                    {track.clips
+                      .filter(
+                        (clip) =>
+                          clip.id === selectedClipId ||
+                          (clip.startTime + clip.duration >= visible.from &&
+                            clip.startTime <= visible.to),
+                      )
+                      .map((clip) => (
+                        <ClipBox key={clip.id} clip={clip} track={track} />
+                      ))}
+
                   </div>
                   {selectedClip?.trackId === track.id
                     ? kfRows.map((p) => (
