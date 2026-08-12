@@ -154,7 +154,10 @@ export function ScreenRecorder() {
 
   const camera = useCameraPip({ initial: { x: 16, y: 16, size: 140 } });
   const drawing = useDrawing();
-  const drawStrokesRef = drawing.strokesRef;
+  const drawingRef = useRef(drawing);
+  drawingRef.current = drawing;
+  useAnnotationShortcuts(drawing, true);
+
   const panelRef = useRef<FloatingRecorderPanelHandle | null>(null);
   const bubbleRef = useRef(camera.bubble);
   useEffect(() => {
