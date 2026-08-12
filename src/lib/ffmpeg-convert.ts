@@ -612,13 +612,28 @@ export type GifQuality = "leve" | "media" | "alta";
 
 const GIF_PRESETS: Record<GifQuality, { width: number; fps: number }> = {
   leve: { width: 320, fps: 8 },
-  media: { width: 480, fps: 12 },
+  media: { width: 420, fps: 10 },
   alta: { width: 640, fps: 15 },
 };
 
+/** Descarta a instância atual do ffmpeg (usado após erro/timeout para permitir retry limpo). */
+export function resetFFmpeg() {
+  try {
+    ffmpegInstance?.terminate();
+  } catch {
+    /* ignore */
+  }
+  ffmpegInstance = null;
+  loadPromise = null;
+}
+
 /**
- * Gera um GIF animado de um trecho do vídeo, 100% local (ffmpeg.wasm),
- * usando palettegen/paletteuse em duas passadas para boa qualidade de cor.
+ * Gera um GIF animado de um trecho do vídeo, 100% local (ffmpeg.wasm — o
+ * @ffmpeg/ffmpeg 0.12 executa o core dentro de um Web Worker dedicado, então a
+ * thread principal/UI não trava durante o processamento).
+ *
+ * Etapas de progresso: 0–10% carregar processador, 10–35% paleta de cores,
+ * 35–95% geração do GIF, 95–100% finalização.
  */
 export async function videoToGif(
   source: Blob,
@@ -627,56 +642,130 @@ export async function videoToGif(
     end: number;
     speed: number;
     quality: GifQuality;
+    /** Timeout total em ms (default 90s). */
+    timeoutMs?: number;
   },
-  onProgress?: (ratio: number) => void,
+  onProgress?: (ratio: number, stage?: string) => void,
 ): Promise<Blob> {
+  const totalTimeout = opts.timeoutMs ?? 90000;
+  const startedAt = Date.now();
+
+  // Progresso monotônico: nunca volta atrás e nunca fica visualmente parado.
+  let current = 0;
+  const report = (value: number, stage: string) => {
+    current = Math.max(current, Math.min(1, value));
+    onProgress?.(current, stage);
+  };
+
+  report(0.01, "Carregando processador de vídeo…");
   const ff = await getFFmpeg();
+  report(0.1, "Processador pronto");
+
   const { width, fps } = GIF_PRESETS[opts.quality];
   const duration = Math.max(0.1, opts.end - opts.start);
   const speed = opts.speed > 0 ? opts.speed : 1;
 
-  let phase = 0; // 0 = palette, 1 = gif
+  // Faixas de progresso por etapa.
+  let range: [number, number] = [0.1, 0.35];
+  let stageLabel = "Analisando cores…";
   const progressHandler = ({ progress }: { progress: number }) => {
     const p = Math.min(1, Math.max(0, progress));
-    onProgress?.(phase === 0 ? p * 0.3 : 0.3 + p * 0.7);
+    report(range[0] + p * (range[1] - range[0]), stageLabel);
   };
   ff.on("progress", progressHandler);
 
+  // Heartbeat: mesmo quando o ffmpeg não emite progresso granular (comum no
+  // palettegen), a barra avança devagar até o teto da etapa atual.
+  const heartbeat = setInterval(() => {
+    report(Math.min(current + 0.005, range[1] - 0.01), stageLabel);
+  }, 700);
+
+  let timedOut = false;
+  const timer = setTimeout(() => {
+    timedOut = true;
+    resetFFmpeg();
+  }, totalTimeout);
+
   const inputName = "gif-input";
+  const chain = `setpts=PTS/${speed.toFixed(3)},fps=${fps},scale=${width}:-1:flags=lanczos`;
+
+  const guard = () => {
+    if (timedOut) {
+      throw new Error(
+        "O processamento demorou demais neste navegador. Tente um trecho menor ou a qualidade Leve.",
+      );
+    }
+  };
+
   try {
     await ff.writeFile(inputName, await fetchFile(source));
-    const chain = `fps=${fps},scale=${width}:-1:flags=lanczos,setpts=PTS/${speed.toFixed(3)}`;
+    guard();
+    report(0.12, "Analisando cores…");
 
-    await ff.exec([
+    const paletteCode = await ff.exec([
       "-y",
       "-ss", opts.start.toFixed(3),
       "-t", duration.toFixed(3),
       "-i", inputName,
       "-vf", `${chain},palettegen=stats_mode=diff`,
+      "-frames:v", "1",
       "gif-palette.png",
     ]);
+    guard();
+    if (paletteCode !== 0) {
+      throw new Error(`Falha ao gerar a paleta de cores (código ${paletteCode}).`);
+    }
 
-    phase = 1;
-    await ff.exec([
+    range = [0.35, 0.95];
+    stageLabel = "Montando o GIF…";
+    report(0.36, stageLabel);
+
+    const gifCode = await ff.exec([
       "-y",
       "-ss", opts.start.toFixed(3),
       "-t", duration.toFixed(3),
       "-i", inputName,
       "-i", "gif-palette.png",
-      "-lavfi", `${chain}[x];[x][1:v]paletteuse=dither=bayer:bayer_scale=3`,
+      "-filter_complex", `[0:v]${chain}[x];[x][1:v]paletteuse=dither=bayer:bayer_scale=3`,
       "-loop", "0",
+      "-an",
       "gif-output.gif",
     ]);
+    guard();
+    if (gifCode !== 0) {
+      throw new Error(`Falha ao gerar o GIF (código ${gifCode}).`);
+    }
 
+    report(0.96, "Finalizando…");
     const data = (await ff.readFile("gif-output.gif")) as Uint8Array;
+    if (!data || data.byteLength === 0) {
+      throw new Error("O GIF gerado ficou vazio.");
+    }
     const buf = new ArrayBuffer(data.byteLength);
     new Uint8Array(buf).set(data);
-    onProgress?.(1);
+    report(1, "Concluído");
+    console.log(
+      `[gif] gerado em ${((Date.now() - startedAt) / 1000).toFixed(1)}s — ${(data.byteLength / 1024).toFixed(0)} KB`,
+    );
     return new Blob([buf], { type: "image/gif" });
+  } catch (err) {
+    if (timedOut) {
+      throw new Error(
+        "O processamento demorou demais neste navegador. Tente um trecho menor ou a qualidade Leve.",
+      );
+    }
+    // Estado do ffmpeg pode ter ficado inconsistente — força recarga na próxima tentativa.
+    resetFFmpeg();
+    throw err;
   } finally {
-    ff.off("progress", progressHandler);
-    for (const f of [inputName, "gif-palette.png", "gif-output.gif"]) {
-      try { await ff.deleteFile(f); } catch { /* ignore */ }
+    clearTimeout(timer);
+    clearInterval(heartbeat);
+    if (!timedOut && ffmpegInstance === ff) {
+      ff.off("progress", progressHandler);
+      for (const f of [inputName, "gif-palette.png", "gif-output.gif"]) {
+        try { await ff.deleteFile(f); } catch { /* ignore */ }
+      }
     }
   }
 }
+
