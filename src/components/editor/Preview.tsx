@@ -44,6 +44,19 @@ export function Preview({ videoRef }: Props) {
   } | null>(null);
   const draftRef = useRef<Annotation | null>(null);
   const annotationTool = useEditor((s) => s.annotationTool);
+  const pendingEffectPreset = useEditor((s) => s.pendingEffectPreset);
+  const setPendingEffectPreset = useEditor((s) => s.setPendingEffectPreset);
+
+  /* Esc cancela o modo "clique no ponto" dos presets de zoom */
+  useEffect(() => {
+    if (!pendingEffectPreset) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setPendingEffectPreset(null);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [pendingEffectPreset, setPendingEffectPreset]);
+
 
   /* ---------------- pipeline única de render ---------------- */
   const paint = useCallback(() => {
