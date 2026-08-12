@@ -385,6 +385,8 @@ export function Preview({ videoRef }: Props) {
             "relative overflow-hidden rounded-xl border border-[var(--border)] bg-black shadow-lg",
             annotationTool && annotationTool !== "eraser" && "cursor-crosshair",
             annotationTool === "eraser" && "cursor-cell",
+            pendingEffectPreset && "cursor-crosshair ring-2 ring-[var(--brand)]",
+
           )}
           style={{
             aspectRatio: String(ratio),
