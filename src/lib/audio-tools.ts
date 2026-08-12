@@ -269,7 +269,7 @@ export function playSamples(samples: Float32Array, sampleRate = 48000): () => vo
   if (!Ctx) return () => {};
   const ctx = new Ctx();
   const buf = ctx.createBuffer(1, samples.length, sampleRate);
-  buf.copyToChannel(samples, 0);
+  buf.getChannelData(0).set(samples);
   const src = ctx.createBufferSource();
   src.buffer = buf;
   src.connect(ctx.destination);
