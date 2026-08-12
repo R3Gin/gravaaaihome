@@ -1,25 +1,7 @@
 import { useCallback, useEffect, useRef } from "react";
-import {
-  clipAt,
-  clipsAt,
-  useEditor,
-  zoomAt,
-  type AspectRatio,
-  type Clip,
-} from "@/state/editor-store";
-import { resolveClip } from "@/lib/keyframes";
-import { CaptionOverlay } from "./CaptionOverlay";
+import { clipAt, useEditor, type AspectRatio } from "@/state/editor-store";
+import { buildFrame, drawFrame, type HitRegion } from "@/lib/preview-compose";
 import { cn } from "@/lib/utils";
-
-
-/** #rrggbb + alpha => rgba() */
-function withAlpha(hex: string, alpha: number) {
-  const m = /^#?([\da-f]{6})$/i.exec(hex.trim());
-  if (!m) return hex;
-  const n = parseInt(m[1], 16);
-  return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${alpha})`;
-}
-
 
 const ASPECTS: { id: AspectRatio; label: string; ratio: number }[] = [
   { id: "16:9", label: "16:9", ratio: 16 / 9 },
@@ -33,13 +15,9 @@ interface Props {
 
 export function Preview({ videoRef }: Props) {
   const sourceUrl = useEditor((s) => s.sourceUrl);
-  const tracks = useEditor((s) => s.tracks);
-  const currentTime = useEditor((s) => s.currentTime);
   const playing = useEditor((s) => s.playing);
   const aspect = useEditor((s) => s.aspect);
-  
 
-  const selectedClipId = useEditor((s) => s.selectedClipId);
   const setAspect = useEditor((s) => s.setAspect);
   const setCurrentTime = useEditor((s) => s.setCurrentTime);
   const setPlaying = useEditor((s) => s.setPlaying);
@@ -48,21 +26,78 @@ export function Preview({ videoRef }: Props) {
   const commit = useEditor((s) => s.commit);
 
   const stageRef = useRef<HTMLDivElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
   const rafRef = useRef<number | null>(null);
+  const drawRafRef = useRef<number | null>(null);
+  const hitsRef = useRef<HitRegion[]>([]);
   const dragRef = useRef<{ id: string; kind: "move" | "resize" } | null>(null);
 
-  const rawVideoClip = clipAt(tracks, "video", currentTime);
-  const videoClip = rawVideoClip ? resolveClip(rawVideoClip, currentTime) : null;
-  const textClips = clipsAt(tracks, "text", currentTime)
-    .filter((c) => !c.isCaption)
-    .map((c) => resolveClip(c, currentTime));
-  const overlayClips = clipsAt(tracks, "overlay", currentTime).map((c) => resolveClip(c, currentTime));
+  /* ---------------- pipeline única de render ---------------- */
+  const paint = useCallback(() => {
+    drawRafRef.current = null;
+    const canvas = canvasRef.current;
+    const stage = stageRef.current;
+    if (!canvas || !stage) return;
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const W = Math.max(1, Math.round(stage.clientWidth));
+    const H = Math.max(1, Math.round(stage.clientHeight));
+    if (canvas.width !== Math.round(W * dpr) || canvas.height !== Math.round(H * dpr)) {
+      canvas.width = Math.round(W * dpr);
+      canvas.height = Math.round(H * dpr);
+      canvas.style.width = `${W}px`;
+      canvas.style.height = `${H}px`;
+    }
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
+    const s = useEditor.getState();
+    const v = videoRef.current;
+    // tempo consolidado: durante a reprodução o <video> é a fonte da verdade
+    let time = s.currentTime;
+    if (v && s.playing) {
+      const clip = clipAt(s.tracks, "video", s.currentTime);
+      if (clip) time = clip.startTime + (v.currentTime - clip.sourceInStart) / (clip.speed ?? 1);
+    }
+    const frame = buildFrame(s.tracks, s.captionStyle, time, s.selectedClipId);
+    hitsRef.current = drawFrame(ctx, v, frame, W, H);
+  }, [videoRef]);
 
+  const schedulePaint = useCallback(() => {
+    if (drawRafRef.current == null) drawRafRef.current = requestAnimationFrame(paint);
+  }, [paint]);
 
+  /* redesenha ao mudar o estado, ao redimensionar e enquanto toca */
+  useEffect(() => {
+    schedulePaint();
+    const unsub = useEditor.subscribe(schedulePaint);
+    const ro = new ResizeObserver(schedulePaint);
+    if (stageRef.current) ro.observe(stageRef.current);
+    const v = videoRef.current;
+    const events = ["seeked", "loadeddata", "timeupdate"];
+    if (v) events.forEach((e) => v.addEventListener(e, schedulePaint));
+    return () => {
+      unsub();
+      ro.disconnect();
+      if (v) events.forEach((e) => v.removeEventListener(e, schedulePaint));
+      if (drawRafRef.current != null) cancelAnimationFrame(drawRafRef.current);
+      drawRafRef.current = null;
+    };
+  }, [schedulePaint, videoRef, sourceUrl]);
 
+  useEffect(() => {
+    if (!playing) return;
+    let raf = 0;
+    const loop = () => {
+      paint();
+      raf = requestAnimationFrame(loop);
+    };
+    raf = requestAnimationFrame(loop);
+    return () => cancelAnimationFrame(raf);
+  }, [playing, paint]);
 
   /* --- seek quando o playhead muda fora da reprodução --- */
+  const currentTime = useEditor((s) => s.currentTime);
   useEffect(() => {
     const v = videoRef.current;
     if (!v || playing) return;
@@ -72,19 +107,6 @@ export function Preview({ videoRef }: Props) {
     const target = clip.sourceInStart + (currentTime - clip.startTime) * speed;
     if (Math.abs(v.currentTime - target) > 0.04) v.currentTime = target;
   }, [currentTime, playing, videoRef]);
-
-  /* --- diagnóstico de travamentos do elemento <video> --- */
-  useEffect(() => {
-    const v = videoRef.current;
-    if (!v) return;
-    const log = (e: Event) => {
-      if (e.type === "error") console.error("[editor] video error", v.error);
-      else if (import.meta.env.DEV) console.debug("[editor] video", e.type, v.currentTime);
-    };
-    const events = ["pause", "stalled", "waiting", "error", "ended", "suspend"];
-    events.forEach((t) => v.addEventListener(t, log));
-    return () => events.forEach((t) => v.removeEventListener(t, log));
-  }, [videoRef, sourceUrl]);
 
   /* --- trocar de aba apenas pausa: o estado do editor é preservado --- */
   useEffect(() => {
@@ -139,7 +161,6 @@ export function Preview({ videoRef }: Props) {
       activeId = clip.id;
       const speed = clip.speed ?? 1;
       if (v.playbackRate !== speed) v.playbackRate = speed;
-      // o navegador pode pausar sozinho (troca de aba, buffer): retoma
       if (v.paused && !v.ended) void v.play().catch(() => undefined);
 
       if (v.currentTime >= clip.sourceInEnd - 0.02) {
@@ -166,8 +187,29 @@ export function Preview({ videoRef }: Props) {
     };
   }, [playing, setCurrentTime, setPlaying, videoRef]);
 
+  /* --- interação: hit-test das áreas desenhadas no canvas --- */
+  const onPointerDown = useCallback(
+    (e: React.PointerEvent) => {
+      const box = stageRef.current?.getBoundingClientRect();
+      if (!box) return;
+      const px = e.clientX - box.left;
+      const py = e.clientY - box.top;
+      const hit = [...hitsRef.current]
+        .reverse()
+        .find((h) => px >= h.x && px <= h.x + h.w && py >= h.y && py <= h.y + h.h);
+      if (!hit) {
+        select(null);
+        return;
+      }
+      select(hit.id);
+      const corner =
+        hit.kind === "overlay" && px > hit.x + hit.w - 16 && py > hit.y + hit.h - 16;
+      dragRef.current = { id: hit.id, kind: corner ? "resize" : "move" };
+      (e.target as HTMLElement).setPointerCapture?.(e.pointerId);
+    },
+    [select],
+  );
 
-  /* --- arraste de texto / overlay dentro do preview --- */
   const onPointerMove = useCallback(
     (e: React.PointerEvent) => {
       const drag = dragRef.current;
@@ -203,63 +245,6 @@ export function Preview({ videoRef }: Props) {
     }
   }, [commit]);
 
-  const zoomStyle = (clip: Clip | null) => {
-    if (!clip) return undefined;
-    const z = zoomAt(clip, currentTime - clip.startTime);
-    const scale = z.scale * (clip.scale ?? 1);
-    const rotation = clip.rotation ?? 0;
-    const parts: string[] = [];
-    if (scale !== 1) parts.push(`scale(${scale})`);
-    if (rotation) parts.push(`rotate(${rotation}deg)`);
-    if (z.x || z.y) parts.push(`translate(${z.x * 100}%, ${z.y * 100}%)`);
-    return {
-      transform: parts.length ? parts.join(" ") : undefined,
-      opacity: clip.opacity ?? 1,
-    };
-  };
-
-  const filterStyle = videoClip
-    ? {
-        filter: `brightness(${1 + (videoClip.brightness ?? 0)}) contrast(${videoClip.contrast ?? 1}) saturate(${videoClip.saturation ?? 1})`,
-        objectPosition: `${50 + (videoClip.position?.x ?? 0) * 50}% ${50 + (videoClip.position?.y ?? 0) * 50}%`,
-      }
-    : undefined;
-
-  /* --- transição de entrada do clipe atual (aproximação visual no preview) --- */
-  const transitionStyle = (() => {
-    const clip = rawVideoClip;
-    const kind = clip?.transition ?? "none";
-    if (!clip || kind === "none") return undefined;
-    const d = Math.max(0.1, Math.min(clip.transitionDuration ?? 0.5, clip.duration));
-    const p = (currentTime - clip.startTime) / d;
-    if (p < 0 || p > 1) return undefined;
-    const dir = clip.transitionDir ?? "left";
-    const off = (1 - p) * 100;
-    if (kind === "fade") return { opacity: p };
-    if (kind === "zoom") return { opacity: p, transform: `scale(${0.7 + 0.3 * p})` };
-    if (kind === "slide") {
-      const t =
-        dir === "right"
-          ? `translateX(${-off}%)`
-          : dir === "up"
-            ? `translateY(${off}%)`
-            : dir === "down"
-              ? `translateY(${-off}%)`
-              : `translateX(${off}%)`;
-      return { transform: t };
-    }
-    // wipe
-    const inset =
-      dir === "right"
-        ? `0 0 0 ${off}%`
-        : dir === "up"
-          ? `${off}% 0 0 0`
-          : dir === "down"
-            ? `0 0 ${off}% 0`
-            : `0 ${off}% 0 0`;
-    return { clipPath: `inset(${inset})` };
-  })();
-
   const ratio = ASPECTS.find((a) => a.id === aspect)?.ratio ?? 16 / 9;
 
   return (
@@ -267,145 +252,37 @@ export function Preview({ videoRef }: Props) {
       <div className="flex min-h-0 flex-1 items-center justify-center p-4">
         <div
           ref={stageRef}
+          onPointerDown={onPointerDown}
           onPointerMove={onPointerMove}
           onPointerUp={endDrag}
           onPointerLeave={endDrag}
-          onClick={(e) => {
-            if (e.target === stageRef.current) select(null);
-          }}
           className="relative overflow-hidden rounded-xl border border-[var(--border)] bg-black shadow-lg"
           style={{
             aspectRatio: String(ratio),
-            containerType: "size",
             width: "min(100%, 1100px)",
             maxWidth: "100%",
             maxHeight: "100%",
             margin: "auto",
           }}
         >
+          {/* elemento de mídia: só decodifica áudio/vídeo, nunca é exibido */}
           {sourceUrl ? (
             <video
               ref={videoRef}
               src={sourceUrl}
               playsInline
-              className="h-full w-full object-contain"
-              style={(() => {
-                const base = { ...filterStyle, ...zoomStyle(videoClip) } as React.CSSProperties;
-                if (!transitionStyle) return base;
-                const t = transitionStyle as React.CSSProperties;
-                return {
-                  ...base,
-                  ...t,
-                  transform: [base.transform, t.transform].filter(Boolean).join(" ") || undefined,
-                  opacity: (Number(base.opacity ?? 1) || 1) * Number(t.opacity ?? 1),
-                };
-              })()}
+              className="pointer-events-none absolute h-px w-px opacity-0"
+              style={{ left: 0, top: 0 }}
             />
-          ) : (
-            <div className="grid h-full w-full place-items-center text-sm text-[var(--muted-foreground)]">
+          ) : null}
+
+          <canvas ref={canvasRef} className="absolute inset-0 h-full w-full" />
+
+          {!sourceUrl ? (
+            <div className="absolute inset-0 grid place-items-center text-sm text-[var(--muted-foreground)]">
               Nenhum vídeo carregado
             </div>
-          )}
-
-          {overlayClips.map((clip) => {
-            const r = clip.rect ?? { x: 0.1, y: 0.1, w: 0.3, h: 0.3 };
-            const selected = clip.id === selectedClipId;
-            const base = {
-              left: `${r.x * 100}%`,
-              top: `${r.y * 100}%`,
-              width: `${r.w * 100}%`,
-              height: `${r.h * 100}%`,
-            } as const;
-            return (
-              <div
-                key={clip.id}
-                onPointerDown={(e) => {
-                  e.stopPropagation();
-                  select(clip.id);
-                  dragRef.current = { id: clip.id, kind: "move" };
-                }}
-                className={cn(
-                  "absolute cursor-move",
-                  selected && "outline outline-2 outline-[var(--brand)]",
-                )}
-                style={{
-                  ...base,
-                  opacity: clip.opacity ?? 1,
-                  backdropFilter:
-                    clip.overlayKind === "blur" ? `blur(${clip.strength ?? 12}px)` : undefined,
-                  borderRadius: clip.overlayKind === "spotlight" ? "9999px" : undefined,
-                  boxShadow:
-                    clip.overlayKind === "spotlight"
-                      ? `0 0 0 9999px rgba(0,0,0,${clip.strength ?? 0.7})`
-                      : undefined,
-                }}
-              >
-                {selected ? (
-                  <span
-                    onPointerDown={(e) => {
-                      e.stopPropagation();
-                      dragRef.current = { id: clip.id, kind: "resize" };
-                    }}
-                    className="absolute -bottom-1.5 -right-1.5 h-3 w-3 cursor-se-resize rounded-sm bg-[var(--brand)]"
-                  />
-                ) : null}
-              </div>
-            );
-          })}
-
-          {/* --- camada de legenda isolada (rAF próprio, memoizada) --- */}
-          <CaptionOverlay
-            videoRef={videoRef}
-            onStartDrag={(id) => {
-              dragRef.current = { id, kind: "move" };
-            }}
-          />
-
-
-          {textClips.map((clip) => {
-            const selected = clip.id === selectedClipId;
-
-
-
-            const reveal = Math.max(0, Math.min(1, clip.reveal ?? 1));
-            const mode = clip.revealMode ?? "none";
-            const full = clip.textContent ?? "";
-            const shown =
-              mode === "typewriter" ? full.slice(0, Math.round(full.length * reveal)) : full;
-            const blur = clip.blur ?? 0;
-            const scale = clip.scale ?? 1;
-            return (
-              <div
-                key={clip.id}
-                onPointerDown={(e) => {
-                  e.stopPropagation();
-                  select(clip.id);
-                  dragRef.current = { id: clip.id, kind: "move" };
-                }}
-                className={cn(
-                  "absolute -translate-x-1/2 -translate-y-1/2 cursor-move whitespace-pre px-3 py-1 font-semibold",
-                  clip.background !== false && "rounded-md bg-black/55",
-                  selected && "outline outline-2 outline-[var(--brand)]",
-                )}
-                style={{
-                  left: `${(clip.position?.x ?? 0.5) * 100}%`,
-                  top: `${(clip.position?.y ?? 0.82) * 100}%`,
-                  opacity: clip.opacity ?? 1,
-                  rotate: `${clip.rotation ?? 0}deg`,
-                  scale: String(scale),
-                  filter: blur > 0.01 ? `blur(${blur}px)` : undefined,
-                  clipPath:
-                    mode === "wipe" ? `inset(0 ${(1 - reveal) * 100}% 0 0)` : undefined,
-                  color: clip.color ?? "#fff",
-                  fontSize: `${((clip.fontSize ?? 48) / 720) * 100}cqh`,
-                }}
-              >
-                {mode === "typewriter" ? shown || "\u200b" : full}
-              </div>
-            );
-          })}
-
-
+          ) : null}
         </div>
       </div>
 
