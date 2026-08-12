@@ -30,6 +30,7 @@ import { cn } from "@/lib/utils";
 
 export interface FloatingRecorderPanelProps {
   visible: boolean;
+  recording?: boolean;
   paused: boolean;
   elapsed: number;
   screenAudioOn: boolean;
@@ -38,6 +39,7 @@ export interface FloatingRecorderPanelProps {
   hasScreenAudio: boolean;
   hasMic: boolean;
   hasCamera: boolean;
+  onStart?: () => void;
   onPauseResume: () => void;
   onStop: () => void;
   onToggleScreenAudio: () => void;
