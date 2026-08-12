@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import {
   ArrowUpRight,
   Circle,
@@ -28,6 +29,8 @@ export function AnnotationsPanel() {
   const dur = useEditor((s) => s.annotationDuration);
   const setTool = useEditor((s) => s.setAnnotationTool);
   const setStyle = useEditor((s) => s.setAnnotationStyle);
+
+  useEffect(() => () => useEditor.getState().setAnnotationTool(null), []);
 
   return (
     <div className="space-y-4">
