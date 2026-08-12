@@ -5,6 +5,9 @@
  * e devolve keyframes normais (mesma estrutura usada pelo modo Avançado),
  * marcados com `origin` = id da instância aplicada. Assim o preview e a
  * exportação funcionam sem nenhum caminho especial.
+ *
+ * `anchor` (segundos, local ao clipe) é a posição da agulha: zoom, entrada
+ * e ênfase começam ali; saída continua ancorada no fim do clipe.
  * ------------------------------------------------------------------ */
 
 import { newKeyframe, type Easing, type Keyframe, type KeyValue } from "@/lib/keyframes";
@@ -36,7 +39,8 @@ export interface EffectPresetDef {
   controls: ControlKind[];
   /** tipos de clipe suportados */
   types?: Clip["type"][];
-  build: (clip: Clip, params: PresetParams) => Record<string, Keyframe[]>;
+  /** `anchor`: tempo local (s) da agulha dentro do clipe */
+  build: (clip: Clip, params: PresetParams, anchor?: number) => Record<string, Keyframe[]>;
 }
 
 export const SPEED_SECONDS: Record<SpeedName, number> = { slow: 1.2, medium: 0.7, fast: 0.35 };
@@ -60,6 +64,17 @@ export const DEFAULT_PARAMS: PresetParams = {
 
 const k = (time: number, value: KeyValue, easing: Easing = "ease-in-out"): Keyframe =>
   newKeyframe(Math.max(0, time), value, easing);
+
+/** âncora válida (0..duração do clipe) */
+function anchorOf(clip: Clip, anchor?: number) {
+  const max = Math.max(0, clip.duration - 0.05);
+  return Math.max(0, Math.min(max, anchor ?? 0));
+}
+
+/** tempo disponível do ponto da agulha até o fim do clipe */
+function remaining(clip: Clip, a: number) {
+  return Math.max(0.2, clip.duration - a);
+}
 
 /** posição "neutra" conforme o tipo de clipe */
 function basePosition(clip: Clip): { x: number; y: number } {
@@ -96,16 +111,22 @@ const dur = (clip: Clip) => Math.max(0.2, clip.duration);
 
 /* ------------------------------ Zoom ------------------------------ */
 
-function zoomHold(clip: Clip, params: PresetParams, inTime: number): Record<string, Keyframe[]> {
+function zoomHold(
+  clip: Clip,
+  params: PresetParams,
+  inTime: number,
+  anchor?: number,
+): Record<string, Keyframe[]> {
+  const a = anchorOf(clip, anchor);
   const scale = params.zoomLevel ?? 1.5;
   const pan = panForPoint(params.point, scale);
   const base = basePosition(clip);
-  const t = Math.min(inTime, dur(clip) * 0.6);
+  const t = Math.min(inTime, remaining(clip, a) * 0.6);
   return {
-    zoom: [k(0, 1, "ease-in-out"), k(t, scale, "ease-in-out")],
+    zoom: [k(a, 1, "ease-in-out"), k(a + t, scale, "ease-in-out")],
     position: [
-      k(0, base, "ease-in-out"),
-      k(t, { x: base.x + pan.x, y: base.y + pan.y }, "ease-in-out"),
+      k(a, base, "ease-in-out"),
+      k(a + t, { x: base.x + pan.x, y: base.y + pan.y }, "ease-in-out"),
     ],
   };
 }
@@ -114,8 +135,8 @@ function zoomHold(clip: Clip, params: PresetParams, inTime: number): Record<stri
 
 const AMPLITUDE: Record<IntensityName, number> = { subtle: 0.5, medium: 1, strong: 1.8 };
 
-function cycles(clip: Clip, period: number, maxCycles = 12) {
-  return Math.max(1, Math.min(maxCycles, Math.floor(dur(clip) / period)));
+function cycles(available: number, period: number, maxCycles = 12) {
+  return Math.max(1, Math.min(maxCycles, Math.floor(available / period)));
 }
 
 /* --------------------------- Catálogo ----------------------------- */
@@ -128,7 +149,7 @@ export const EFFECT_PRESETS: EffectPresetDef[] = [
     needsPoint: true,
     controls: ["zoomLevel"],
     types: ["video"],
-    build: (clip, p) => zoomHold(clip, p, 1.6),
+    build: (clip, p, anchor) => zoomHold(clip, p, 1.6, anchor),
   },
   {
     id: "zoom-fast",
@@ -137,7 +158,7 @@ export const EFFECT_PRESETS: EffectPresetDef[] = [
     needsPoint: true,
     controls: ["zoomLevel"],
     types: ["video"],
-    build: (clip, p) => zoomHold(clip, p, 0.45),
+    build: (clip, p, anchor) => zoomHold(clip, p, 0.45, anchor),
   },
   {
     id: "zoom-back",
@@ -146,17 +167,20 @@ export const EFFECT_PRESETS: EffectPresetDef[] = [
     needsPoint: true,
     controls: ["zoomLevel", "duration"],
     types: ["video"],
-    build: (clip, p) => {
+    build: (clip, p, anchor) => {
+      const a = anchorOf(clip, anchor);
+      const avail = remaining(clip, a);
       const scale = p.zoomLevel ?? 1.5;
       const pan = panForPoint(p.point, scale);
       const base = basePosition(clip);
-      const inT = 0.5;
-      const hold = Math.max(0.2, Math.min(p.duration ?? 2, dur(clip) - inT - 0.5));
-      const end = inT + hold + 0.5;
+      const inT = Math.min(0.5, avail * 0.25);
+      const outT = inT;
+      const hold = Math.max(0.2, Math.min(p.duration ?? 2, avail - inT - outT));
+      const end = inT + hold + outT;
       const target = { x: base.x + pan.x, y: base.y + pan.y };
       return {
-        zoom: [k(0, 1), k(inT, scale), k(inT + hold, scale), k(end, 1)],
-        position: [k(0, base), k(inT, target), k(inT + hold, target), k(end, base)],
+        zoom: [k(a, 1), k(a + inT, scale), k(a + inT + hold, scale), k(a + end, 1)],
+        position: [k(a, base), k(a + inT, target), k(a + inT + hold, target), k(a + end, base)],
       };
     },
   },
@@ -167,9 +191,10 @@ export const EFFECT_PRESETS: EffectPresetDef[] = [
     label: "Aparecer com fade",
     category: "in",
     controls: ["speed"],
-    build: (clip, p) => {
-      const d = Math.min(SPEED_SECONDS[p.speed ?? "medium"], dur(clip) * 0.6);
-      return { opacity: [k(0, 0, "ease-out"), k(d, 1, "ease-out")] };
+    build: (clip, p, anchor) => {
+      const a = anchorOf(clip, anchor);
+      const d = Math.min(SPEED_SECONDS[p.speed ?? "medium"], remaining(clip, a) * 0.6);
+      return { opacity: [k(a, 0, "ease-out"), k(a + d, 1, "ease-out")] };
     },
   },
   ...(["up", "down", "left", "right"] as const).map((dir) => ({
@@ -182,17 +207,18 @@ export const EFFECT_PRESETS: EffectPresetDef[] = [
     }[dir],
     category: "in" as const,
     controls: ["speed"] as ControlKind[],
-    build: (clip: Clip, p: PresetParams) => {
-      const d = Math.min(SPEED_SECONDS[p.speed ?? "medium"], dur(clip) * 0.6);
+    build: (clip: Clip, p: PresetParams, anchor?: number) => {
+      const a = anchorOf(clip, anchor);
+      const d = Math.min(SPEED_SECONDS[p.speed ?? "medium"], remaining(clip, a) * 0.6);
       const base = basePosition(clip);
       // "de cima" => começa acima (offset negativo em y)
       const off = dirOffset(dir === "up" ? "up" : dir === "down" ? "down" : dir, slideAmount(clip));
       return {
         position: [
-          k(0, { x: base.x + off.x, y: base.y + off.y }, "ease-out"),
-          k(d, base, "ease-out"),
+          k(a, { x: base.x + off.x, y: base.y + off.y }, "ease-out"),
+          k(a + d, base, "ease-out"),
         ],
-        opacity: [k(0, 0, "ease-out"), k(Math.min(d, 0.25), 1, "ease-out")],
+        opacity: [k(a, 0, "ease-out"), k(a + Math.min(d, 0.25), 1, "ease-out")],
       };
     },
   })),
@@ -201,11 +227,12 @@ export const EFFECT_PRESETS: EffectPresetDef[] = [
     label: "Crescer (pop)",
     category: "in",
     controls: ["speed"],
-    build: (clip, p) => {
-      const d = Math.min(SPEED_SECONDS[p.speed ?? "medium"], dur(clip) * 0.6);
+    build: (clip, p, anchor) => {
+      const a = anchorOf(clip, anchor);
+      const d = Math.min(SPEED_SECONDS[p.speed ?? "medium"], remaining(clip, a) * 0.6);
       return {
-        scale: [k(0, 0.8, "ease-out"), k(d * 0.7, 1.06, "ease-out"), k(d, 1, "ease-in-out")],
-        opacity: [k(0, 0, "ease-out"), k(d * 0.6, 1, "ease-out")],
+        scale: [k(a, 0.8, "ease-out"), k(a + d * 0.7, 1.06, "ease-out"), k(a + d, 1, "ease-in-out")],
+        opacity: [k(a, 0, "ease-out"), k(a + d * 0.6, 1, "ease-out")],
       };
     },
   },
@@ -267,14 +294,15 @@ export const EFFECT_PRESETS: EffectPresetDef[] = [
     label: "Pulsar",
     category: "emphasis",
     controls: ["intensity"],
-    build: (clip, p) => {
+    build: (clip, p, anchor) => {
+      const a = anchorOf(clip, anchor);
       const amp = 0.05 * AMPLITUDE[p.intensity ?? "medium"];
       const period = 0.8;
-      const n = cycles(clip, period);
-      const keys: Keyframe[] = [k(0, 1)];
+      const n = cycles(remaining(clip, a), period, 4);
+      const keys: Keyframe[] = [k(a, 1)];
       for (let i = 0; i < n; i++) {
-        keys.push(k(i * period + period / 2, 1 + amp));
-        keys.push(k((i + 1) * period, 1));
+        keys.push(k(a + i * period + period / 2, 1 + amp));
+        keys.push(k(a + (i + 1) * period, 1));
       }
       return { scale: keys };
     },
@@ -284,21 +312,22 @@ export const EFFECT_PRESETS: EffectPresetDef[] = [
     label: "Tremer",
     category: "emphasis",
     controls: ["intensity"],
-    build: (clip, p) => {
-      const a = AMPLITUDE[p.intensity ?? "medium"];
+    build: (clip, p, anchor) => {
+      const a = anchorOf(clip, anchor);
+      const amp = AMPLITUDE[p.intensity ?? "medium"];
       const base = basePosition(clip);
       const step = 0.08;
-      const n = Math.min(16, Math.max(4, Math.floor(dur(clip) / step / 2)));
-      const px = (clip.type === "text" ? 0.008 : 0.02) * a;
-      const pos: Keyframe[] = [k(0, base, "linear")];
-      const rot: Keyframe[] = [k(0, 0, "linear")];
+      const n = Math.min(16, Math.max(4, Math.floor(remaining(clip, a) / step / 2)));
+      const px = (clip.type === "text" ? 0.008 : 0.02) * amp;
+      const pos: Keyframe[] = [k(a, base, "linear")];
+      const rot: Keyframe[] = [k(a, 0, "linear")];
       for (let i = 1; i <= n; i++) {
         const s = i % 2 === 0 ? 1 : -1;
-        pos.push(k(i * step, { x: base.x + s * px, y: base.y }, "linear"));
-        rot.push(k(i * step, s * 0.8 * a, "linear"));
+        pos.push(k(a + i * step, { x: base.x + s * px, y: base.y }, "linear"));
+        rot.push(k(a + i * step, s * 0.8 * amp, "linear"));
       }
-      pos.push(k((n + 1) * step, base, "linear"));
-      rot.push(k((n + 1) * step, 0, "linear"));
+      pos.push(k(a + (n + 1) * step, base, "linear"));
+      rot.push(k(a + (n + 1) * step, 0, "linear"));
       return { position: pos, rotation: rot };
     },
   },
@@ -307,14 +336,15 @@ export const EFFECT_PRESETS: EffectPresetDef[] = [
     label: "Piscar",
     category: "emphasis",
     controls: ["intensity"],
-    build: (clip, p) => {
+    build: (clip, p, anchor) => {
+      const a = anchorOf(clip, anchor);
       const low = 1 - 0.4 * AMPLITUDE[p.intensity ?? "medium"] * 0.6;
       const period = 0.5;
-      const n = Math.min(4, cycles(clip, period, 4));
-      const keys: Keyframe[] = [k(0, 1, "ease-in-out")];
+      const n = cycles(remaining(clip, a), period, 4);
+      const keys: Keyframe[] = [k(a, 1, "ease-in-out")];
       for (let i = 0; i < n; i++) {
-        keys.push(k(i * period + period / 2, Math.max(0.2, low)));
-        keys.push(k((i + 1) * period, 1));
+        keys.push(k(a + i * period + period / 2, Math.max(0.2, low)));
+        keys.push(k(a + (i + 1) * period, 1));
       }
       return { opacity: keys };
     },
