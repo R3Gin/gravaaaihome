@@ -687,49 +687,65 @@ export const useEditor = create<EditorState & EditorActions>((set, get) => {
             return [...clips.filter((c) => !c.isCaption), ...remapped];
           }
           if (track.type !== "video" && track.type !== "audio") return clips;
-          let out: Clip[] = clips;
-          for (const r of ordered) {
-            const next: Clip[] = [];
-            for (const c of out) {
-              const cs = c.startTime;
-              const ce = c.startTime + c.duration;
-              if (r.end <= cs || r.start >= ce) {
-                next.push(c);
-                continue;
-              }
-              const speed = c.speed ?? 1;
-              const headDur = Math.max(0, r.start - cs);
-              const tailStart = Math.max(cs, r.end);
-              const tailDur = Math.max(0, ce - tailStart);
-              if (headDur > MIN_CLIP) {
-                next.push({
+          /* Varredura linear: para cada clipe, percorre só os intervalos que o
+             tocam (ponteiro avança) — evita o custo quadrático que travava a UI
+             em vídeos longos com centenas de cortes. */
+          const byStart = [...clips].sort((a, b) => a.startTime - b.startTime);
+          const out: Clip[] = [];
+          let ri = 0;
+          for (const c of byStart) {
+            const cs = c.startTime;
+            const ce = cs + c.duration;
+            const speed = c.speed ?? 1;
+            while (ri > 0 && (merged[ri - 1]?.end ?? 0) > cs) ri--;
+            while (ri < merged.length && (merged[ri]?.end ?? 0) <= cs) ri++;
+            let cursor = cs;
+            let k = ri;
+            let first = true;
+            while (k < merged.length && (merged[k]?.start ?? Infinity) < ce) {
+              const r = merged[k]!;
+              const segStart = cursor;
+              const segEnd = Math.min(r.start, ce);
+              const segDur = segEnd - segStart;
+              if (segDur > MIN_CLIP) {
+                const offset = segStart - cs;
+                out.push({
                   ...c,
-                  duration: headDur,
-                  sourceInEnd: c.sourceInStart + headDur * speed,
-                });
-              }
-              if (tailDur > MIN_CLIP) {
-                const offset = tailStart - cs;
-                next.push({
-                  ...c,
-                  id: uid(),
-                  startTime: tailStart,
-                  duration: tailDur,
+                  id: first ? c.id : uid(),
+                  startTime: segStart,
+                  duration: segDur,
                   sourceInStart: c.sourceInStart + offset * speed,
+                  sourceInEnd: c.sourceInStart + (offset + segDur) * speed,
                 });
+                first = false;
               }
+              cursor = Math.max(cursor, r.end);
+              k++;
             }
-            out = next;
+            const tailDur = ce - cursor;
+            if (cursor <= cs) {
+              out.push(c);
+            } else if (tailDur > MIN_CLIP) {
+              const offset = cursor - cs;
+              out.push({
+                ...c,
+                id: first ? c.id : uid(),
+                startTime: cursor,
+                duration: tailDur,
+                sourceInStart: c.sourceInStart + offset * speed,
+                sourceInEnd: c.sourceInStart + (offset + tailDur) * speed,
+              });
+            }
           }
           // fecha os buracos
-          const sorted = [...out].sort((a, b) => a.startTime - b.startTime);
           let cursor = 0;
-          return sorted.map((c) => {
+          return out.map((c) => {
             const clip = { ...c, startTime: cursor };
             cursor += c.duration;
             return clip;
           });
         }),
+
       );
       const prev = get().removedRanges;
       const inOriginal = ordered.map((r) => ({
