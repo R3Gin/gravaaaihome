@@ -110,6 +110,8 @@ export interface Clip {
   isCaption?: boolean;
   rect?: { x: number; y: number; w: number; h: number };
   strength?: number;
+  /** presets de efeito aplicados no modo Simples */
+  effectPresets?: AppliedPreset[];
 }
 
 export interface Track {
