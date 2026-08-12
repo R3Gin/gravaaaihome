@@ -474,16 +474,27 @@ export async function exportTimeline(
           `setpts=(PTS-STARTPTS)/${speed.toFixed(4)}`,
           `scale=${W}:${H}`,
         ];
-        if (clip.zoomKeys.length > 0) {
-          const z = zoomExpr(clip.zoomKeys);
+        const hasPan = (clip.panXKeys?.length ?? 0) > 0 || (clip.panYKeys?.length ?? 0) > 0;
+        if (clip.zoomKeys.length > 0 || hasPan) {
+          const z = clip.zoomKeys.length > 0 ? zoomExpr(clip.zoomKeys) : "1";
+          const px = (clip.panXKeys?.length ?? 0) > 0 ? valueExpr(clip.panXKeys!) : "0";
+          const py = (clip.panYKeys?.length ?? 0) > 0 ? valueExpr(clip.panYKeys!) : "0";
           chain.push(
-            `crop=w='iw/(${z})':h='ih/(${z})':x='(iw-ow)/2':y='(ih-oh)/2'`,
+            `crop=w='iw/(${z})':h='ih/(${z})':x='(iw-ow)/2-(${px})*iw/2':y='(ih-oh)/2-(${py})*ih/2'`,
             `scale=${W}:${H}`,
           );
         }
         if ((clip.rotateKeys?.length ?? 0) > 0) {
           const r = valueExpr(clip.rotateKeys!);
           chain.push(`rotate=a='(${r})*PI/180':ow=${W}:oh=${H}:c=black@0`, `scale=${W}:${H}`);
+        }
+        if ((clip.opacityKeys?.length ?? 0) > 0) {
+          const o = valueExpr(clip.opacityKeys!);
+          const a = `clip(${o},0,1)`;
+          chain.push(
+            "format=gbrp",
+            `geq=r='r(X,Y)*(${a})':g='g(X,Y)*(${a})':b='b(X,Y)*(${a})'`,
+          );
         }
         chain.push(eqExpr(clip.filters), "setsar=1", "format=yuv420p");
         parts.push(`[0:v]${chain.join(",")}[cv${i}]`);
