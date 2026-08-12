@@ -1158,6 +1158,15 @@ export function clipsAt(tracks: Track[], type: TrackType, time: number): Clip[] 
 
 /** Interpola os keyframes de zoom no tempo local do clipe. */
 export function zoomAt(clip: Clip, localTime: number) {
+  // caminho unificado: zoom agora é uma propriedade animável comum
+  const kf = clip.keyframes?.zoom;
+  if (kf && kf.length > 0) {
+    const v = valueAt(kf, localTime);
+    return { time: localTime, scale: typeof v === "number" ? v : 1, x: 0, y: 0 };
+  }
+  if (!clip.keyframes?.zoom && typeof clip.zoom === "number" && clip.zoom !== 1) {
+    return { time: localTime, scale: clip.zoom, x: 0, y: 0 };
+  }
   const keys = clip.zoomKeyframes ?? [];
   if (keys.length === 0) return { scale: 1, x: 0, y: 0 };
   if (keys.length === 1) return keys[0];
