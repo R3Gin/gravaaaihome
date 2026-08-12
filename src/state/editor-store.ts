@@ -1,6 +1,8 @@
 import { create } from "zustand";
 import {
   applyContinuity,
+  KF_EPS,
+  valueAt,
   newKeyframe,
   propByKey,
   resolveClip,
