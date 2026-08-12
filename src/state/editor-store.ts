@@ -31,6 +31,11 @@ import {
 } from "@/lib/caption-chunking";
 import type { WordTiming } from "@/lib/captions";
 import type { Annotation, AnnotationTool } from "@/lib/annotations";
+import {
+  presetById,
+  type EffectCategory,
+  type PresetParams,
+} from "@/lib/effect-presets";
 
 
 
