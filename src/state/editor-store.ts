@@ -917,12 +917,22 @@ export const useEditor = create<EditorState & EditorActions>((set, get) => {
     setKeyframeValue: (clipId, prop, kfId, value, live) => {
       const clip = findClip(get().tracks, clipId);
       if (!clip?.keyframes?.[prop]) return;
+      const touched = clip.keyframes[prop].find((k) => k.id === kfId);
       const map: KeyframeMap = {
         ...clip.keyframes,
         [prop]: clip.keyframes[prop].map((k) => (k.id === kfId ? { ...k, value } : k)),
       };
-      (live ? get().updateClipLive : get().updateClip)(clipId, { keyframes: map });
+      const presets = touched?.origin
+        ? (clip.effectPresets ?? []).map((p) =>
+            p.id === touched.origin ? { ...p, edited: true } : p,
+          )
+        : clip.effectPresets;
+      (live ? get().updateClipLive : get().updateClip)(clipId, {
+        keyframes: map,
+        ...(presets ? { effectPresets: presets } : {}),
+      });
     },
+
 
 
     togglePropertyAnimation: (clipId, prop) => {
