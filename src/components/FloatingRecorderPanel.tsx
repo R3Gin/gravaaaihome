@@ -27,8 +27,9 @@ import {
   Pen,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { PEN_COLORS, type DrawingController } from "./DrawingLayer";
-import { Eraser, Trash2 } from "lucide-react";
+import { ANNOTATION_TOOLS, PEN_COLORS, type DrawingController } from "./DrawingLayer";
+import { Trash2 } from "lucide-react";
+
 
 export interface FloatingRecorderPanelProps {
   visible: boolean;
