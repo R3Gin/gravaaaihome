@@ -158,6 +158,8 @@ export interface Clip {
   annotation?: Annotation;
   /** legenda gerada automaticamente (permite estilizar todas de uma vez) */
   isCaption?: boolean;
+  /** estilo próprio desta legenda (sobrepõe o estilo global) */
+  captionOverride?: Partial<CaptionStyle>;
   rect?: { x: number; y: number; w: number; h: number };
   strength?: number;
   /** presets de efeito aplicados no modo Simples */
@@ -261,6 +263,8 @@ export interface EditorState {
   /** trechos já removidos do vídeo (tempo original) — usados para remapear legendas */
   removedRanges: SilenceRange[];
   captionStyle: CaptionStyle;
+  /** transcrição bruta da sessão — permite reagrupar sem rodar o Whisper de novo */
+  transcript: { segments: { start: number; end: number; text: string }[]; words: WordTiming[] } | null;
   /** exibição das sub-linhas de keyframes na timeline (atalho U / UU) */
   kfExpanded: "none" | "animated" | "all";
   /** keyframes selecionados na timeline (permite mover/deletar em conjunto) */
@@ -364,7 +368,10 @@ export interface EditorActions {
     segments: { start: number; end: number; text: string }[],
     words?: WordTiming[],
   ) => void;
-  setCaptionStyle: (patch: Partial<CaptionStyle>) => void;
+  /** aplica estilo: a todas as legendas (padrão) ou só aos ids informados */
+  setCaptionStyle: (patch: Partial<CaptionStyle>, ids?: string[]) => void;
+  /** reagrupa as legendas a partir da transcrição guardada (sem retranscrever) */
+  rechunkCaptions: () => boolean;
   clearCaptions: () => void;
   /** transição de entrada de um clipe (módulo de Transições) */
   setTransition: (
@@ -638,6 +645,48 @@ function rippleRemove(tracks: Track[], ids: Set<string>): Track[] {
   });
 }
 
+/** Reconstrói os clipes de legenda a partir da transcrição guardada na sessão. */
+function buildCaptionsFromTranscript(
+  get: () => EditorState & EditorActions,
+  write: (fn: (tracks: Track[]) => Track[]) => void,
+) {
+  const { transcript, captionStyle: style, removedRanges: removed } = get();
+  if (!transcript) return;
+  const preset = BLOCK_PRESETS[style.blockSize ?? "medio"];
+  const chunked = transcript.words.length
+    ? chunkCaptionWords(transcript.words, preset)
+    : chunkSegmentsByText(transcript.segments, preset);
+  console.info(
+    `[legendas] chunking (${style.blockSize ?? "medio"}): ${transcript.segments.length} segmentos + ${transcript.words.length} palavras → ${chunked.length} blocos`,
+  );
+  const base = chunked.length ? chunked : transcript.segments;
+  const segments = removed.length ? remapCaptionsAfterCuts(base, removed) : base;
+  const clips: Clip[] = segments
+    .filter((s) => s.text.trim() && s.end - s.start > 0.05)
+    .map((s) => ({
+      id: uid(),
+      trackId: TEXT_TRACK,
+      type: "text" as const,
+      sourceUrl: "",
+      startTime: Math.max(0, s.start),
+      duration: Math.max(0.2, s.end - s.start),
+      sourceInStart: 0,
+      sourceInEnd: Math.max(0.2, s.end - s.start),
+      textContent: s.text.trim(),
+      fontSize: style.fontSize,
+      color: style.color,
+      background: style.background,
+      position: { x: 0.5, y: captionY(style.place) },
+      isCaption: true,
+    }));
+  if (clips.length === 0) return;
+  write((tracks) =>
+    mapTracks(tracks, (existing, track) =>
+      track.id === TEXT_TRACK ? [...existing.filter((c) => !c.isCaption), ...clips] : existing,
+    ),
+  );
+}
+
 export const useEditor = create<EditorState & EditorActions>((set, get) => {
   const snapshot = () =>
     set((s) => ({ past: [...s.past.slice(-49), s.tracks], future: [] }));
@@ -672,6 +721,7 @@ export const useEditor = create<EditorState & EditorActions>((set, get) => {
     silences: [],
     removedRanges: [],
     captionStyle: DEFAULT_CAPTION_STYLE,
+    transcript: null,
     kfExpanded: "none",
     selectedKeyframes: [],
     kfClipboard: [],
@@ -1406,76 +1456,56 @@ export const useEditor = create<EditorState & EditorActions>((set, get) => {
     setSilences: (silences) => set({ silences }),
 
     addCaptionClips: (rawSegments, words) => {
-      const style = get().captionStyle;
-      const preset = BLOCK_PRESETS[style.blockSize ?? "medio"];
-      // reagrupa em blocos curtos (pausas reais da fala) antes de qualquer remap
-      const chunked = words?.length
-        ? chunkCaptionWords(words, preset)
-        : chunkSegmentsByText(rawSegments, preset);
-      console.info(
-        `[legendas] chunking (${style.blockSize ?? "medio"}): ${rawSegments.length} segmentos + ${
-          words?.length ?? 0
-        } palavras → ${chunked.length} blocos`,
-      );
-      // sem fallback silencioso para "um bloco cobrindo tudo": erro visível
-      if (chunked.length === 0) {
-        throw new Error(
-          "Não foi possível transcrever este áudio — tente novamente ou verifique se há fala audível no vídeo.",
-        );
-      }
-      const base = chunked;
-      // legendas vêm do áudio original: aplica os cortes já feitos
-      const removed = get().removedRanges;
-      const segments = removed.length ? remapCaptionsAfterCuts(base, removed) : base;
-      const clips: Clip[] = segments
-        .filter((s) => s.text.trim() && s.end - s.start > 0.05)
-        .map((s) => ({
-          id: uid(),
-          trackId: TEXT_TRACK,
-          type: "text" as const,
-          sourceUrl: "",
-          startTime: Math.max(0, s.start),
-          duration: Math.max(0.2, s.end - s.start),
-          sourceInStart: 0,
-          sourceInEnd: Math.max(0.2, s.end - s.start),
-          textContent: s.text.trim(),
-          fontSize: style.fontSize,
-          color: style.color,
-          background: style.background,
-          position: { x: 0.5, y: captionY(style.place) },
-          isCaption: true,
-        }));
-      if (clips.length === 0) return;
-      write((tracks) =>
-        mapTracks(tracks, (existing, track) =>
-          track.id === TEXT_TRACK ? [...existing.filter((c) => !c.isCaption), ...clips] : existing,
-        ),
-      );
+      set({ transcript: { segments: rawSegments, words: words ?? [] } });
+      buildCaptionsFromTranscript(get, write);
     },
 
+    rechunkCaptions: () => {
+      if (!get().transcript) return false;
+      buildCaptionsFromTranscript(get, write);
+      return true;
+    },
 
-    setCaptionStyle: (patch) => {
-      const style = { ...get().captionStyle, ...patch };
-      set({ captionStyle: style });
+    setCaptionStyle: (patch, ids) => {
+      const style = ids?.length ? get().captionStyle : { ...get().captionStyle, ...patch };
+      if (!ids?.length) set({ captionStyle: style });
+      const target = ids?.length ? new Set(ids) : null;
       write((tracks) =>
         mapTracks(tracks, (clips) =>
-          clips.map((c) =>
-            c.isCaption
-              ? {
-                  ...c,
-                  fontSize: style.fontSize,
-                  color: style.color,
-                  background: style.background,
-                  position: { x: c.position?.x ?? 0.5, y: captionY(style.place) },
-                }
-              : c,
-          ),
+          clips.map((c) => {
+            if (!c.isCaption) return c;
+            if (target && !target.has(c.id)) return c;
+            if (target) {
+              const override = { ...(c.captionOverride ?? {}), ...patch };
+              const merged = { ...style, ...override };
+              return {
+                ...c,
+                captionOverride: override,
+                fontSize: merged.fontSize,
+                color: merged.color,
+                background: merged.background,
+                position: { x: c.position?.x ?? 0.5, y: captionY(merged.place) },
+              };
+            }
+            // estilo global: reseta overrides para todos ficarem iguais
+            return {
+              ...c,
+              captionOverride: undefined,
+              fontSize: style.fontSize,
+              color: style.color,
+              background: style.background,
+              position: { x: c.position?.x ?? 0.5, y: captionY(style.place) },
+            };
+          }),
         ),
       );
     },
 
-    clearCaptions: () =>
-      write((tracks) => mapTracks(tracks, (clips) => clips.filter((c) => !c.isCaption))),
+    clearCaptions: () => {
+      set({ transcript: null });
+      write((tracks) => mapTracks(tracks, (clips) => clips.filter((c) => !c.isCaption)));
+    },
+
 
     setTransition: (clipId, patch) => {
       const clip = findClip(get().tracks, clipId);

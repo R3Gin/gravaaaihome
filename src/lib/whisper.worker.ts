@@ -55,6 +55,7 @@ async function ensureModel() {
       })) as AutomaticSpeechRecognitionPipeline;
       return asr;
     } catch (err) {
+      console.warn("[legendas] falha ao carregar", attempt.model, attempt.device, attempt.dtype, err);
       lastError = err;
     }
   }
@@ -65,6 +66,47 @@ async function ensureModel() {
   );
 }
 
+/**
+ * Converte os chunks do Whisper em segmentos com tempo garantido.
+ * Blocos sem fim herdam o início do próximo (ou o fim do áudio); se nenhum
+ * bloco tiver tempo, o texto é distribuído proporcionalmente na duração.
+ */
+function segmentsFromChunks(chunks: Chunk[], total: number) {
+  const usable = chunks.filter((c) => (c.text ?? "").trim().length > 0);
+  if (usable.length === 0) return [];
+
+  const hasTiming = usable.some((c) => typeof c.timestamp?.[0] === "number");
+  if (!hasTiming) {
+    // sem nenhum timestamp: reparte pelo tamanho do texto
+    const totalChars = usable.reduce((n, c) => n + c.text.trim().length, 0) || 1;
+    let cursor = 0;
+    return usable.map((c) => {
+      const share = (c.text.trim().length / totalChars) * total;
+      const start = cursor;
+      cursor = Math.min(total, cursor + share);
+      return { start, end: Math.max(start + 0.2, cursor), text: c.text.trim() };
+    });
+  }
+
+  const out: { start: number; end: number; text: string }[] = [];
+  for (let i = 0; i < usable.length; i++) {
+    const c = usable[i]!;
+    const prev = out[out.length - 1];
+    const start =
+      typeof c.timestamp?.[0] === "number" ? c.timestamp[0]! : (prev?.end ?? 0);
+    let end = typeof c.timestamp?.[1] === "number" ? c.timestamp[1]! : NaN;
+    if (!Number.isFinite(end) || end <= start) {
+      const nextStart = usable
+        .slice(i + 1)
+        .map((n) => n.timestamp?.[0])
+        .find((t): t is number => typeof t === "number");
+      end = Number.isFinite(nextStart) ? nextStart! : total;
+    }
+    if (!(end > start)) end = Math.min(total, start + 2);
+    out.push({ start, end, text: c.text.trim() });
+  }
+  return out;
+}
 
 self.onmessage = async (event: MessageEvent<InMsg>) => {
   const post = (data: unknown) => (self as unknown as Worker).postMessage(data);
@@ -78,9 +120,6 @@ self.onmessage = async (event: MessageEvent<InMsg>) => {
     // cada chunk cobre ~20s úteis (30s - 2x5s de stride)
     const expectedChunks = Math.max(1, Math.ceil(total / 20));
     let seen = 0;
-    const resetProgress = () => {
-      seen = 0;
-    };
     const chunk_callback = () => {
       seen += 1;
       post({ type: "progress", progress: Math.min(0.99, seen / expectedChunks) });
@@ -93,16 +132,44 @@ self.onmessage = async (event: MessageEvent<InMsg>) => {
       ...(language ? { language, task: "transcribe" } : {}),
     };
 
-    let words: { word: string; start: number; end: number }[] = [];
-    let result: { text: string; chunks?: Chunk[] };
-
+    // 1) caminho estável: timestamps por FRASE
+    let result: { text?: string; chunks?: Chunk[] };
     try {
-      // 1ª tentativa: timestamps por PALAVRA (blocos curtos estilo CapCut)
-      result = (await model(audio, { ...base, return_timestamps: "word" })) as {
-        text: string;
+      result = (await model(audio, { ...base, return_timestamps: true })) as {
+        text?: string;
         chunks?: Chunk[];
       };
-      words = (result.chunks ?? [])
+    } catch (err) {
+      console.warn("[legendas] transcrição com timestamps falhou, tentando sem:", err);
+      result = (await model(audio, base)) as { text?: string; chunks?: Chunk[] };
+    }
+
+    let segments = segmentsFromChunks(result.chunks ?? [], total);
+
+    // sem chunks mas com texto: um bloco cobrindo o áudio (melhor que erro)
+    if (segments.length === 0 && (result.text ?? "").trim().length > 0) {
+      segments = [{ start: 0, end: Math.max(0.5, total), text: (result.text ?? "").trim() }];
+    }
+
+    post({ type: "progress", progress: 1 });
+    post({ type: "stage", stage: "finalize" });
+
+    if (segments.length === 0) {
+      post({
+        type: "error",
+        message:
+          "O modelo não encontrou fala neste áudio. Verifique se há voz audível ou use “Marcar blocos de fala”.",
+      });
+      return;
+    }
+
+    // 2) enriquecimento opcional: timestamps por PALAVRA (blocos curtos estilo Reels)
+    let words: { word: string; start: number; end: number }[] = [];
+    try {
+      const byWord = (await model(audio, { ...base, return_timestamps: "word" })) as {
+        chunks?: Chunk[];
+      };
+      words = (byWord.chunks ?? [])
         .filter((c) => c.text.trim().length > 0 && typeof c.timestamp?.[0] === "number")
         .map((c) => ({
           word: c.text.trim(),
@@ -110,79 +177,22 @@ self.onmessage = async (event: MessageEvent<InMsg>) => {
           end: c.timestamp[1] ?? Math.min(total, (c.timestamp[0] ?? 0) + 0.3),
         }));
     } catch (err) {
-      console.warn("[legendas] timestamps por palavra falharam, usando frases:", err);
+      console.warn("[legendas] timestamps por palavra indisponíveis neste modelo:", err);
       words = [];
-      result = { text: "" };
     }
 
-    console.info("[legendas] worker: palavras com timestamp =", words.length);
-
-    if (words.length === 0) {
-      // fallback: timestamps por frase
-      resetProgress();
-      result = (await model(audio, { ...base, return_timestamps: true })) as {
-        text: string;
-        chunks?: Chunk[];
-      };
-    }
-
-    post({ type: "progress", progress: 1 });
-    post({ type: "stage", stage: "finalize" });
-
-
-    // segmentos por frase: das palavras (agrupando por pontuação forte) ou dos chunks
-    let segments: { start: number; end: number; text: string }[];
-    if (words.length) {
-      segments = [];
-      let buf: typeof words = [];
-      for (const w of words) {
-        buf.push(w);
-        if (/[.!?…]$/.test(w.word) || buf.length >= 18) {
-          segments.push({
-            start: buf[0].start,
-            end: buf[buf.length - 1].end,
-            text: buf.map((b) => b.word).join(" "),
-          });
-          buf = [];
-        }
-      }
-      if (buf.length) {
-        segments.push({
-          start: buf[0].start,
-          end: buf[buf.length - 1].end,
-          text: buf.map((b) => b.word).join(" "),
-        });
-      }
-    } else {
-      segments = (result.chunks ?? [])
-        .map((c) => ({
-          start: c.timestamp[0] ?? 0,
-          end: c.timestamp[1] ?? Math.min(total, (c.timestamp[0] ?? 0) + 3),
-          text: c.text,
-        }))
-        .filter((s) => s.text.trim().length > 0);
-    }
-
-    // Nunca degradar para "um bloco cobrindo o vídeo inteiro": se não há
-    // segmentos com tempo, o resultado é inválido e vira erro visível.
-    segments = segments.filter(
-      (s) => s.text.trim().length > 0 && Number.isFinite(s.start) && s.end > s.start,
+    console.info(
+      "[legendas] worker: segmentos =",
+      segments.length,
+      "| palavras =",
+      words.length,
+      "| duração áudio =",
+      total.toFixed(2),
+      "s",
     );
-
-    console.info("[legendas] worker: segmentos =", segments.length, "| duração áudio =", total.toFixed(2), "s");
-
-    if (segments.length === 0) {
-      post({
-        type: "error",
-        message:
-          "Não foi possível transcrever este áudio — tente novamente ou verifique se há fala audível no vídeo.",
-      });
-      return;
-    }
 
     post({ type: "done", segments, words });
   } catch (err) {
     post({ type: "error", message: err instanceof Error ? err.message : "Falha na transcrição." });
   }
 };
-

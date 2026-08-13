@@ -1,5 +1,5 @@
-import { useMemo, useState } from "react";
-import { Loader2, Play, Sparkles, Trash2 } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Loader2, Sparkles, Trash2, X } from "lucide-react";
 import { speechPlaceholders, transcribe } from "@/lib/captions";
 import { CAPTION_ANIMS } from "@/lib/caption-styles";
 import { useEditor } from "@/state/editor-store";
@@ -56,6 +56,12 @@ export function CaptionsPanel() {
   const updateClip = useEditor((s) => s.updateClip);
   const setCurrentTime = useEditor((s) => s.setCurrentTime);
   const select = useEditor((s) => s.select);
+  const selectMany = useEditor((s) => s.selectMany);
+  const toggleSelect = useEditor((s) => s.toggleSelect);
+  const removeClip = useEditor((s) => s.removeClip);
+  const rechunkCaptions = useEditor((s) => s.rechunkCaptions);
+  const currentTime = useEditor((s) => s.currentTime);
+  const selectedClipIds = useEditor((s) => s.selectedClipIds);
 
   const [busy, setBusy] = useState(false);
   const [stage, setStage] = useState<string>("");
@@ -72,6 +78,35 @@ export function CaptionsPanel() {
         .sort((a, b) => a.startTime - b.startTime),
     [tracks],
   );
+
+  const selectedCaptionIds = useMemo(
+    () => captions.filter((c) => selectedClipIds.includes(c.id)).map((c) => c.id),
+    [captions, selectedClipIds],
+  );
+
+  /** estilo mostrado nos controles: o da 1ª legenda selecionada, se houver */
+  const view = useMemo(() => {
+    const first = captions.find((c) => selectedClipIds.includes(c.id));
+    return first?.captionOverride ? { ...style, ...first.captionOverride } : style;
+  }, [captions, selectedClipIds, style]);
+
+  /** aplica estilo só nas legendas selecionadas; sem seleção, aplica em todas */
+  const applyStyle = (patch: Parameters<typeof setCaptionStyle>[0]) =>
+    setCaptionStyle(patch, selectedCaptionIds.length ? selectedCaptionIds : undefined);
+
+  const activeId = useMemo(() => {
+    const hit = captions.find(
+      (c) => currentTime >= c.startTime && currentTime <= c.startTime + c.duration,
+    );
+    return hit?.id ?? null;
+  }, [captions, currentTime]);
+
+  const listRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    if (!activeId || !listRef.current) return;
+    const el = listRef.current.querySelector<HTMLElement>(`[data-cap="${activeId}"]`);
+    el?.scrollIntoView({ block: "nearest" });
+  }, [activeId]);
 
   const run = async () => {
     if (!sourceBlob) return;
@@ -153,7 +188,10 @@ export function CaptionsPanel() {
             <button
               key={b.id}
               title={b.hint}
-              onClick={() => setCaptionStyle({ blockSize: b.id })}
+              onClick={() => {
+                setCaptionStyle({ blockSize: b.id });
+                rechunkCaptions();
+              }}
               className={cn(
                 "flex-1 rounded-md border px-2 py-1.5 text-[11px] font-semibold transition-colors",
                 (style.blockSize ?? "medio") === b.id
@@ -225,6 +263,11 @@ export function CaptionsPanel() {
 
       {tab === "estilo" ? (
         <div className="space-y-4 animate-fade-in">
+          <p className="text-[10px] text-[var(--muted-foreground)]">
+            {selectedCaptionIds.length
+              ? `Aplicando em ${selectedCaptionIds.length} legenda(s) selecionada(s).`
+              : "Aplicando em todas as legendas. Selecione algumas na aba Legendas para mudar só elas."}
+          </p>
           {/* galeria de estilos */}
           {(
             [
@@ -242,10 +285,10 @@ export function CaptionsPanel() {
                   <button
                     key={a.id}
                     title={a.hint}
-                    onClick={() => setCaptionStyle({ anim: a.id })}
+                    onClick={() => applyStyle({ anim: a.id })}
                     className={cn(
                       "w-[104px] shrink-0 rounded-lg border p-2 text-left transition-colors",
-                      style.anim === a.id
+                      view.anim === a.id
                         ? "border-[var(--brand)] bg-[var(--brand)]/10"
                         : "border-[var(--border)] hover:border-white/25",
                     )}
@@ -267,8 +310,8 @@ export function CaptionsPanel() {
             <label className="block space-y-1">
               <span className="text-[11px] text-[var(--muted-foreground)]">Fonte</span>
               <select
-                value={style.fontFamily}
-                onChange={(e) => setCaptionStyle({ fontFamily: e.target.value })}
+                value={view.fontFamily}
+                onChange={(e) => applyStyle({ fontFamily: e.target.value })}
                 className="w-full rounded-md border border-[var(--border)] bg-transparent px-2 py-1.5 text-[11px]"
               >
                 {FONTS.map((f) => (
@@ -281,15 +324,15 @@ export function CaptionsPanel() {
 
             <label className="block space-y-1">
               <span className="text-[11px] text-[var(--muted-foreground)]">
-                Tamanho · {style.fontSize}px
+                Tamanho · {view.fontSize}px
               </span>
               <input
                 type="range"
                 min={12}
                 max={72}
                 step={1}
-                value={style.fontSize}
-                onChange={(e) => setCaptionStyle({ fontSize: Number(e.target.value) })}
+                value={view.fontSize}
+                onChange={(e) => applyStyle({ fontSize: Number(e.target.value) })}
                 className="w-full accent-[var(--brand)]"
               />
             </label>
@@ -299,8 +342,8 @@ export function CaptionsPanel() {
                 <span className="text-[11px] text-[var(--muted-foreground)]">Cor do texto</span>
                 <input
                   type="color"
-                  value={style.color}
-                  onChange={(e) => setCaptionStyle({ color: e.target.value })}
+                  value={view.color}
+                  onChange={(e) => applyStyle({ color: e.target.value })}
                   className="h-8 w-full rounded-lg border border-[var(--border)] bg-transparent"
                 />
               </label>
@@ -308,8 +351,8 @@ export function CaptionsPanel() {
                 <span className="text-[11px] text-[var(--muted-foreground)]">Realce / fundo</span>
                 <input
                   type="color"
-                  value={style.highlight}
-                  onChange={(e) => setCaptionStyle({ highlight: e.target.value })}
+                  value={view.highlight}
+                  onChange={(e) => applyStyle({ highlight: e.target.value })}
                   className="h-8 w-full rounded-lg border border-[var(--border)] bg-transparent"
                 />
               </label>
@@ -317,14 +360,14 @@ export function CaptionsPanel() {
 
             <label className="block space-y-1">
               <span className="text-[11px] text-[var(--muted-foreground)]">
-                Opacidade do fundo · {Math.round(style.bgOpacity * 100)}%
+                Opacidade do fundo · {Math.round(view.bgOpacity * 100)}%
               </span>
               <input
                 type="range"
                 min={0}
                 max={100}
-                value={Math.round(style.bgOpacity * 100)}
-                onChange={(e) => setCaptionStyle({ bgOpacity: Number(e.target.value) / 100 })}
+                value={Math.round(view.bgOpacity * 100)}
+                onChange={(e) => applyStyle({ bgOpacity: Number(e.target.value) / 100 })}
                 className="w-full accent-[var(--brand)]"
               />
             </label>
@@ -333,10 +376,10 @@ export function CaptionsPanel() {
               {(["bottom", "middle", "top"] as const).map((p) => (
                 <button
                   key={p}
-                  onClick={() => setCaptionStyle({ place: p })}
+                  onClick={() => applyStyle({ place: p })}
                   className={cn(
                     "flex-1 rounded-md border px-2 py-1.5 text-[11px] font-semibold",
-                    style.place === p
+                    view.place === p
                       ? "border-[var(--brand)] bg-[var(--brand)]/15 text-[var(--brand)]"
                       : "border-[var(--border)] text-[var(--muted-foreground)]",
                   )}
@@ -350,10 +393,10 @@ export function CaptionsPanel() {
               {(["left", "center", "right"] as const).map((a) => (
                 <button
                   key={a}
-                  onClick={() => setCaptionStyle({ align: a })}
+                  onClick={() => applyStyle({ align: a })}
                   className={cn(
                     "flex-1 rounded-md border px-2 py-1.5 text-[11px] font-semibold",
-                    style.align === a
+                    view.align === a
                       ? "border-[var(--brand)] bg-[var(--brand)]/15 text-[var(--brand)]"
                       : "border-[var(--border)] text-[var(--muted-foreground)]",
                   )}
@@ -373,13 +416,13 @@ export function CaptionsPanel() {
               ).map(([key, label]) => (
                 <button
                   key={key}
-                  onClick={() => setCaptionStyle({ [key]: !style[key] } as never)}
+                  onClick={() => applyStyle({ [key]: !view[key] } as never)}
                   className={cn(
                     "flex-1 rounded-md border px-2 py-1.5 text-[11px]",
                     key === "bold" && "font-black",
                     key === "italic" && "italic font-semibold",
                     key === "outline" && "font-semibold",
-                    style[key]
+                    view[key]
                       ? "border-[var(--brand)] bg-[var(--brand)]/15 text-[var(--brand)]"
                       : "border-[var(--border)] text-[var(--muted-foreground)]",
                   )}
@@ -393,10 +436,10 @@ export function CaptionsPanel() {
               {([true, false] as const).map((v) => (
                 <button
                   key={String(v)}
-                  onClick={() => setCaptionStyle({ wordByWord: v })}
+                  onClick={() => applyStyle({ wordByWord: v })}
                   className={cn(
                     "flex-1 rounded-md border px-2 py-1.5 text-[11px] font-semibold",
-                    style.wordByWord === v
+                    view.wordByWord === v
                       ? "border-[var(--brand)] bg-[var(--brand)]/15 text-[var(--brand)]"
                       : "border-[var(--border)] text-[var(--muted-foreground)]",
                   )}
@@ -409,8 +452,8 @@ export function CaptionsPanel() {
             <label className="flex items-center gap-2 text-[11px]">
               <input
                 type="checkbox"
-                checked={style.background}
-                onChange={(e) => setCaptionStyle({ background: e.target.checked })}
+                checked={view.background}
+                onChange={(e) => applyStyle({ background: e.target.checked })}
                 className="accent-[var(--brand)]"
               />
               Fundo atrás do texto
@@ -424,35 +467,98 @@ export function CaptionsPanel() {
               Nenhuma legenda ainda. Gere as legendas para editar aqui.
             </p>
           ) : (
-            captions.map((c) => (
-              <div
-                key={c.id}
-                className="space-y-1.5 rounded-lg border border-[var(--border)] p-2 transition-colors hover:border-white/25"
-              >
-                <div className="flex items-center justify-between text-[10px] text-[var(--muted-foreground)]">
-                  <span className="font-mono">
-                    {fmt(c.startTime)} → {fmt(c.startTime + c.duration)}
-                  </span>
+            <>
+              <div className="flex items-center justify-between text-[10px] text-[var(--muted-foreground)]">
+                <span>
+                  {selectedCaptionIds.length
+                    ? `${selectedCaptionIds.length} selecionada(s) — o estilo vai só nelas`
+                    : "Clique para selecionar · Ctrl/Shift para várias"}
+                </span>
+                {selectedCaptionIds.length ? (
                   <button
-                    onClick={() => {
-                      select(c.id);
-                      setCurrentTime(c.startTime + 0.01);
-                    }}
+                    onClick={() => selectMany([])}
                     className="flex items-center gap-1 font-semibold text-[var(--brand)]"
                   >
-                    <Play className="h-3 w-3" /> Ir
+                    <X className="h-3 w-3" /> Limpar
                   </button>
-                </div>
-                <input
-                  value={c.textContent ?? ""}
-                  onChange={(e) => updateClip(c.id, { textContent: e.target.value })}
-                  className="w-full rounded-md bg-white/5 px-2 py-1 text-[11px] text-[var(--foreground)] outline-none focus:ring-1 focus:ring-[var(--brand)]"
-                />
+                ) : (
+                  <button
+                    onClick={() => selectMany(captions.map((c) => c.id))}
+                    className="font-semibold text-[var(--brand)]"
+                  >
+                    Selecionar todas
+                  </button>
+                )}
               </div>
-            ))
+
+              <div
+                ref={listRef}
+                className="max-h-72 space-y-1.5 overflow-y-auto rounded-lg border border-[var(--border)] bg-black/20 p-1.5"
+              >
+                {captions.map((c, i) => {
+                  const selected = selectedCaptionIds.includes(c.id);
+                  return (
+                    <div
+                      key={c.id}
+                      data-cap={c.id}
+                      onClick={(e) => {
+                        if (e.metaKey || e.ctrlKey || e.shiftKey) toggleSelect(c.id);
+                        else {
+                          select(c.id);
+                          setCurrentTime(c.startTime + 0.01);
+                        }
+                      }}
+                      className={cn(
+                        "cursor-pointer rounded-md border p-2 transition-colors",
+                        selected
+                          ? "border-[var(--brand)] bg-[var(--brand)]/10"
+                          : activeId === c.id
+                            ? "border-white/30 bg-white/5"
+                            : "border-transparent hover:border-white/20",
+                      )}
+                    >
+                      <div className="flex items-center justify-between text-[10px] text-[var(--muted-foreground)]">
+                        <span className="font-mono">
+                          {String(i + 1).padStart(2, "0")} · {fmt(c.startTime)} →{" "}
+                          {fmt(c.startTime + c.duration)}
+                        </span>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            removeClip(c.id);
+                          }}
+                          title="Apagar legenda"
+                          className="text-[var(--muted-foreground)] hover:text-red-400"
+                        >
+                          <Trash2 className="h-3 w-3" />
+                        </button>
+                      </div>
+                      <input
+                        value={c.textContent ?? ""}
+                        onClick={(e) => e.stopPropagation()}
+                        onChange={(e) => updateClip(c.id, { textContent: e.target.value })}
+                        className="mt-1 w-full rounded-md bg-white/5 px-2 py-1 text-[11px] text-[var(--foreground)] outline-none focus:ring-1 focus:ring-[var(--brand)]"
+                      />
+                      {c.captionOverride ? (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            updateClip(c.id, { captionOverride: undefined });
+                          }}
+                          className="mt-1 text-[10px] font-semibold text-[var(--brand)]"
+                        >
+                          Voltar ao estilo geral
+                        </button>
+                      ) : null}
+                    </div>
+                  );
+                })}
+              </div>
+            </>
           )}
         </div>
       )}
+
 
       <button
         onClick={clearCaptions}
