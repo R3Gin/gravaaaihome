@@ -22,3 +22,30 @@ Quando você corta manualmente, existem 1 ou 2 emendas — quase não se percebe
 - Trechos contíguos continuam sem seek algum (comportamento atual já correto) — o double-buffer só entra em emendas descontínuas.
 - `SilencePanel.tsx` / `audio-tools.ts`: pós-processamento da lista de silêncios (merge de vizinhos próximos + margem nas bordas) antes de virar marcação na timeline e antes de `cutRanges`.
 - Nenhuma mudança visual no editor nem na identidade (fundo escuro, acentos vermelhos).
+
+---
+
+# Janela de exportação (modal com fundo em vidro)
+
+## Como vai funcionar
+
+Ao clicar em "Exportar MP4", em vez de a barrinha de progresso aparecer na toolbar, abre uma janela centralizada com o fundo do editor desfocado (efeito vidro) e bloqueado para cliques enquanto a exportação acontece.
+
+Conteúdo da janela:
+
+- Título "Exportar vídeo" e resumo do projeto: duração final, proporção (16:9 / 9:16 / 1:1) e número de clipes.
+- Escolha de qualidade (Rápida 720p / Alta 1080p) com o tamanho estimado do arquivo, e o nome do arquivo editável.
+- Botões "Exportar" e "Cancelar" no estado inicial.
+- Durante o processo: barra de progresso com porcentagem, tempo restante estimado, etapa atual ("Preparando", "Codificando vídeo", "Finalizando arquivo") e botão "Cancelar exportação".
+- Ao terminar: estado de sucesso com o nome do arquivo, botão "Baixar novamente" e "Fechar" — o download automático continua acontecendo.
+- Em caso de erro: mensagem clara com "Tentar de novo" e "Fechar".
+
+Fechar por Esc ou clique fora só é permitido quando não há exportação em andamento; durante o processo é preciso usar "Cancelar exportação" (com confirmação curta no próprio card).
+
+## Detalhes técnicos
+
+- Novo componente `src/components/editor/ExportDialog.tsx` (Dialog do shadcn já disponível), overlay com `bg-background/60 backdrop-blur-xl` e o card usando os tokens atuais (superfície escura, borda sutil, acento vermelho no botão principal). Nada de cores fixas.
+- Cancelamento real: `ExportProjectOptions` ganha `signal?: AbortSignal`, propagado até `export-webcodecs.ts`; o laço de encode checa `signal.aborted` a cada quadro, fecha o encoder e descarta o muxer. O caminho ffmpeg.wasm faz o mesmo entre etapas.
+- A escolha de qualidade sai da toolbar e passa a viver no diálogo; o botão da toolbar só abre a janela.
+- Estados de progresso vêm do `onProgress` já existente; a etapa é derivada da faixa de progresso.
+- Acessibilidade: foco preso no diálogo, botão principal com foco inicial, `aria-busy` durante a exportação, respeito a `prefers-reduced-motion` na animação de entrada.
