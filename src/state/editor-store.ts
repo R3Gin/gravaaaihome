@@ -410,6 +410,28 @@ export function allClips(tracks: Track[]): Clip[] {
 }
 
 export function findClip(tracks: Track[], id: string | null): Clip | null {
+
+/**
+ * Ids que devem se mover/apagar juntos: a seleção atual (quando o clipe
+ * arrastado faz parte dela) somada aos clipes vinculados (vídeo + áudio).
+ */
+export function selectionGroup(
+  tracks: Track[],
+  selectedIds: string[],
+  anchorId: string,
+): string[] {
+  const base = selectedIds.includes(anchorId) ? selectedIds : [anchorId];
+  const out = new Set<string>();
+  for (const id of base) {
+    out.add(id);
+    const clip = findClip(tracks, id);
+    if (!clip?.linkGroupId) continue;
+    for (const other of allClips(tracks))
+      if (other.linkGroupId === clip.linkGroupId) out.add(other.id);
+  }
+  return [...out];
+}
+
   if (!id) return null;
   for (const t of tracks) {
     const c = t.clips.find((x) => x.id === id);
