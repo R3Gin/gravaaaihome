@@ -512,9 +512,14 @@ function ClipBox({ clip, track }: { clip: Clip; track: Track }) {
       )}
       style={{
         left: start * zoom + 1,
-        width: Math.max(6, dur * zoom - 2),
+        // clipes muito curtos não podem "vazar" por cima do vizinho: no máximo
+        // a própria largura real, com 2px de piso só para continuarem visíveis.
+        width: Math.max(2, Math.min(dur * zoom - 2, Math.max(2, dur * zoom - 2))),
+        paddingLeft: dur * zoom < 24 ? 0 : undefined,
+        paddingRight: dur * zoom < 24 ? 0 : undefined,
         zIndex: dragging ? 20 : selected ? 10 : 1,
       }}
+
     >
       <span className="pointer-events-none truncate">
         {clip.type === "text"
