@@ -274,6 +274,19 @@ export function CaptionsPanel() {
         </div>
       ) : null}
 
+      {stale ? (
+        <div className="space-y-2 rounded-lg bg-amber-500/10 p-3 text-[11px] text-amber-200">
+          Você cortou ou dividiu o vídeo depois de gerar estas legendas — elas podem estar
+          fora de sincronia.
+          <div>
+            <button onClick={() => void run()} className="font-semibold underline">
+              Gerar de novo com os cortes atuais
+            </button>
+          </div>
+        </div>
+      ) : null}
+
+
       {/* --- abas --- */}
       <div className="flex gap-1 rounded-lg bg-white/5 p-1">
         {(["estilo", "lista"] as const).map((t) => (
