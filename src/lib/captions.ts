@@ -38,12 +38,26 @@ export async function transcribe(
   language: string | "auto" = "portuguese",
   events: TranscribeEvents = {},
 ): Promise<TranscribeResult> {
-  const lang = !language || language === "auto" ? undefined : language;
   events.onStage?.("audio");
   const audio = await decodeMono16k(blob);
+  if (!audio) throw new Error("Não encontrei áudio nesse vídeo.");
+  return transcribeSamples(audio, language, events);
+}
+
+/**
+ * Mesma transcrição, mas a partir de PCM mono 16 kHz já montado — é o caminho
+ * usado pelo editor, que envia o áudio FINAL da timeline (já com os cortes).
+ */
+export async function transcribeSamples(
+  audio: Float32Array,
+  language: string | "auto" = "portuguese",
+  events: TranscribeEvents = {},
+): Promise<TranscribeResult> {
+  const lang = !language || language === "auto" ? undefined : language;
   if (!audio || audio.length < 16000 * 0.3) {
     throw new Error("Não encontrei áudio nesse vídeo.");
   }
+
 
   // diagnóstico do áudio extraído (16 kHz, mono, PCM float32)
   const duration = audio.length / 16000;
@@ -129,6 +143,27 @@ export function validateTranscript(
   );
 
   if (segments.length === 0) throw new Error(NO_SPEECH);
+
+  /* Guarda de densidade: o Whisper às vezes devolve um resto de token ("e A")
+     cobrindo dezenas de segundos. Isso NÃO é legenda válida — vira erro
+     explícito em vez de aparecer silenciosamente na timeline. */
+  const covered = segments.reduce((n, s) => n + (s.end - s.start), 0);
+  const letters = segments.reduce(
+    (n, s) => n + s.text.replace(/[^\p{L}\p{N}]/gu, "").length,
+    0,
+  );
+  const density = covered > 0 ? letters / covered : 0;
+  console.info(
+    `[legendas] densidade: ${letters} letras em ${covered.toFixed(1)}s → ${density.toFixed(2)} letras/s`,
+  );
+  if (covered > 3 && density < 1.5) {
+    throw new Error(
+      `A transcrição saiu inconsistente (${letters} caracteres para ${covered.toFixed(0)}s de áudio). ` +
+        "Isso costuma acontecer quando o áudio está muito baixo ou o idioma escolhido não bate com a fala. " +
+        "Confira o idioma e tente de novo.",
+    );
+  }
+
 
   return { segments, words };
 }

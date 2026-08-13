@@ -1,6 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Loader2, Sparkles, Trash2, X } from "lucide-react";
-import { speechPlaceholders, transcribe } from "@/lib/captions";
+import { speechPlaceholders, transcribe, transcribeSamples } from "@/lib/captions";
+import {
+  composeTimelineAudio,
+  timelineAudioSignature,
+  type AudioClipRef,
+} from "@/lib/timeline-audio";
+
+
 import { CAPTION_ANIMS } from "@/lib/caption-styles";
 import { useEditor } from "@/state/editor-store";
 import { cn } from "@/lib/utils";
@@ -84,6 +91,14 @@ export function CaptionsPanel() {
     [captions, selectedClipIds],
   );
 
+  /** legenda desatualizada: houve corte/divisão depois que ela foi gerada */
+  const captionsSig = useEditor((s) => s.captionsSig);
+  const stale = useMemo(() => {
+    if (!captionsSig || captions.length === 0) return false;
+    return timelineAudioSignature(tracks.flatMap((t) => t.clips) as AudioClipRef[]) !== captionsSig;
+  }, [captionsSig, captions.length, tracks]);
+
+
   /** estilo mostrado nos controles: o da 1ª legenda selecionada, se houver */
   const view = useMemo(() => {
     const first = captions.find((c) => selectedClipIds.includes(c.id));
@@ -113,19 +128,32 @@ export function CaptionsPanel() {
     setBusy(true);
     setError(null);
     setDownload(0);
+    const events = {
+      onStage: (s: "audio" | "model" | "transcribe" | "finalize") =>
+        setStage(
+          s === "audio"
+            ? "Montando o áudio já cortado…"
+            : s === "model"
+              ? "Carregando modelo (só na primeira vez)…"
+              : "Transcrevendo…",
+        ),
+      onDownload: setDownload,
+    };
     try {
-      const res = await transcribe(sourceBlob, lang, {
-        onStage: (s) =>
-          setStage(
-            s === "audio"
-              ? "Extraindo áudio…"
-              : s === "model"
-                ? "Carregando modelo (só na primeira vez)…"
-                : "Transcrevendo…",
-          ),
-        onDownload: setDownload,
-      });
-      addCaptionClips(res.segments, res.words);
+      setStage("Montando o áudio já cortado…");
+      // sempre transcreve o áudio FINAL da timeline (com os cortes aplicados)
+      const clips = useEditor.getState().tracks.flatMap((t) => t.clips) as AudioClipRef[];
+      const composed = await composeTimelineAudio(clips, sourceBlob);
+      const sig = useEditor.getState().audioSignature();
+      console.info(
+        composed
+          ? `[legendas] áudio composto da timeline: ${composed.duration.toFixed(2)}s · ${composed.covered.length} trecho(s)`
+          : "[legendas] não consegui compor o áudio da timeline — usando o arquivo original",
+      );
+      const res = composed
+        ? await transcribeSamples(composed.audio, lang, events)
+        : await transcribe(sourceBlob, lang, events);
+      addCaptionClips(res.segments, res.words, { timeline: !!composed, sig });
       setTab("lista");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Não consegui gerar as legendas.");
@@ -134,6 +162,7 @@ export function CaptionsPanel() {
       setStage("");
     }
   };
+
 
   const runBlocks = async () => {
     if (!sourceBlob) return;
@@ -244,6 +273,19 @@ export function CaptionsPanel() {
           </div>
         </div>
       ) : null}
+
+      {stale ? (
+        <div className="space-y-2 rounded-lg bg-amber-500/10 p-3 text-[11px] text-amber-200">
+          Você cortou ou dividiu o vídeo depois de gerar estas legendas — elas podem estar
+          fora de sincronia.
+          <div>
+            <button onClick={() => void run()} className="font-semibold underline">
+              Gerar de novo com os cortes atuais
+            </button>
+          </div>
+        </div>
+      ) : null}
+
 
       {/* --- abas --- */}
       <div className="flex gap-1 rounded-lg bg-white/5 p-1">

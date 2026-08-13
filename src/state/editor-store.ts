@@ -16,6 +16,8 @@ import {
   type TangentSpeed,
 } from "@/lib/keyframes";
 import { remapCaptionsAfterCuts, toOriginalTime } from "@/lib/caption-remap";
+import { timelineAudioSignature, type AudioClipRef } from "@/lib/timeline-audio";
+
 import {
   applyPreset,
   revealModeFor,
@@ -160,6 +162,9 @@ export interface Clip {
   isCaption?: boolean;
   /** estilo próprio desta legenda (sobrepõe o estilo global) */
   captionOverride?: Partial<CaptionStyle>;
+  /** legenda com texto ajustado à mão — nunca é sobrescrita ao reagrupar */
+  captionEdited?: boolean;
+
   rect?: { x: number; y: number; w: number; h: number };
   strength?: number;
   /** presets de efeito aplicados no modo Simples */
@@ -264,7 +269,15 @@ export interface EditorState {
   removedRanges: SilenceRange[];
   captionStyle: CaptionStyle;
   /** transcrição bruta da sessão — permite reagrupar sem rodar o Whisper de novo */
-  transcript: { segments: { start: number; end: number; text: string }[]; words: WordTiming[] } | null;
+  transcript: {
+    segments: { start: number; end: number; text: string }[];
+    words: WordTiming[];
+    /** true quando os tempos já estão na linha do tempo editada (áudio composto) */
+    timeline?: boolean;
+  } | null;
+  /** assinatura do áudio da timeline no momento em que a legenda foi gerada */
+  captionsSig: string | null;
+
   /** exibição das sub-linhas de keyframes na timeline (atalho U / UU) */
   kfExpanded: "none" | "animated" | "all";
   /** keyframes selecionados na timeline (permite mover/deletar em conjunto) */
@@ -367,7 +380,12 @@ export interface EditorActions {
   addCaptionClips: (
     segments: { start: number; end: number; text: string }[],
     words?: WordTiming[],
+    /** tempos já na linha do tempo editada + assinatura do áudio usado */
+    meta?: { timeline?: boolean; sig?: string | null },
   ) => void;
+  /** assinatura atual do áudio da timeline (para detectar legenda desatualizada) */
+  audioSignature: () => string;
+
   /** aplica estilo: a todas as legendas (padrão) ou só aos ids informados */
   setCaptionStyle: (patch: Partial<CaptionStyle>, ids?: string[]) => void;
   /** reagrupa as legendas a partir da transcrição guardada (sem retranscrever) */
@@ -660,9 +678,19 @@ function buildCaptionsFromTranscript(
     `[legendas] chunking (${style.blockSize ?? "medio"}): ${transcript.segments.length} segmentos + ${transcript.words.length} palavras → ${chunked.length} blocos`,
   );
   const base = chunked.length ? chunked : transcript.segments;
-  const segments = removed.length ? remapCaptionsAfterCuts(base, removed) : base;
+  /* Transcrição feita sobre o áudio composto da timeline já nasce no tempo
+     editado — remapear de novo deslocaria tudo. Só transcrições antigas
+     (tempo do arquivo original) passam pelo remap. */
+  const segments =
+    !transcript.timeline && removed.length ? remapCaptionsAfterCuts(base, removed) : base;
+
+  // legendas com texto ajustado à mão sobrevivem ao reagrupamento
+  const kept = allClips(get().tracks).filter((c) => c.isCaption && c.captionEdited);
+  const overlapsKept = (s: number, e: number) =>
+    kept.some((k) => s < k.startTime + k.duration - 0.01 && e > k.startTime + 0.01);
+
   const clips: Clip[] = segments
-    .filter((s) => s.text.trim() && s.end - s.start > 0.05)
+    .filter((s) => s.text.trim() && s.end - s.start > 0.05 && !overlapsKept(s.start, s.end))
     .map((s) => ({
       id: uid(),
       trackId: TEXT_TRACK,
@@ -679,12 +707,15 @@ function buildCaptionsFromTranscript(
       position: { x: 0.5, y: captionY(style.place) },
       isCaption: true,
     }));
-  if (clips.length === 0) return;
+  if (clips.length === 0 && kept.length === 0) return;
   write((tracks) =>
     mapTracks(tracks, (existing, track) =>
-      track.id === TEXT_TRACK ? [...existing.filter((c) => !c.isCaption), ...clips] : existing,
+      track.id === TEXT_TRACK
+        ? [...existing.filter((c) => !c.isCaption || c.captionEdited), ...clips]
+        : existing,
     ),
   );
+
 }
 
 export const useEditor = create<EditorState & EditorActions>((set, get) => {
@@ -722,6 +753,8 @@ export const useEditor = create<EditorState & EditorActions>((set, get) => {
     removedRanges: [],
     captionStyle: DEFAULT_CAPTION_STYLE,
     transcript: null,
+    captionsSig: null,
+
     kfExpanded: "none",
     selectedKeyframes: [],
     kfClipboard: [],
@@ -796,6 +829,9 @@ export const useEditor = create<EditorState & EditorActions>((set, get) => {
         future: [],
         silences: [],
         removedRanges: [],
+        transcript: null,
+        captionsSig: null,
+
       });
 
     },
@@ -1006,8 +1042,19 @@ export const useEditor = create<EditorState & EditorActions>((set, get) => {
 
     updateClip: (id, patch) =>
       write((tracks) =>
-        mapTracks(tracks, (clips) => clips.map((c) => (c.id === id ? { ...c, ...patch } : c))),
+        mapTracks(tracks, (clips) =>
+          clips.map((c) => {
+            if (c.id !== id) return c;
+            // texto de legenda mexido à mão nunca mais é sobrescrito pelo reagrupamento
+            const edited =
+              c.isCaption && patch.textContent !== undefined && patch.textContent !== c.textContent
+                ? true
+                : c.captionEdited;
+            return { ...c, ...patch, captionEdited: edited };
+          }),
+        ),
       ),
+
 
     updateClipLive: (id, patch) =>
       set((s) => ({
@@ -1171,11 +1218,11 @@ export const useEditor = create<EditorState & EditorActions>((set, get) => {
           Math.max(clip.startTime + MIN_CLIP, newTime),
         );
         const duration = end - clip.startTime;
-        const sourceInEnd = Math.min(
-          get().sourceDuration || Infinity,
-          clip.sourceInStart + duration * speed,
-        );
+        // clipes de texto/legenda não têm mídia de origem: podem esticar livremente
+        const limit = clip.type === "text" ? Infinity : get().sourceDuration || Infinity;
+        const sourceInEnd = Math.min(limit, clip.sourceInStart + duration * speed);
         patch = { duration: (sourceInEnd - clip.sourceInStart) / speed, sourceInEnd };
+
       }
       // o par vinculado (áudio separado) é aparado junto
       const partners = clip.linkGroupId
@@ -1455,10 +1502,16 @@ export const useEditor = create<EditorState & EditorActions>((set, get) => {
     setSourceBlob: (sourceBlob) => set({ sourceBlob }),
     setSilences: (silences) => set({ silences }),
 
-    addCaptionClips: (rawSegments, words) => {
-      set({ transcript: { segments: rawSegments, words: words ?? [] } });
+    audioSignature: () => timelineAudioSignature(allClips(get().tracks) as AudioClipRef[]),
+
+    addCaptionClips: (rawSegments, words, meta) => {
+      set({
+        transcript: { segments: rawSegments, words: words ?? [], timeline: meta?.timeline },
+        captionsSig: meta?.sig ?? get().audioSignature(),
+      });
       buildCaptionsFromTranscript(get, write);
     },
+
 
     rechunkCaptions: () => {
       if (!get().transcript) return false;
