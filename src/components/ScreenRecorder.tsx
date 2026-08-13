@@ -30,6 +30,8 @@ import {
   FloatingRecorderPanel,
   type FloatingRecorderPanelHandle,
 } from "./FloatingRecorderPanel";
+import { AutoPipNotice } from "./AutoPipNotice";
+
 
 type Status = "idle" | "capturing" | "recording" | "converting" | "ready";
 
