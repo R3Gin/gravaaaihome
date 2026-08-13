@@ -23,6 +23,10 @@ export async function fixWebmSeekable(webm: Blob, durationMs: number): Promise<B
   }
 }
 
+/** Ative com `localStorage.setItem("gravaai:ffmpeg-debug","1")` para ver os logs. */
+const FFMPEG_DEBUG =
+  typeof localStorage !== "undefined" && localStorage.getItem("gravaai:ffmpeg-debug") === "1";
+
 let ffmpegInstance: FFmpeg | null = null;
 let loadPromise: Promise<FFmpeg> | null = null;
 
@@ -45,8 +49,8 @@ async function getFFmpeg(onLog?: (msg: string) => void): Promise<FFmpeg> {
     const ff = new FFmpeg();
     ff.on("log", ({ message }) => {
       if (onLog) onLog(message);
-      // Always surface ffmpeg logs to console for debugging.
-      console.log("[ffmpeg]", message);
+      // Logs do ffmpeg engasgam a aba em exportações longas: só em modo debug.
+      if (FFMPEG_DEBUG) console.log("[ffmpeg]", message);
     });
     const withTimeout = async <T,>(p: Promise<T>, ms: number, label: string): Promise<T> => {
       let timer: ReturnType<typeof setTimeout> | undefined;
@@ -150,8 +154,8 @@ export async function convertWebmToMp4(
         "-y",
         "-i", "input.webm",
         "-c:v", "libx264",
-        "-preset", "veryfast",
-        "-crf", "23",
+        "-preset", "ultrafast",
+        "-crf", "26",
         "-pix_fmt", "yuv420p",
         "-c:a", "aac",
         "-b:a", "160k",
@@ -271,8 +275,8 @@ export async function exportEditedMp4(
       if (withAudio) args.push("-map", "[aout]", "-c:a", "aac", "-b:a", "160k");
       args.push(
         "-c:v", "libx264",
-        "-preset", "veryfast",
-        "-crf", "23",
+        "-preset", "ultrafast",
+        "-crf", "26",
         "-pix_fmt", "yuv420p",
         "-movflags", "+faststart",
         "edit-output.mp4",
@@ -489,12 +493,21 @@ export async function exportTimeline(
           chain.push(`rotate=a='(${r})*PI/180':ow=${W}:oh=${H}:c=black@0`, `scale=${W}:${H}`);
         }
         if ((clip.opacityKeys?.length ?? 0) > 0) {
-          const o = valueExpr(clip.opacityKeys!, "T");
-          const a = `clip(${o},0,1)`;
-          chain.push(
-            "format=gbrp",
-            `geq=r='r(X,Y)*(${a})':g='g(X,Y)*(${a})':b='b(X,Y)*(${a})'`,
-          );
+          const keys = clip.opacityKeys!;
+          const constant = keys.every((k) => Math.abs(k.value - keys[0].value) < 0.001);
+          if (constant) {
+            // caminho barato: opacidade fixa vira uma mistura simples com preto
+            const v = Math.max(0, Math.min(1, keys[0].value)).toFixed(4);
+            chain.push(`colorlevels=rimin=0:gimin=0:bimin=0:romax=${v}:gomax=${v}:bomax=${v}`);
+          } else {
+            // geq é muito lento, mas é o único caminho para opacidade animada
+            const o = valueExpr(keys, "T");
+            const a = `clip(${o},0,1)`;
+            chain.push(
+              "format=gbrp",
+              `geq=r='r(X,Y)*(${a})':g='g(X,Y)*(${a})':b='b(X,Y)*(${a})'`,
+            );
+          }
         }
         chain.push(eqExpr(clip.filters), "setsar=1", "format=yuv420p");
         parts.push(`[0:v]${chain.join(",")}[cv${i}]`);
@@ -593,8 +606,8 @@ export async function exportTimeline(
       if (withAudio) args.push("-map", `[${aLabel}]`, "-c:a", "aac", "-b:a", "160k");
       args.push(
         "-c:v", "libx264",
-        "-preset", "veryfast",
-        "-crf", "23",
+        "-preset", "ultrafast",
+        "-crf", "26",
         "-pix_fmt", "yuv420p",
         "-movflags", "+faststart",
         "tl-output.mp4",

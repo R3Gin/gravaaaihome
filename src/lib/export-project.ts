@@ -5,8 +5,20 @@ import {
   type TextOverlayImage,
   type TimelineClip,
 } from "@/lib/ffmpeg-convert";
-import type { AspectRatio, Clip, Track } from "@/state/editor-store";
+import {
+  DEFAULT_CAPTION_STYLE,
+  type AspectRatio,
+  type CaptionStyle,
+  type Clip,
+  type MediaItem,
+  type Track,
+} from "@/state/editor-store";
 import { drawAnnotation } from "@/lib/annotations";
+import {
+  exportWithWebCodecs,
+  webcodecsAvailable,
+  type ExportQuality,
+} from "@/lib/export-webcodecs";
 
 function frameSize(aspect: AspectRatio, base: { width: number; height: number }): OutputFrame {
   const h = Math.max(360, Math.min(1080, base.height || 720));
@@ -70,8 +82,57 @@ async function annotationToPng(clip: Clip, W: number, H: number): Promise<TextOv
   };
 }
 
+export interface ExportProjectOptions {
+  quality?: ExportQuality;
+  captionStyle?: CaptionStyle;
+  mediaLibrary?: MediaItem[];
+  /** força o motor lento (ffmpeg.wasm) — só para diagnóstico */
+  forceFfmpeg?: boolean;
+}
+
+/** Projeto sem nenhuma edição: dá para entregar o arquivo original direto. */
+function isUntouched(tracks: Track[], aspect: AspectRatio, source: Blob, sourceDuration: number) {
+  if (aspect !== "16:9") return false;
+  if (!source.type.includes("mp4")) return false;
+  const withClips = tracks.filter((t) => t.clips.length > 0);
+  const video = tracks.find((t) => t.type === "video");
+  const videoClips = video?.clips ?? [];
+  if (videoClips.length !== 1) return false;
+  // só vídeo (e, no máximo, o áudio vinculado sem alterações)
+  for (const t of withClips) {
+    if (t.type === "video") continue;
+    if (t.type === "audio") {
+      if (t.clips.length !== 1) return false;
+      const a = t.clips[0];
+      if ((a.volume ?? 1) !== 1 || (a.fadeIn ?? 0) > 0 || (a.fadeOut ?? 0) > 0) return false;
+      continue;
+    }
+    return false;
+  }
+  const c = videoClips[0];
+  const untouchedTransform =
+    (c.speed ?? 1) === 1 &&
+    (c.brightness ?? 0) === 0 &&
+    (c.contrast ?? 1) === 1 &&
+    (c.saturation ?? 1) === 1 &&
+    (c.opacity ?? 1) === 1 &&
+    (c.scale ?? 1) === 1 &&
+    (c.rotation ?? 0) === 0 &&
+    (c.volume ?? 1) === 1 &&
+    !c.denoise &&
+    (c.transition ?? "none") === "none" &&
+    (c.zoomKeyframes?.length ?? 0) === 0 &&
+    Object.keys(c.keyframes ?? {}).length === 0;
+  if (!untouchedTransform) return false;
+  const fullRange =
+    c.sourceInStart <= 0.02 &&
+    (sourceDuration <= 0 || c.sourceInEnd >= sourceDuration - 0.05) &&
+    c.startTime <= 0.02;
+  return fullRange;
+}
+
 /**
- * Traduz o estado central do projeto em uma exportação ffmpeg.wasm real.
+ * Roteia a exportação: arquivo intacto → WebCodecs (rápido) → ffmpeg.wasm.
  */
 export async function exportProject(
   source: Blob,
@@ -79,6 +140,7 @@ export async function exportProject(
   aspect: AspectRatio,
   videoSize: { width: number; height: number },
   onProgress?: (ratio: number) => void,
+  opts: ExportProjectOptions = {},
 ): Promise<Blob> {
   const videoClips = [...(tracks.find((t) => t.type === "video")?.clips ?? [])].sort(
     (a, b) => a.startTime - b.startTime,
@@ -86,6 +148,29 @@ export async function exportProject(
   if (videoClips.length === 0) throw new Error("Nenhum clipe de vídeo na timeline.");
   const audioClips = tracks.find((t) => t.type === "audio")?.clips ?? [];
 
+  const sourceDuration = videoClips.reduce((m, c) => Math.max(m, c.sourceInEnd), 0);
+  if (!opts.forceFfmpeg && isUntouched(tracks, aspect, source, sourceDuration)) {
+    onProgress?.(1);
+    return source;
+  }
+
+  if (!opts.forceFfmpeg && webcodecsAvailable()) {
+    try {
+      return await exportWithWebCodecs({
+        source,
+        tracks,
+        captionStyle: opts.captionStyle ?? DEFAULT_CAPTION_STYLE,
+        aspect,
+        videoSize,
+        mediaLibrary: opts.mediaLibrary ?? [],
+        quality: opts.quality ?? "rapida",
+        onProgress,
+      });
+    } catch (err) {
+      console.warn("[export] motor rápido falhou, usando ffmpeg", err);
+      onProgress?.(0);
+    }
+  }
 
   const W = Math.max(2, Math.round((videoSize.width || 1280) / 2) * 2);
   const H = Math.max(2, Math.round((videoSize.height || 720) / 2) * 2);
