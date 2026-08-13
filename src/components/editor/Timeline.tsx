@@ -442,8 +442,10 @@ function ClipBox({ clip, track }: { clip: Clip; track: Track }) {
       window.removeEventListener("pointerup", up);
       setGhost(null);
       setDragging(false);
+      setMagnetized(false);
       useEditor.getState().setSnapGuide(null);
-      trimClip(clipRef.current.id, side, Math.max(0, last));
+      const rel = snap(last, null, snapReleaseTolerance(useEditor.getState().zoom));
+      trimClip(clipRef.current.id, side, Math.max(0, rel.start));
     };
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerup", up);
