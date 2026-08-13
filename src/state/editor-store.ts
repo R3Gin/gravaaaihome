@@ -671,9 +671,19 @@ function buildCaptionsFromTranscript(
     `[legendas] chunking (${style.blockSize ?? "medio"}): ${transcript.segments.length} segmentos + ${transcript.words.length} palavras → ${chunked.length} blocos`,
   );
   const base = chunked.length ? chunked : transcript.segments;
-  const segments = removed.length ? remapCaptionsAfterCuts(base, removed) : base;
+  /* Transcrição feita sobre o áudio composto da timeline já nasce no tempo
+     editado — remapear de novo deslocaria tudo. Só transcrições antigas
+     (tempo do arquivo original) passam pelo remap. */
+  const segments =
+    !transcript.timeline && removed.length ? remapCaptionsAfterCuts(base, removed) : base;
+
+  // legendas com texto ajustado à mão sobrevivem ao reagrupamento
+  const kept = allClips(get().tracks).filter((c) => c.isCaption && c.captionEdited);
+  const overlapsKept = (s: number, e: number) =>
+    kept.some((k) => s < k.startTime + k.duration - 0.01 && e > k.startTime + 0.01);
+
   const clips: Clip[] = segments
-    .filter((s) => s.text.trim() && s.end - s.start > 0.05)
+    .filter((s) => s.text.trim() && s.end - s.start > 0.05 && !overlapsKept(s.start, s.end))
     .map((s) => ({
       id: uid(),
       trackId: TEXT_TRACK,
@@ -690,12 +700,15 @@ function buildCaptionsFromTranscript(
       position: { x: 0.5, y: captionY(style.place) },
       isCaption: true,
     }));
-  if (clips.length === 0) return;
+  if (clips.length === 0 && kept.length === 0) return;
   write((tracks) =>
     mapTracks(tracks, (existing, track) =>
-      track.id === TEXT_TRACK ? [...existing.filter((c) => !c.isCaption), ...clips] : existing,
+      track.id === TEXT_TRACK
+        ? [...existing.filter((c) => !c.isCaption || c.captionEdited), ...clips]
+        : existing,
     ),
   );
+
 }
 
 export const useEditor = create<EditorState & EditorActions>((set, get) => {
