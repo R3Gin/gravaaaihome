@@ -1042,8 +1042,19 @@ export const useEditor = create<EditorState & EditorActions>((set, get) => {
 
     updateClip: (id, patch) =>
       write((tracks) =>
-        mapTracks(tracks, (clips) => clips.map((c) => (c.id === id ? { ...c, ...patch } : c))),
+        mapTracks(tracks, (clips) =>
+          clips.map((c) => {
+            if (c.id !== id) return c;
+            // texto de legenda mexido à mão nunca mais é sobrescrito pelo reagrupamento
+            const edited =
+              c.isCaption && patch.textContent !== undefined && patch.textContent !== c.textContent
+                ? true
+                : c.captionEdited;
+            return { ...c, ...patch, captionEdited: edited };
+          }),
+        ),
       ),
+
 
     updateClipLive: (id, patch) =>
       set((s) => ({
