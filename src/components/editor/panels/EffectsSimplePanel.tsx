@@ -45,8 +45,12 @@ function Chips({ clip }: { clip: Clip }) {
             >
               <button onClick={() => setOpen(open === inst.id ? null : inst.id)}>
                 {def?.label ?? inst.presetId}
+                <span className="ml-1 font-normal text-[10px] text-[var(--muted-foreground)]">
+                  {fmt(clip.startTime + (inst.anchor ?? 0))}
+                </span>
                 {inst.edited ? " (editado)" : ""}
               </button>
+
               <button
                 onClick={() => remove(clip.id, inst.id)}
                 aria-label={`Remover ${def?.label ?? "efeito"}`}
