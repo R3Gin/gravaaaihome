@@ -400,19 +400,6 @@ export function timelineDuration(tracks: Track[]): number {
 }
 
 /** Empurra vizinhos para a direita para impedir sobreposição na mesma faixa. */
-function resolveOverlaps(clips: Clip[], movedId: string): Clip[] {
-  const sorted = [...clips].sort((a, b) => {
-    if (Math.abs(a.startTime - b.startTime) < 0.0001) return a.id === movedId ? -1 : 1;
-    return a.startTime - b.startTime;
-  });
-  let cursor = -Infinity;
-  return sorted.map((c) => {
-    const start = Math.max(c.startTime, cursor);
-    cursor = start + c.duration;
-    return start === c.startTime ? c : { ...c, startTime: start };
-  });
-}
-
 function mapTracks(tracks: Track[], fn: (clips: Clip[], track: Track) => Clip[]): Track[] {
   return tracks.map((t) => ({ ...t, clips: fn(t.clips, t) }));
 }
@@ -739,9 +726,11 @@ export const useEditor = create<EditorState & EditorActions>((set, get) => {
           : { overlayKind: "media" as const, rect: { x: 0.1, y: 0.1, w: 0.5, h: 0.5 }, opacity: 1 }),
       };
       write((tracks) =>
-        mapTracks(tracks, (clips, track) =>
-          track.id === clip.trackId ? resolveOverlaps([...clips, clip], clip.id) : clips,
-        ),
+        mapTracks(tracks, (clips, track) => {
+          if (track.id !== clip.trackId) return clips;
+          clip.startTime = freeStart(clips, clip.startTime, clip.duration);
+          return [...clips, clip].sort((a, b) => a.startTime - b.startTime);
+        }),
       );
       set({ selectedClipId: clip.id, snapGuide: null });
     },
