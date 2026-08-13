@@ -1,11 +1,12 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Loader2, Scissors } from "lucide-react";
 import { toast } from "sonner";
-import { detectSilences } from "@/lib/audio-tools";
-import { useEditor } from "@/state/editor-store";
+import { detectSilences, mapSourceRangesToTimeline, type Segment } from "@/lib/audio-tools";
+import { allClips, useEditor } from "@/state/editor-store";
 
 export function SilencePanel({ onClose }: { onClose: () => void }) {
   const sourceBlob = useEditor((s) => s.sourceBlob);
+  const tracks = useEditor((s) => s.tracks);
   const silences = useEditor((s) => s.silences);
   const setSilences = useEditor((s) => s.setSilences);
   const cutRanges = useEditor((s) => s.cutRanges);
@@ -15,6 +16,10 @@ export function SilencePanel({ onClose }: { onClose: () => void }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [applying, setApplying] = useState<number | null>(null);
+  /** silêncios em tempo do arquivo original (base para o remapeamento) */
+  const [raw, setRaw] = useState<Segment[]>([]);
+  const mounted = useRef(false);
+
 
   const nextFrame = () =>
     new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
@@ -35,6 +40,18 @@ export function SilencePanel({ onClose }: { onClose: () => void }) {
   };
 
 
+  // ao abrir o painel, descarta qualquer marcação da sessão anterior
+  useEffect(() => {
+    setSilences([]);
+    setRaw([]);
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+      setSilences([]);
+    };
+  }, [setSilences]);
+
+  // detecção no áudio original (redecodifica a cada abertura / ajuste)
   useEffect(() => {
     if (!sourceBlob) return;
     let alive = true;
@@ -44,21 +61,36 @@ export function SilencePanel({ onClose }: { onClose: () => void }) {
       void detectSilences(sourceBlob, sensitivity, minDur)
         .then((segs) => {
           if (!alive) return;
-          setSilences(segs);
-          if (segs.length === 0) setError("Nenhum silêncio encontrado com esses ajustes.");
+          setRaw(segs);
         })
-        .catch(() => alive && setError("Não consegui analisar o áudio desse vídeo."))
+        .catch(() => {
+          if (!alive) return;
+          setRaw([]);
+          setError("Não consegui analisar o áudio desse vídeo.");
+        })
         .finally(() => alive && setBusy(false));
     }, 200);
     return () => {
       alive = false;
       clearTimeout(id);
     };
-  }, [minDur, sensitivity, setSilences, sourceBlob]);
+  }, [minDur, sensitivity, sourceBlob]);
 
-  useEffect(() => () => setSilences([]), [setSilences]);
+  // remapeia para o tempo ATUAL da timeline sempre que os clipes mudarem
+  const mapped = useMemo(
+    () => mapSourceRangesToTimeline(raw, allClips(tracks)),
+    [raw, tracks],
+  );
+
+  useEffect(() => {
+    setSilences(mapped);
+    if (!busy) {
+      setError(mapped.length === 0 ? "Nenhum silêncio encontrado com esses ajustes." : null);
+    }
+  }, [busy, mapped, setSilences]);
 
   const total = silences.reduce((sum, s) => sum + (s.end - s.start), 0);
+
 
   return (
     <div className="space-y-4">
