@@ -1713,7 +1713,12 @@ export const useEditor = create<EditorState & EditorActions>((set, get) => {
       set({ effects, tracks: applyEffectsToTracks(get().tracks, effects) });
     },
 
-    selectEffect: (effectId) => set({ selectedEffectId: effectId }),
+    selectEffect: (effectId) =>
+      set(
+        effectId
+          ? { selectedEffectId: effectId, selectedClipId: null, selectedClipIds: [] }
+          : { selectedEffectId: null },
+      ),
 
     setPendingEffectPreset: (value) => set({ pendingEffectPreset: value }),
 
