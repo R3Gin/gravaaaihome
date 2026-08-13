@@ -363,11 +363,14 @@ function AudioWaveform({
 function ClipBox({ clip, track }: { clip: Clip; track: Track }) {
   const zoom = useEditor((s) => s.zoom);
   const tool = useEditor((s) => s.tool);
-  const selected = useEditor((s) => s.selectedClipId === clip.id);
+  const selected = useEditor((s) => s.selectedClipIds.includes(clip.id));
   const select = useEditor((s) => s.select);
+  const toggleSelect = useEditor((s) => s.toggleSelect);
+  const selectMany = useEditor((s) => s.selectMany);
   const splitAt = useEditor((s) => s.splitAt);
   const trimClip = useEditor((s) => s.trimClip);
-  const moveClip = useEditor((s) => s.moveClip);
+  const moveSelection = useEditor((s) => s.moveSelection);
+
 
   const [ghost, setGhost] = useState<Ghost>(null);
   const [dragging, setDragging] = useState(false);
