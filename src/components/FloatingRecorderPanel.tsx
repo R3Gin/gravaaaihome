@@ -172,8 +172,8 @@ export const FloatingRecorderPanel = forwardRef<
       // e desvinculada da aba de origem (o usuário pode navegar livremente).
       // @ts-expect-error - experimental API
       const w: PipWindow = await window.documentPictureInPicture.requestWindow({
-        width: 340,
-        height: 64,
+        width: PIP_W,
+        height: PIP_H,
         disallowReturnToOpener: true,
         preferInitialWindowPlacement: true,
       });
