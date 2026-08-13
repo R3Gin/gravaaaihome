@@ -1489,10 +1489,16 @@ export const useEditor = create<EditorState & EditorActions>((set, get) => {
     setSourceBlob: (sourceBlob) => set({ sourceBlob }),
     setSilences: (silences) => set({ silences }),
 
-    addCaptionClips: (rawSegments, words) => {
-      set({ transcript: { segments: rawSegments, words: words ?? [] } });
+    audioSignature: () => timelineAudioSignature(allClips(get().tracks) as AudioClipRef[]),
+
+    addCaptionClips: (rawSegments, words, meta) => {
+      set({
+        transcript: { segments: rawSegments, words: words ?? [], timeline: meta?.timeline },
+        captionsSig: meta?.sig ?? get().audioSignature(),
+      });
       buildCaptionsFromTranscript(get, write);
     },
+
 
     rechunkCaptions: () => {
       if (!get().transcript) return false;
