@@ -24,6 +24,7 @@ import { SilencePanel } from "@/components/editor/panels/SilencePanel";
 import { CaptionsPanel } from "@/components/editor/panels/CaptionsPanel";
 import { AudioPanel } from "@/components/editor/panels/AudioPanel";
 import { TransitionsPanel } from "@/components/editor/panels/TransitionsPanel";
+import { EffectsLibraryPanel } from "@/components/editor/panels/EffectsLibraryPanel";
 import { AnnotationsPanel } from "@/components/editor/panels/AnnotationsPanel";
 import { MediaPanel } from "@/components/editor/panels/MediaPanel";
 import { findClip, useEditor } from "@/state/editor-store";
