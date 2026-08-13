@@ -468,6 +468,10 @@ export function Preview({ videoRef }: Props) {
       const ny = Math.max(0, Math.min(1, py / box.height));
       const s = useEditor.getState();
       const pending = s.pendingEffectPreset;
+      if (pending && pending.mode === "repoint") {
+        s.setEffectPoint(pending.effectId, { x: nx, y: ny });
+        return;
+      }
       if (pending) {
         const target = s.selectedClipId ?? clipAt(s.tracks, "video", s.currentTime)?.id ?? null;
         if (target) {
@@ -675,7 +679,9 @@ export function Preview({ videoRef }: Props) {
           {pendingEffectPreset ? (
             <div className="pointer-events-none absolute inset-x-0 top-0 flex justify-center p-2">
               <span className="rounded-full bg-[var(--brand)] px-3 py-1 text-[11px] font-semibold text-white shadow">
-                Clique no ponto do vídeo para dar zoom · Esc cancela
+                {pendingEffectPreset.mode === "repoint"
+                  ? "Clique no novo ponto de foco do zoom · Esc cancela"
+                  : "Clique no ponto do vídeo para dar zoom · Esc cancela"}
               </span>
             </div>
           ) : null}
