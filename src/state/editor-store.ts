@@ -268,7 +268,10 @@ export interface EditorState {
   /** keyframes copiados (Ctrl/Cmd+C) — colados no playhead */
   kfClipboard: { prop: string; offset: number; value: KeyValue; easing: Easing }[];
   /** preset de zoom aguardando o clique no ponto do preview (modo Simples) */
-  pendingEffectPreset: { presetId: string; params: PresetParams } | null;
+  pendingEffectPreset:
+    | { presetId: string; params: PresetParams; mode?: "apply" }
+    | { mode: "repoint"; effectId: string }
+    | null;
   /** efeitos com janela própria na linha do tempo */
   effects: TimelineEffect[];
   selectedEffectId: string | null;
@@ -405,7 +408,14 @@ export interface EditorActions {
   resizeEffect: (effectId: string, start: number, end: number) => void;
   selectEffect: (effectId: string | null) => void;
   /** arma o modo "clique no ponto do preview" para presets de zoom */
-  setPendingEffectPreset: (value: { presetId: string; params: PresetParams } | null) => void;
+  setPendingEffectPreset: (
+    value:
+      | { presetId: string; params: PresetParams; mode?: "apply" }
+      | { mode: "repoint"; effectId: string }
+      | null,
+  ) => void;
+  /** redefine o ponto de foco (zoom) de um efeito já aplicado */
+  setEffectPoint: (effectId: string, point: { x: number; y: number }) => void;
 
 
   removeKeyframe: (clipId: string, prop: string, kfId: string) => void;
@@ -1703,6 +1713,18 @@ export const useEditor = create<EditorState & EditorActions>((set, get) => {
     selectEffect: (effectId) => set({ selectedEffectId: effectId }),
 
     setPendingEffectPreset: (value) => set({ pendingEffectPreset: value }),
+
+    setEffectPoint: (effectId, point) => {
+      const effects = get().effects.map((e) =>
+        e.id === effectId ? { ...e, params: { ...e.params, point } } : e,
+      );
+      set({
+        effects,
+        tracks: applyEffectsToTracks(get().tracks, effects),
+        pendingEffectPreset: null,
+        selectedEffectId: effectId,
+      });
+    },
 
 
 

@@ -205,6 +205,11 @@ export function VideoEditor() {
           state.removeSelectedKeyframes();
           return;
         }
+        if (state.selectedEffectId) {
+          e.preventDefault();
+          state.removeEffectPreset("", state.selectedEffectId);
+          return;
+        }
         if (state.selectedClipIds.length > 0) {
           e.preventDefault();
           state.removeSelected();

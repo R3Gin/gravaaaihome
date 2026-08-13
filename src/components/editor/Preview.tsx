@@ -47,6 +47,12 @@ export function Preview({ videoRef }: Props) {
   
   const annotationTool = useEditor((s) => s.annotationTool);
   const pendingEffectPreset = useEditor((s) => s.pendingEffectPreset);
+  const selectedEffectId = useEditor((s) => s.selectedEffectId);
+  const effectsList = useEditor((s) => s.effects);
+  const focusPoint = (() => {
+    const fx = effectsList.find((e) => e.id === selectedEffectId);
+    return fx && fx.category === "zoom" ? fx.params.point : undefined;
+  })();
   const setPendingEffectPreset = useEditor((s) => s.setPendingEffectPreset);
 
   /* Esc cancela o modo "clique no ponto" dos presets de zoom */
@@ -468,6 +474,10 @@ export function Preview({ videoRef }: Props) {
       const ny = Math.max(0, Math.min(1, py / box.height));
       const s = useEditor.getState();
       const pending = s.pendingEffectPreset;
+      if (pending && pending.mode === "repoint") {
+        s.setEffectPoint(pending.effectId, { x: nx, y: ny });
+        return;
+      }
       if (pending) {
         const target = s.selectedClipId ?? clipAt(s.tracks, "video", s.currentTime)?.id ?? null;
         if (target) {
@@ -672,10 +682,19 @@ export function Preview({ videoRef }: Props) {
             </div>
           ) : null}
 
+          {focusPoint ? (
+            <span
+              className="pointer-events-none absolute z-10 h-5 w-5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-[var(--brand)] bg-[var(--brand)]/25"
+              style={{ left: `${focusPoint.x * 100}%`, top: `${focusPoint.y * 100}%` }}
+            />
+          ) : null}
+
           {pendingEffectPreset ? (
             <div className="pointer-events-none absolute inset-x-0 top-0 flex justify-center p-2">
               <span className="rounded-full bg-[var(--brand)] px-3 py-1 text-[11px] font-semibold text-white shadow">
-                Clique no ponto do vídeo para dar zoom · Esc cancela
+                {pendingEffectPreset.mode === "repoint"
+                  ? "Clique no novo ponto de foco do zoom · Esc cancela"
+                  : "Clique no ponto do vídeo para dar zoom · Esc cancela"}
               </span>
             </div>
           ) : null}
