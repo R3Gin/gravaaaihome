@@ -470,10 +470,10 @@ function ClipBox({ clip, track }: { clip: Clip; track: Track }) {
       const dur = clipRef.current.duration;
       const snapped = snap(raw, dur);
       const start = place(Math.max(0, snapped.start), dur);
+      const stuck = snapped.guide != null && Math.abs(start - snapped.start) < 1e-6;
       // guia só aparece quando a posição imantada sobreviveu à checagem de colisão
-      useEditor.getState().setSnapGuide(
-        snapped.guide != null && Math.abs(start - snapped.start) < 1e-6 ? snapped.guide : null,
-      );
+      useEditor.getState().setSnapGuide(stuck ? snapped.guide : null);
+      setMagnetized(stuck);
       last = start;
       setGhost({ start, duration: dur });
 
@@ -483,12 +483,20 @@ function ClipBox({ clip, track }: { clip: Clip; track: Track }) {
       window.removeEventListener("pointerup", up);
       setGhost(null);
       setDragging(false);
+      setMagnetized(false);
       useEditor.getState().setSnapGuide(null);
-      if (moved) moveClip(clipRef.current.id, last);
+      if (moved) {
+        // ao soltar, zona de atração ampliada: encaixa exato se couber
+        const dur = clipRef.current.duration;
+        const rel = snap(last, dur, snapReleaseTolerance(useEditor.getState().zoom));
+        const target = place(Math.max(0, rel.start), dur);
+        moveClip(clipRef.current.id, Math.abs(target - rel.start) < 1e-6 ? target : last);
+      }
     };
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerup", up);
   };
+
 
   const color =
     track.type === "video"
