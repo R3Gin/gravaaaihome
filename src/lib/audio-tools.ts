@@ -288,3 +288,52 @@ export function playSamples(samples: Float32Array, sampleRate = 48000): () => vo
   src.onended = stop;
   return stop;
 }
+
+/**
+ * Converte trechos em tempo do arquivo ORIGINAL para o tempo atual da timeline,
+ * usando a janela de origem de cada clipe de vídeo/áudio ainda presente.
+ * Trechos já removidos somem; trechos parciais são recortados; um silêncio que
+ * atravessa dois clipes vira dois marcadores.
+ */
+export function mapSourceRangesToTimeline(
+  ranges: Segment[],
+  clips: {
+    type: string;
+    startTime: number;
+    duration: number;
+    sourceInStart: number;
+    sourceInEnd: number;
+    speed?: number;
+  }[],
+): Segment[] {
+  const media = clips
+    .filter((c) => c.type === "video" || c.type === "audio")
+    .sort((a, b) => a.startTime - b.startTime);
+  const out: Segment[] = [];
+
+  for (const r of ranges) {
+    for (const c of media) {
+      const from = Math.max(r.start, c.sourceInStart);
+      const to = Math.min(r.end, c.sourceInEnd);
+      if (to - from <= 0.01) continue;
+      const speed = c.speed && c.speed > 0 ? c.speed : 1;
+      const start = c.startTime + (from - c.sourceInStart) / speed;
+      const end = c.startTime + (to - c.sourceInStart) / speed;
+      out.push({
+        start: Math.max(c.startTime, start),
+        end: Math.min(c.startTime + c.duration, end),
+      });
+    }
+  }
+
+  out.sort((a, b) => a.start - b.start);
+  // funde marcadores contíguos (clipes vizinhos que continuam o mesmo silêncio)
+  const merged: Segment[] = [];
+  for (const s of out) {
+    if (s.end - s.start <= 0.01) continue;
+    const last = merged[merged.length - 1];
+    if (last && s.start - last.end <= 0.02) last.end = Math.max(last.end, s.end);
+    else merged.push({ ...s });
+  }
+  return merged;
+}
