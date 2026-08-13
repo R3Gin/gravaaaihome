@@ -160,6 +160,9 @@ export interface Clip {
   isCaption?: boolean;
   /** estilo próprio desta legenda (sobrepõe o estilo global) */
   captionOverride?: Partial<CaptionStyle>;
+  /** legenda com texto ajustado à mão — nunca é sobrescrita ao reagrupar */
+  captionEdited?: boolean;
+
   rect?: { x: number; y: number; w: number; h: number };
   strength?: number;
   /** presets de efeito aplicados no modo Simples */
