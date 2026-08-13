@@ -985,8 +985,8 @@ export function Timeline() {
         <div className="shrink-0 border-r border-[var(--border)]" style={{ width: LABEL_W }}>
           <div className="h-7 border-b border-[var(--border)]" />
           <div ref={labelsRef} className="overflow-hidden">
-            {tracks.map((t, i) => (
-              <div key={t.id}>
+            {visibleTracks.map((t, i) => (
+              <div key={t.id} className="animate-fade-in">
                 <div
                   onPointerDown={startTrackDrag(i)}
                   title="Arraste para cima ou para baixo para reordenar"
@@ -998,8 +998,23 @@ export function Timeline() {
                   style={{ height: LANE_H }}
                 >
                   <GripVertical className="h-3.5 w-3.5 shrink-0 opacity-40 group-hover:opacity-90" />
+                  {t.type === "video" ? (
+                    <Video className="h-3.5 w-3.5 shrink-0 text-[var(--brand)]" />
+                  ) : t.type === "audio" ? (
+                    <Music className="h-3.5 w-3.5 shrink-0 text-emerald-400" />
+                  ) : t.type === "text" ? (
+                    <Type className="h-3.5 w-3.5 shrink-0 text-sky-400" />
+                  ) : (
+                    <Sparkles className="h-3.5 w-3.5 shrink-0 text-amber-400" />
+                  )}
                   <span className="truncate">{t.label}</span>
+                  {t.clips.length > 1 ? (
+                    <span className="ml-auto shrink-0 rounded bg-[var(--border)] px-1 text-[9px] tabular-nums">
+                      {t.clips.length}
+                    </span>
+                  ) : null}
                 </div>
+
                 {selectedClip?.trackId === t.id
                   ? kfRows.map((p) => (
                       <div
