@@ -450,6 +450,24 @@ export function allClips(tracks: Track[]): Clip[] {
   return tracks.flatMap((t) => t.clips);
 }
 
+/** o clipe de áudio corresponde ao áudio embutido daquele vídeo? */
+export function audioMatchesVideo(audio: Clip, video: Clip): boolean {
+  if (audio.type !== "audio" || video.type !== "video") return false;
+  if (audio.sourceUrl !== video.sourceUrl) return false;
+  const overlap =
+    Math.min(audio.startTime + audio.duration, video.startTime + video.duration) -
+    Math.max(audio.startTime, video.startTime);
+  return overlap > 0.05 || Math.abs(audio.sourceInStart - video.sourceInStart) < 0.05;
+}
+
+/** o vídeo ainda tem áudio embutido para ser separado? */
+export function canDetachAudio(tracks: Track[], clip: Clip): boolean {
+  if (clip.type !== "video" || clip.muted) return false;
+  return !allClips(tracks).some((c) => c.type === "audio" && audioMatchesVideo(c, clip));
+}
+
+
+
 /**
  * Regera os keyframes de todos os efeitos com janela própria.
  * Keyframes marcados com `origin` começando por "fx-" pertencem a efeitos
