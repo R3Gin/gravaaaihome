@@ -1161,6 +1161,21 @@ export function Timeline() {
         </div>
       </div>
 
+      {/* laço de seleção múltipla */}
+      {marquee ? (
+        <div
+          className="pointer-events-none fixed z-50 rounded-sm border border-[var(--brand)] bg-[var(--brand)]/15"
+          style={{
+            left: Math.min(marquee.x1, marquee.x2),
+            top: Math.min(marquee.y1, marquee.y2),
+            width: Math.abs(marquee.x2 - marquee.x1),
+            height: Math.abs(marquee.y2 - marquee.y1),
+          }}
+        />
+      ) : null}
+
+
+
       {/* menu do keyframe (duplo clique ou botão direito) */}
       {menu && selectedClip ? (
         <div
