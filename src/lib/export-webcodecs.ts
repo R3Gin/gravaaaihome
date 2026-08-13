@@ -252,7 +252,8 @@ export async function exportWithWebCodecs(input: WebCodecsExportInput): Promise<
   let framesDone = 0;
   const expectedFrames = Math.max(1, Math.round(totalDuration * preset.fps));
 
-  const emit = async (timelineTime: number) => {
+  /** Desenha o estado da timeline em `timelineTime` e codifica o quadro. */
+  const emit = (timelineTime: number) => {
     if (encodeError) throw encodeError;
     let ts = Math.round(timelineTime * 1e6);
     if (ts <= lastTs) ts = lastTs + 1000;
@@ -265,96 +266,99 @@ export async function exportWithWebCodecs(input: WebCodecsExportInput): Promise<
     vf.close();
     lastTs = ts;
     framesDone++;
-    if (framesDone % 5 === 0) {
-      onProgress?.(Math.min(0.95, (framesDone / expectedFrames) * 0.92));
-      // devolve a thread para a UI e evita estourar a fila do encoder
-      if (encoder.encodeQueueSize > 8) {
-        while (encoder.encodeQueueSize > 4) await new Promise((r) => setTimeout(r, 4));
-      } else {
-        await new Promise((r) => setTimeout(r, 0));
-      }
-    }
+    if (framesDone % 4 === 0) onProgress?.(Math.min(0.92, (framesDone / expectedFrames) * 0.9));
   };
 
-  /** Captura por reprodução acelerada — usa os quadros reais do decoder. */
+  /**
+   * Caminho rápido: reproduz o trecho em velocidade acelerada e codifica cada
+   * quadro real entregue pelo decoder (sem nenhum seek). Roda tão rápido quanto
+   * o decoder + encoder de hardware conseguem — normalmente 4x o tempo real.
+   */
   const captureByPlayback = async (clip: Clip): Promise<boolean> => {
     const speed = clip.speed ?? 1;
     const srcStart = clip.sourceInStart;
-    const srcEnd = clip.sourceInEnd;
+    const srcEnd = Math.max(srcStart + 0.02, clip.sourceInEnd);
     await seekTo(video, srcStart);
     video.playbackRate = 4;
     let got = 0;
     let finished = false;
-    const pending: number[] = [];
+    let fail: Error | null = null;
 
     await new Promise<void>((resolve) => {
       let watchdog = window.setTimeout(() => {
-        if (got === 0) {
+        finished = true;
+        video.pause();
+        resolve();
+      }, 3000);
+      const bump = () => {
+        window.clearTimeout(watchdog);
+        watchdog = window.setTimeout(() => {
           finished = true;
           video.pause();
           resolve();
-        }
-      }, 2500);
-
+        }, 3000);
+      };
+      const stop = () => {
+        finished = true;
+        video.pause();
+        window.clearTimeout(watchdog);
+        resolve();
+      };
       const onFrame = (_now: number, meta: { mediaTime: number }) => {
         if (finished) return;
         const mt = meta.mediaTime;
-        if (mt >= srcEnd - 0.001) {
-          finished = true;
-          video.pause();
-          window.clearTimeout(watchdog);
-          resolve();
-          return;
-        }
-        if (mt >= srcStart - 0.001) {
+        if (mt >= srcEnd - 0.001) return stop();
+        if (mt >= srcStart - 0.02) {
+          try {
+            emit(clip.startTime + Math.max(0, mt - srcStart) / speed);
+          } catch (e) {
+            fail = e instanceof Error ? e : new Error(String(e));
+            return stop();
+          }
           got++;
-          pending.push(clip.startTime + (mt - srcStart) / speed);
-          window.clearTimeout(watchdog);
-          watchdog = window.setTimeout(() => {
-            finished = true;
+          bump();
+          // contrapressão: pausa se o encoder ficar para trás
+          if (encoder.encodeQueueSize > 24) {
             video.pause();
-            resolve();
-          }, 2500);
+            const resume = () => {
+              if (finished) return;
+              if (encoder.encodeQueueSize > 8) {
+                window.setTimeout(resume, 8);
+                return;
+              }
+              void video.play().catch(() => stop());
+            };
+            window.setTimeout(resume, 8);
+          }
         }
         video.requestVideoFrameCallback(onFrame);
       };
-
       video.requestVideoFrameCallback(onFrame);
       video.onended = () => {
-        if (finished) return;
-        finished = true;
-        window.clearTimeout(watchdog);
-        resolve();
+        if (!finished) stop();
       };
-      void video.play().catch(() => {
-        finished = true;
-        window.clearTimeout(watchdog);
-        resolve();
-      });
+      void video.play().catch(() => stop());
     });
 
     video.onended = null;
-    if (got === 0) return false;
-
-    // desenha/codifica em ordem; o vídeo já está pausado no fim do trecho
-    for (const t of pending) {
-      const src = srcStart + (t - clip.startTime) * speed;
-      await seekTo(video, src);
-      await emit(t);
-    }
-    return true;
+    video.playbackRate = 1;
+    if (fail) throw fail;
+    return got > 0;
   };
 
-  /** Fallback determinístico: seek quadro a quadro. */
+  /** Fallback determinístico: seek quadro a quadro (usado se a reprodução falhar). */
   const captureBySeek = async (clip: Clip) => {
     const speed = clip.speed ?? 1;
     const steps = Math.max(1, Math.round(clip.duration * preset.fps));
     for (let i = 0; i < steps; i++) {
-      const local = (i / preset.fps);
+      const local = i / preset.fps;
       if (local > clip.duration) break;
       const src = clip.sourceInStart + local * speed;
       await seekTo(video, Math.min(src, clip.sourceInEnd - 0.001));
-      await emit(clip.startTime + local);
+      emit(clip.startTime + local);
+      if (encoder.encodeQueueSize > 12) {
+        while (encoder.encodeQueueSize > 6) await new Promise((r) => setTimeout(r, 4));
+      }
     }
   };
 
