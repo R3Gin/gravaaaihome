@@ -463,11 +463,32 @@ function ClipBox({ clip, track }: { clip: Clip; track: Track }) {
       return;
     }
     e.stopPropagation();
-    select(clip.id);
+
+    if (e.metaKey || e.ctrlKey) {
+      toggleSelect(clip.id);
+      return;
+    }
+    if (e.shiftKey) {
+      const anchor = findClip(useEditor.getState().tracks, useEditor.getState().selectedClipId);
+      if (anchor && anchor.trackId === clip.trackId) {
+        const lo = Math.min(anchor.startTime, clip.startTime);
+        const hi = Math.max(anchor.startTime, clip.startTime);
+        selectMany(
+          track.clips.filter((c) => c.startTime >= lo && c.startTime <= hi).map((c) => c.id),
+          true,
+        );
+      } else selectMany([clip.id], true);
+      return;
+    }
+    if (!useEditor.getState().selectedClipIds.includes(clip.id)) select(clip.id);
 
     const grabOffset = timeAt(e.clientX) - clip.startTime;
     let moved = false;
     let last = clip.startTime;
+    const groupSize = () => {
+      const s = useEditor.getState();
+      return selectionGroup(s.tracks, s.selectedClipIds, clipRef.current.id).length;
+    };
     const move = (ev: PointerEvent) => {
       moved = true;
       setDragging(true);
@@ -475,7 +496,8 @@ function ClipBox({ clip, track }: { clip: Clip; track: Track }) {
       const raw = Math.max(0, timeAt(ev.clientX) - grabOffset);
       const dur = clipRef.current.duration;
       const snapped = snap(raw, dur);
-      const start = place(Math.max(0, snapped.start), dur);
+      const multi = groupSize() > 1;
+      const start = multi ? Math.max(0, snapped.start) : place(Math.max(0, snapped.start), dur);
       const stuck = snapped.guide != null && Math.abs(start - snapped.start) < 1e-6;
       // guia só aparece quando a posição imantada sobreviveu à checagem de colisão
       useEditor.getState().setSnapGuide(stuck ? snapped.guide : null);
@@ -495,13 +517,18 @@ function ClipBox({ clip, track }: { clip: Clip; track: Track }) {
         // ao soltar, zona de atração ampliada: encaixa exato se couber
         const dur = clipRef.current.duration;
         const rel = snap(last, dur, snapReleaseTolerance(useEditor.getState().zoom));
-        const target = place(Math.max(0, rel.start), dur);
-        moveClip(clipRef.current.id, Math.abs(target - rel.start) < 1e-6 ? target : last);
+        if (groupSize() > 1) {
+          moveSelection(clipRef.current.id, Math.max(0, rel.start));
+        } else {
+          const target = place(Math.max(0, rel.start), dur);
+          moveSelection(clipRef.current.id, Math.abs(target - rel.start) < 1e-6 ? target : last);
+        }
       }
     };
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerup", up);
   };
+
 
 
   const color =
