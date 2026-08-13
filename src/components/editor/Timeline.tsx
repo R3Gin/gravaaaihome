@@ -297,10 +297,14 @@ function AudioWaveform({
   const [loading, setLoading] = useState(false);
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
-  const videoClips = useMemo(
-    () => tracks.find((t) => t.type === "video")?.clips ?? [],
-    [tracks],
-  );
+  /* A onda segue os clipes da própria faixa de áudio; se ela estiver vazia
+     (projetos antigos), cai de volta para os clipes de vídeo. */
+  const waveClips = useMemo(() => {
+    const audio = tracks.find((t) => t.type === "audio")?.clips ?? [];
+    if (audio.length > 0) return audio;
+    return tracks.find((t) => t.type === "video")?.clips ?? [];
+  }, [tracks]);
+
 
   useEffect(() => {
     if (!sourceBlob) {
@@ -340,7 +344,7 @@ function AudioWaveform({
     ctx.fillStyle = "rgba(16,185,129,0.75)";
 
     const mid = h / 2;
-    for (const clip of videoClips) {
+    for (const clip of waveClips) {
       const x0 = clip.startTime * zoom - winLeft;
       const w = clip.duration * zoom;
       if (w < 1 || x0 + w < 0 || x0 > winWidth) continue;
@@ -354,7 +358,7 @@ function AudioWaveform({
         ctx.fillRect(x, mid - amp, 1, Math.max(1, amp * 2));
       }
     }
-  }, [peaks, videoClips, winLeft, winWidth, zoom]);
+  }, [peaks, waveClips, winLeft, winWidth, zoom]);
 
   useEffect(() => {
     draw();
@@ -931,10 +935,11 @@ export function Timeline() {
           selectedClip.linkGroupId ? (
             <button
               onClick={() => toggleLink(selectedClip.id)}
-              title="Desvincular áudio e vídeo (passam a se mover separados)"
+              title="Desanexar áudio e vídeo (passam a se mover separados)"
               className="flex items-center gap-1.5 rounded-lg border border-[var(--brand)] bg-[var(--brand)]/15 px-2.5 py-1.5 text-xs font-semibold text-[var(--brand)]"
             >
-              <Link2Off className="h-4 w-4" /> Desvincular
+              <Link2Off className="h-4 w-4" /> Desanexar
+
             </button>
           ) : selectedClip.type === "video" ? (
             <button
