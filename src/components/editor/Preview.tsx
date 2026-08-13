@@ -316,8 +316,8 @@ export function Preview({ videoRef }: Props) {
       }
     };
 
-    /** Descarta reservas de clipes que não são mais os próximos da fila. */
-    const pruneP reps = () => undefined;
+
+
 
     /** Salta para o próximo clipe da timeline sem pausar o elemento <video>. */
     const jumpTo = (cur: HTMLVideoElement, next: (typeof clips0)[number]) => {
