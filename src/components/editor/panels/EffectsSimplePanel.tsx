@@ -70,15 +70,43 @@ function Chips({ clip }: { clip: Clip }) {
         const def = presetById(inst.presetId);
         if (!def) return null;
         return (
-          <div key={inst.id} className="rounded-lg border border-[var(--border)] p-2">
+          <div key={inst.id} className="space-y-2 rounded-lg border border-[var(--border)] p-2">
             <Controls
               controls={def.controls}
               params={{ ...DEFAULT_PARAMS, ...inst.params }}
               onChange={(patch) => update(clip.id, inst.id, patch)}
             />
+            {def.category === "zoom" && def.needsPoint ? (
+              <div className="space-y-1">
+                <span className="text-[10px] font-semibold text-[var(--muted-foreground)]">
+                  Ponto do zoom:{" "}
+                  {inst.params.point
+                    ? `x ${Math.round(inst.params.point.x * 100)}% · y ${Math.round(
+                        inst.params.point.y * 100,
+                      )}%`
+                    : "centro"}
+                </span>
+                <button
+                  onClick={() =>
+                    setPendingRepoint(
+                      repointing === inst.id ? null : { mode: "repoint", effectId: inst.id },
+                    )
+                  }
+                  className={cn(
+                    "flex w-full items-center justify-center gap-1 rounded-md border px-2 py-1.5 text-[10px] font-semibold",
+                    repointing === inst.id
+                      ? "border-[var(--brand)] bg-[var(--brand)]/15 text-[var(--brand)]"
+                      : "border-[var(--border)] hover:border-[var(--brand)] hover:text-[var(--brand)]",
+                  )}
+                >
+                  <Crosshair className="h-3 w-3" />
+                  {repointing === inst.id ? "Clique no vídeo…" : "Marcar ponto no vídeo"}
+                </button>
+              </div>
+            ) : null}
           </div>
         );
-      })}
+
     </div>
   );
 }
