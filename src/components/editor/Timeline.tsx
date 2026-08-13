@@ -935,10 +935,11 @@ export function Timeline() {
           selectedClip.linkGroupId ? (
             <button
               onClick={() => toggleLink(selectedClip.id)}
-              title="Desvincular áudio e vídeo (passam a se mover separados)"
+              title="Desanexar áudio e vídeo (passam a se mover separados)"
               className="flex items-center gap-1.5 rounded-lg border border-[var(--brand)] bg-[var(--brand)]/15 px-2.5 py-1.5 text-xs font-semibold text-[var(--brand)]"
             >
-              <Link2Off className="h-4 w-4" /> Desvincular
+              <Link2Off className="h-4 w-4" /> Desanexar
+
             </button>
           ) : selectedClip.type === "video" ? (
             <button
