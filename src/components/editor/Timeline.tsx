@@ -428,6 +428,7 @@ function ClipBox({ clip, track }: { clip: Clip; track: Track }) {
       e2eDisableSnapRef.current = ev.altKey;
       const snapped = snap(timeAt(ev.clientX), null);
       useEditor.getState().setSnapGuide(snapped.guide);
+      setMagnetized(snapped.guide != null);
       const t = snapped.start;
       last = t;
       if (side === "start") {
