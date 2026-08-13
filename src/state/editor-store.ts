@@ -1788,3 +1788,8 @@ export function zoomAt(clip: Clip, localTime: number) {
 if (import.meta.env.DEV && typeof window !== "undefined") {
   (window as unknown as { __editor?: typeof useEditor }).__editor = useEditor;
 }
+
+// acesso ao store no console durante o desenvolvimento (ajuda a depurar a timeline)
+if (import.meta.env.DEV && typeof window !== "undefined") {
+  (window as unknown as { __editor?: typeof useEditor }).__editor = useEditor;
+}
