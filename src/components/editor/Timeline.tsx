@@ -853,7 +853,7 @@ export function Timeline() {
   const startTrackDrag = (index: number) => (e: React.PointerEvent) => {
     if (e.button !== 0) return;
     e.preventDefault();
-    const track = tracks[index];
+    const track = visibleTracks[index];
     if (!track) return;
     let over = index;
     setDragTrack({ id: track.id, index, overIndex: index });
@@ -865,8 +865,11 @@ export function Timeline() {
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", up);
       setDragTrack(null);
-      if (over !== index) reorderTracks(index, over);
+      const target = visibleTracks[over];
+      if (over !== index && target)
+        reorderTracks(tracks.indexOf(track), tracks.indexOf(target));
     };
+
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerup", up);
   };
