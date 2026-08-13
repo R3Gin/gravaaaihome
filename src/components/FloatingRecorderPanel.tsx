@@ -63,6 +63,36 @@ function fmt(sec: number) {
 
 type PipWindow = Window & { document: Document };
 
+const PIP_W = 340;
+const PIP_H = 64;
+const OFFSCREEN = -9999;
+
+/** Move a janela PiP para fora da área visível da tela (sem fechá-la). */
+function hidePipWindow(w: PipWindow) {
+  try {
+    w.resizeTo(PIP_W, PIP_H);
+    w.moveTo(OFFSCREEN, OFFSCREEN);
+  } catch {
+    /* noop */
+  }
+}
+
+/** Traz a janela PiP de volta para o canto inferior direito da tela. */
+function showPipWindow(w: PipWindow) {
+  try {
+    const margin = 20;
+    const sw = window.screen?.availWidth ?? window.screen?.width ?? 1280;
+    const sh = window.screen?.availHeight ?? window.screen?.height ?? 720;
+    w.resizeTo(PIP_W, PIP_H);
+    w.moveTo(
+      Math.max(0, sw - PIP_W - margin),
+      Math.max(0, sh - PIP_H - margin * 3),
+    );
+  } catch {
+    /* noop */
+  }
+}
+
 function supportsDocumentPip() {
   return (
     typeof window !== "undefined" &&
@@ -134,7 +164,10 @@ export const FloatingRecorderPanel = forwardRef<
     // @ts-expect-error - experimental API
     const existing: PipWindow | null = window.documentPictureInPicture?.window ?? null;
     if (pipWindow || existing) {
-      if (!pipWindow && existing) setPipWindow(existing);
+      if (!pipWindow && existing) {
+        if (document.visibilityState === "visible") hidePipWindow(existing);
+        setPipWindow(existing);
+      }
       return;
     }
     try {
@@ -142,8 +175,8 @@ export const FloatingRecorderPanel = forwardRef<
       // e desvinculada da aba de origem (o usuário pode navegar livremente).
       // @ts-expect-error - experimental API
       const w: PipWindow = await window.documentPictureInPicture.requestWindow({
-        width: 340,
-        height: 64,
+        width: PIP_W,
+        height: PIP_H,
         disallowReturnToOpener: true,
         preferInitialWindowPlacement: true,
       });
@@ -151,6 +184,8 @@ export const FloatingRecorderPanel = forwardRef<
       w.document.body.style.margin = "0";
       w.document.body.style.overflow = "hidden";
       w.addEventListener("pagehide", () => setPipWindow(null));
+      // Nasce fora da área visível: só aparece quando o usuário sai da aba.
+      hidePipWindow(w);
       setPipWindow(w);
     } catch (err) {
       console.warn("[recorder-panel] Document PiP recusado:", err);
@@ -208,6 +243,25 @@ export const FloatingRecorderPanel = forwardRef<
     return () => window.removeEventListener("pointerdown", onClick);
   }, [visible, pipWindow, pipSupported, openPip]);
 
+
+  // Visibilidade: a janela PiP fica sempre aberta (a gravação nunca é afetada),
+  // mas só é trazida para a tela quando o usuário sai da aba do Gravaai.
+  useEffect(() => {
+    if (!pipWindow) return;
+    const sync = () => {
+      if (document.visibilityState === "hidden") showPipWindow(pipWindow);
+      else hidePipWindow(pipWindow);
+    };
+    sync();
+    document.addEventListener("visibilitychange", sync);
+    window.addEventListener("blur", sync);
+    window.addEventListener("focus", sync);
+    return () => {
+      document.removeEventListener("visibilitychange", sync);
+      window.removeEventListener("blur", sync);
+      window.removeEventListener("focus", sync);
+    };
+  }, [pipWindow]);
 
   // Auto Picture-in-Picture (apenas durante uma sessão de gravação ativa).
   // Em PWAs instalados, o navegador pode acionar esta ação sozinho quando o
