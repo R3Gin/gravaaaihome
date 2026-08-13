@@ -474,6 +474,7 @@ export const useEditor = create<EditorState & EditorActions>((set, get) => {
     tool: "select",
     selectedClipId: null,
     selectedClipIds: [],
+    selectedClipIds: [],
 
     tracks: emptyTracks(),
     past: [],
@@ -528,6 +529,7 @@ export const useEditor = create<EditorState & EditorActions>((set, get) => {
         currentTime: 0,
         playing: false,
         selectedClipId: clip.id,
+        selectedClipIds: [clip.id],
         past: [],
         future: [],
         silences: [],
@@ -544,6 +546,7 @@ export const useEditor = create<EditorState & EditorActions>((set, get) => {
         currentTime: 0,
         playing: false,
         selectedClipId: null,
+        selectedClipIds: [],
         past: [],
         future: [],
       }),
@@ -741,7 +744,7 @@ export const useEditor = create<EditorState & EditorActions>((set, get) => {
           clips.flatMap((c) => (c.id === clipId ? [a, b] : [c])),
         ),
       );
-      set({ selectedClipId: b.id });
+      set({ selectedClipId: b.id, selectedClipIds: [b.id] });
     },
 
     splitPlayhead: () => {
@@ -756,7 +759,7 @@ export const useEditor = create<EditorState & EditorActions>((set, get) => {
 
     removeClip: (id) => {
       write((tracks) => mapTracks(tracks, (clips) => clips.filter((c) => c.id !== id)));
-      if (get().selectedClipId === id) set({ selectedClipId: null });
+      if (get().selectedClipId === id) set({ selectedClipId: null, selectedClipIds: [] });
     },
 
     duplicateClip: (id) => {
@@ -770,7 +773,7 @@ export const useEditor = create<EditorState & EditorActions>((set, get) => {
           return [...clips, copy].sort((a, b) => a.startTime - b.startTime);
         }),
       );
-      set({ selectedClipId: copy.id });
+      set({ selectedClipId: copy.id, selectedClipIds: [copy.id] });
     },
 
     moveClip: (id, newStart) => {
@@ -873,7 +876,7 @@ export const useEditor = create<EditorState & EditorActions>((set, get) => {
           track.id === TEXT_TRACK ? [...clips, clip] : clips,
         ),
       );
-      set({ selectedClipId: clip.id });
+      set({ selectedClipId: clip.id, selectedClipIds: [clip.id] });
     },
 
     addOverlayClip: (kind) => {
@@ -896,7 +899,7 @@ export const useEditor = create<EditorState & EditorActions>((set, get) => {
           track.id === OVERLAY_TRACK ? [...clips, clip] : clips,
         ),
       );
-      set({ selectedClipId: clip.id });
+      set({ selectedClipId: clip.id, selectedClipIds: [clip.id] });
     },
 
     toggleSnap: () => set((s) => ({ snapEnabled: !s.snapEnabled, snapGuide: null })),
@@ -934,7 +937,7 @@ export const useEditor = create<EditorState & EditorActions>((set, get) => {
           return [...clips, clip].sort((a, b) => a.startTime - b.startTime);
         }),
       );
-      set({ selectedClipId: clip.id, snapGuide: null });
+      set({ selectedClipId: clip.id, selectedClipIds: [clip.id], snapGuide: null });
     },
 
     addAnnotationClip: (annotation) => {
@@ -957,7 +960,7 @@ export const useEditor = create<EditorState & EditorActions>((set, get) => {
           track.id === OVERLAY_TRACK ? [...clips, clip] : clips,
         ),
       );
-      set({ selectedClipId: clip.id });
+      set({ selectedClipId: clip.id, selectedClipIds: [clip.id] });
     },
 
     setAnnotationTool: (annotationTool) => set({ annotationTool }),
@@ -1085,6 +1088,7 @@ export const useEditor = create<EditorState & EditorActions>((set, get) => {
       }));
       set({
         selectedClipId: null,
+        selectedClipIds: [],
         silences: [],
         removedRanges: [...prev, ...inOriginal].sort((a, b) => a.start - b.start),
       });
