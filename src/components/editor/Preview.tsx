@@ -249,8 +249,8 @@ export function Preview({ videoRef }: Props) {
 
   /* --- loop de reprodução: contínuo, nunca pausa ao trocar de clipe --- */
   useEffect(() => {
-    const v = videoRef.current;
-    if (!v) return;
+    // sem <video> pronto ainda seguimos: projetos só com áudio tocam pelo relógio
+
     const pool = () =>
       [videoARef.current, videoBRef.current, videoCRef.current].filter(
         (el): el is HTMLVideoElement => Boolean(el),
@@ -270,27 +270,46 @@ export function Preview({ videoRef }: Props) {
 
     const state = useEditor.getState();
     const clips0 = videoClips();
-    const startClip =
-      clipAt(state.tracks, "video", state.currentTime) ??
-      clips0.find((c) => c.startTime + c.duration > state.currentTime) ??
-      null;
-    if (!startClip) {
-      setPlaying(false);
-      return;
-    }
-    if (state.currentTime < startClip.startTime) setCurrentTime(startClip.startTime + 0.001);
-    v.playbackRate = startClip.speed ?? 1;
-    // sempre parte do ponto correto dentro do arquivo de origem
-    const startSource =
-      startClip.sourceInStart +
-      Math.max(0, state.currentTime - startClip.startTime) * (startClip.speed ?? 1);
-    if (Math.abs(v.currentTime - startSource) > 0.05) {
-      v.currentTime = startSource;
-    }
-    void v.play().catch(() => setPlaying(false));
-
-    let activeId = startClip.id;
     const preps = videoPrepRef.current;
+
+    /** fim real do projeto: maior fim entre TODOS os clipes de todas as faixas */
+    const projectEnd = () => {
+      let end = 0;
+      for (const t of useEditor.getState().tracks)
+        for (const c of t.clips) end = Math.max(end, c.startTime + c.duration);
+      return end;
+    };
+
+    /** modo "clock": trechos sem vídeo (só áudio/texto) — a agulha anda pelo relógio */
+    let mode: "video" | "clock" = "clock";
+    let activeId: string | null = null;
+    let last = performance.now();
+
+    const enterVideo = (clip: (typeof clips0)[number], t: number) => {
+      const el = videoRef.current;
+      if (!el) return;
+      mode = "video";
+      activeId = clip.id;
+      const rate = clip.speed ?? 1;
+      el.playbackRate = rate;
+      el.muted = Boolean(clip.muted);
+      const src = clip.sourceInStart + Math.max(0, t - clip.startTime) * rate;
+      if (Math.abs(el.currentTime - src) > 0.05) el.currentTime = src;
+      void el.play().catch(() => setPlaying(false));
+    };
+
+    const enterClock = () => {
+      mode = "clock";
+      activeId = null;
+      pool().forEach((el) => el.pause());
+      preps.clear();
+      last = performance.now();
+    };
+
+    const startClip = clipAt(state.tracks, "video", state.currentTime);
+    if (startClip) enterVideo(startClip, state.currentTime);
+    else enterClock();
+
 
     /**
      * Reserva um decodificador livre e o posiciona no início do corte.
@@ -355,18 +374,40 @@ export function Preview({ videoRef }: Props) {
       rafRef.current = requestAnimationFrame(tick);
       const s = useEditor.getState();
       const cur = videoRef.current;
-      if (!cur) return;
+      const now = performance.now();
+      const dt = Math.min(0.25, (now - last) / 1000);
+      last = now;
+
+      // trecho sem vídeo: a agulha continua andando para o áudio/texto tocar
+      if (mode === "clock" || !cur) {
+        const t = s.currentTime + dt;
+        const end = projectEnd();
+        if (t >= end) {
+          setCurrentTime(end);
+          setPlaying(false);
+          return;
+        }
+        const entering = clipAt(s.tracks, "video", t);
+        if (entering && cur) {
+          setCurrentTime(Math.max(t, entering.startTime + 0.001));
+          enterVideo(entering, t);
+          return;
+        }
+        setCurrentTime(t);
+        return;
+      }
+
       const clips = videoClips();
       if (clips.length === 0) {
-        setPlaying(false);
+        enterClock();
         return;
       }
       // clipe "ativo" é só uma referência conceitual: trocar não toca no <video>
-      const clip =
-        clips.find((c) => c.id === activeId) ??
-        clipAt(s.tracks, "video", s.currentTime) ??
-        clips.find((c) => c.startTime + c.duration > s.currentTime) ??
-        clips[clips.length - 1]!;
+      const clip = clips.find((c) => c.id === activeId) ?? clipAt(s.tracks, "video", s.currentTime);
+      if (!clip) {
+        enterClock();
+        return;
+      }
       activeId = clip.id;
       const speed = clip.speed ?? 1;
       if (cur.playbackRate !== speed) cur.playbackRate = speed;
@@ -381,14 +422,21 @@ export function Preview({ videoRef }: Props) {
       const next2 = idx >= 0 ? clips[idx + 2] : undefined;
       const reachedEnd = cur.currentTime >= clip.sourceInEnd - 0.02 || (cur.ended && !cur.seeking);
       if (reachedEnd) {
-        if (next) {
+        const endT = clip.startTime + clip.duration;
+        // só emenda direto quando o próximo corte é colado; havendo buraco, vira relógio
+        if (next && next.startTime - endT <= 0.05) {
           jumpTo(cur, next);
           return;
         }
-        setCurrentTime(clip.startTime + clip.duration);
-        setPlaying(false);
+        setCurrentTime(endT);
+        if (endT >= projectEnd() - 0.02) {
+          setPlaying(false);
+          return;
+        }
+        enterClock();
         return;
       }
+
       // preparo imediato dos dois próximos cortes: o seek roda em paralelo
       const upcoming = new Set([next?.id, next2?.id].filter(Boolean) as string[]);
       preps.forEach((_, id) => {

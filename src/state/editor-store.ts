@@ -450,6 +450,24 @@ export function allClips(tracks: Track[]): Clip[] {
   return tracks.flatMap((t) => t.clips);
 }
 
+/** o clipe de áudio corresponde ao áudio embutido daquele vídeo? */
+export function audioMatchesVideo(audio: Clip, video: Clip): boolean {
+  if (audio.type !== "audio" || video.type !== "video") return false;
+  if (audio.sourceUrl !== video.sourceUrl) return false;
+  const overlap =
+    Math.min(audio.startTime + audio.duration, video.startTime + video.duration) -
+    Math.max(audio.startTime, video.startTime);
+  return overlap > 0.05 || Math.abs(audio.sourceInStart - video.sourceInStart) < 0.05;
+}
+
+/** o vídeo ainda tem áudio embutido para ser separado? */
+export function canDetachAudio(tracks: Track[], clip: Clip): boolean {
+  if (clip.type !== "video" || clip.muted) return false;
+  return !allClips(tracks).some((c) => c.type === "audio" && audioMatchesVideo(c, clip));
+}
+
+
+
 /**
  * Regera os keyframes de todos os efeitos com janela própria.
  * Keyframes marcados com `origin` começando por "fx-" pertencem a efeitos
@@ -836,6 +854,25 @@ export const useEditor = create<EditorState & EditorActions>((set, get) => {
       const clip = findClip(get().tracks, clipId);
       if (!clip || clip.type !== "video") return;
       const linkGroupId = clip.linkGroupId ?? uid();
+      // já existe áudio correspondente? então só revincula (nunca duplica)
+      const existing = allClips(get().tracks).find(
+        (c) => c.type === "audio" && audioMatchesVideo(c, clip),
+      );
+      if (existing) {
+        write((tracks) =>
+          mapTracks(tracks, (clips) =>
+            clips.map((c) =>
+              c.id === clip.id
+                ? { ...c, linkGroupId, muted: true }
+                : c.id === existing.id
+                  ? { ...c, linkGroupId }
+                  : c,
+            ),
+          ),
+        );
+        set({ selectedClipId: existing.id, selectedClipIds: [existing.id] });
+        return;
+      }
       const audio: Clip = {
         id: uid(),
         trackId: AUDIO_TRACK,
@@ -873,13 +910,12 @@ export const useEditor = create<EditorState & EditorActions>((set, get) => {
         );
         return;
       }
-      // religa: procura o par de áudio/vídeo mais próximo no tempo, sem vínculo
-      const partnerType = clip.type === "audio" ? "video" : "audio";
-      const partner = allClips(get().tracks)
-        .filter((c) => c.type === partnerType && !c.linkGroupId)
-        .sort(
-          (a, b) => Math.abs(a.startTime - clip.startTime) - Math.abs(b.startTime - clip.startTime),
-        )[0];
+      // religa apenas com o par compatível: mesma origem e sobreposição no tempo
+      const partner = allClips(get().tracks).find((c) =>
+        clip.type === "audio"
+          ? c.type === "video" && !c.linkGroupId && audioMatchesVideo(clip, c)
+          : c.type === "audio" && !c.linkGroupId && audioMatchesVideo(c, clip),
+      );
       if (!partner) return;
       const group = uid();
       write((tracks) =>
@@ -890,6 +926,7 @@ export const useEditor = create<EditorState & EditorActions>((set, get) => {
         ),
       );
     },
+
 
 
     reorderTracks: (from, to) =>
