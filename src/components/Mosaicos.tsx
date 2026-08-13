@@ -31,7 +31,7 @@ const mosaicos: MosaicoDef[] = [
     active: true,
   },
   {
-    title: "Editor Simplificado",
+    title: "Editor",
     description:
       "Edite sua gravação com timeline multi-faixas, textos e transições, direto no navegador.",
     href: "/mosaicos/editor",

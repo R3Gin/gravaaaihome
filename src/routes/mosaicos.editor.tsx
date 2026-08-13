@@ -5,13 +5,13 @@ import { VideoEditor } from "@/components/VideoEditor";
 export const Route = createFileRoute("/mosaicos/editor")({
   head: () => ({
     meta: [
-      { title: "Editor Simplificado — Gravaai" },
+      { title: "Editor — Gravaai" },
       {
         name: "description",
         content:
           "Corte trechos, ajuste brilho, contraste e saturação e exporte sua gravação em MP4 direto no navegador.",
       },
-      { property: "og:title", content: "Editor Simplificado — Gravaai" },
+      { property: "og:title", content: "Editor — Gravaai" },
       {
         property: "og:description",
         content:
