@@ -58,7 +58,7 @@ const KF_H = 22;
 const FX_H = 34;
 
 /** barra de um efeito com janela própria (arrastar move, bordas esticam) */
-function EffectBar({ fx }: { fx: TimelineEffect }) {
+function EffectBar({ fx, row = 0 }: { fx: TimelineEffect; row?: number }) {
   const zoom = useEditor((s) => s.zoom);
   const moveEffect = useEditor((s) => s.moveEffect);
   const resizeEffect = useEditor((s) => s.resizeEffect);
@@ -96,12 +96,12 @@ function EffectBar({ fx }: { fx: TimelineEffect }) {
       onPointerDown={drag("move")}
       title={`${fx.label} — arraste para mover, puxe as bordas para esticar`}
       className={cn(
-        "absolute top-1 flex cursor-grab items-center gap-1 overflow-hidden rounded-md border px-2 text-[10px] font-semibold transition-colors",
+        "absolute flex cursor-grab items-center gap-1 overflow-hidden rounded-md border px-2 text-[10px] font-semibold transition-colors",
         selected
           ? "border-[var(--brand)] bg-[var(--brand)]/30 text-[var(--foreground)]"
           : "border-amber-400/60 bg-amber-400/20 text-amber-100",
       )}
-      style={{ left, width, height: FX_H - 8 }}
+      style={{ left, width, height: FX_H - 8, top: row * FX_H + 4 }}
     >
       <span
         onPointerDown={drag("start")}
@@ -854,8 +854,22 @@ export function Timeline() {
   }, [menu]);
 
   const effects = useEditor((s) => s.effects);
-  const lanesHeight =
-    visibleTracks.length * LANE_H + kfRows.length * KF_H + (effects.length ? FX_H : 0);
+  /** empilha efeitos que se sobrepõem em linhas próprias (como faixas) */
+  const fxRows = useMemo(() => {
+    const ends: number[] = [];
+    const map = new Map<string, number>();
+    for (const fx of [...effects].sort((a, b) => a.start - b.start)) {
+      let row = ends.findIndex((end) => fx.start >= end - 1e-3);
+      if (row === -1) {
+        row = ends.length;
+        ends.push(fx.end);
+      } else ends[row] = fx.end;
+      map.set(fx.id, row);
+    }
+    return { map, count: Math.max(ends.length, effects.length ? 1 : 0) };
+  }, [effects]);
+  const fxHeight = fxRows.count * FX_H;
+  const lanesHeight = visibleTracks.length * LANE_H + kfRows.length * KF_H + fxHeight;
 
 
   const snapEnabled = useEditor((s) => s.snapEnabled);
@@ -1164,8 +1178,8 @@ export function Timeline() {
             ))}
             {effects.length ? (
               <div
-                className="flex animate-fade-in items-center gap-1.5 border-b border-[var(--border)] px-2 text-[11px] font-semibold text-amber-300"
-                style={{ height: FX_H }}
+                className="flex animate-fade-in items-start gap-1.5 border-b border-[var(--border)] px-2 pt-2 text-[11px] font-semibold text-amber-300"
+                style={{ height: fxHeight }}
               >
                 <Sparkles className="h-3.5 w-3.5 shrink-0" />
                 <span className="truncate">Efeitos</span>
@@ -1285,10 +1299,10 @@ export function Timeline() {
               {effects.length ? (
                 <div
                   className="relative animate-fade-in border-b border-[var(--border)] bg-[var(--surface-2)]/40"
-                  style={{ height: FX_H }}
+                  style={{ height: fxHeight }}
                 >
                   {effects.map((fx) => (
-                    <EffectBar key={fx.id} fx={fx} />
+                    <EffectBar key={fx.id} fx={fx} row={fxRows.map.get(fx.id) ?? 0} />
                   ))}
                 </div>
               ) : null}
