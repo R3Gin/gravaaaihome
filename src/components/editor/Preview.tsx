@@ -249,8 +249,8 @@ export function Preview({ videoRef }: Props) {
 
   /* --- loop de reprodução: contínuo, nunca pausa ao trocar de clipe --- */
   useEffect(() => {
-    const v = videoRef.current;
-    if (!v) return;
+    // sem <video> pronto ainda seguimos: projetos só com áudio tocam pelo relógio
+
     const pool = () =>
       [videoARef.current, videoBRef.current, videoCRef.current].filter(
         (el): el is HTMLVideoElement => Boolean(el),
