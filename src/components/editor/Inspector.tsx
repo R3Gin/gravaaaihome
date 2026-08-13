@@ -332,13 +332,16 @@ export function Inspector() {
                 }}
               />
             </Row>
+            <div className="space-y-2">
+              <span className="text-[11px] font-bold uppercase tracking-wide text-[var(--muted-foreground)]">
+                Transição de entrada
+              </span>
+              <ClipTransitionControls clip={clip} />
+            </div>
             <p className="rounded-lg border border-[var(--border)] p-3 text-[10px] leading-relaxed text-[var(--muted-foreground)]">
-              Volume, redução de ruído e fades ficam no módulo <strong>Áudio</strong>; efeitos de
-              troca entre clipes, no módulo <strong>Transições</strong> (sidebar esquerda).
-            </p>
-            <p className="rounded-lg border border-[var(--border)] p-3 text-[10px] leading-relaxed text-[var(--muted-foreground)]">
-              O <strong>Zoom</strong> agora é uma propriedade animável comum: use o losango ao lado
-              de "Zoom" acima para criar keyframes, igual a Posição, Escala e Rotação.
+              Volume, redução de ruído e fades ficam no módulo <strong>Áudio</strong>; os efeitos
+              prontos (zoom, entrada, saída, ênfase) ficam no módulo <strong>Efeitos</strong> e
+              aparecem como barras na timeline.
             </p>
           </>
         ) : null}
