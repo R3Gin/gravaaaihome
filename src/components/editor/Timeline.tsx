@@ -894,7 +894,10 @@ export function Timeline() {
 
 
   return (
-    <div className="flex h-[280px] shrink-0 flex-col border-t border-[var(--border)] bg-[var(--surface-2)]">
+    <div
+      onPointerDown={startMarquee}
+      className="flex h-[280px] shrink-0 flex-col border-t border-[var(--border)] bg-[var(--surface-2)]"
+    >
       {/* barra de ações */}
       <div className="flex h-11 shrink-0 items-center gap-2 border-b border-[var(--border)] px-3">
         <button
