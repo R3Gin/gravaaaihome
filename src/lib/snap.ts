@@ -45,7 +45,41 @@ export function applySnap(
   return { time: best, guide: best };
 }
 
-/** Tolerância em segundos equivalente a ~9px de tela, independente do zoom. */
+/** Tolerância em segundos equivalente a ~10px de tela, independente do zoom. */
 export function snapTolerance(zoom: number) {
-  return 9 / Math.max(1, zoom);
+  return 10 / Math.max(1, zoom);
 }
+
+/**
+ * Posição válida mais próxima de `desired` para um clipe de `duration`
+ * segundos, sem sobrepor os demais clipes da faixa (que ficam parados).
+ * Substitui o antigo "empurra tudo para a direita", que devolvia o clipe
+ * arrastado para o lugar de origem sempre que havia um vizinho à esquerda.
+ */
+export function freeStart(
+  others: { startTime: number; duration: number }[],
+  desired: number,
+  duration: number,
+): number {
+  const want = Math.max(0, desired);
+  const sorted = [...others].sort((a, b) => a.startTime - b.startTime);
+  const gaps: [number, number][] = [];
+  let cursor = 0;
+  for (const c of sorted) {
+    if (c.startTime - cursor >= duration - 1e-6) gaps.push([cursor, c.startTime - duration]);
+    cursor = Math.max(cursor, c.startTime + c.duration);
+  }
+  gaps.push([cursor, Infinity]);
+  let best = cursor;
+  let bestDist = Infinity;
+  for (const [lo, hi] of gaps) {
+    const candidate = Math.min(Math.max(want, lo), hi === Infinity ? want : hi);
+    const d = Math.abs(candidate - want);
+    if (d < bestDist) {
+      bestDist = d;
+      best = candidate;
+    }
+  }
+  return Math.max(0, best);
+}
+

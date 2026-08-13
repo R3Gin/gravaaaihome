@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AudioLines, Copy, GripVertical, Magnet, Scissors, Trash2, ZoomIn, ZoomOut } from "lucide-react";
-import { applySnap, snapTargets, snapTolerance } from "@/lib/snap";
+import { applySnap, freeStart, snapTargets, snapTolerance } from "@/lib/snap";
 import { MIN_CLIP, findClip, useEditor, type Clip, type Track } from "@/state/editor-store";
 import {
   EASINGS,
@@ -384,7 +384,7 @@ function ClipBox({ clip, track }: { clip: Clip; track: Track }) {
   /** imantação: aproxima o tempo das bordas vizinhas, agulha e início/fim */
   const snap = (start: number, dur: number | null) => {
     const s = useEditor.getState();
-    if (!s.snapEnabled || (e2eDisableSnapRef.current ?? false)) return { start, guide: null };
+    if (!s.snapEnabled || e2eDisableSnapRef.current) return { start, guide: null };
     const targets = snapTargets(s.tracks, {
       excludeClipId: clipRef.current.id,
       playhead: s.currentTime,
@@ -399,6 +399,18 @@ function ClipBox({ clip, track }: { clip: Clip; track: Track }) {
     }
     return { start, guide: null };
   };
+
+  /** posição livre mais próxima na faixa (mesma regra aplicada no store) */
+  const place = (start: number, dur: number) => {
+    const s = useEditor.getState();
+    const others =
+      s.tracks.find((t) => t.id === clipRef.current.trackId)?.clips.filter(
+        (c) => c.id !== clipRef.current.id,
+      ) ?? [];
+    return freeStart(others, start, dur);
+  };
+
+
 
   const e2eDisableSnapRef = useRef(false);
 
@@ -452,11 +464,16 @@ function ClipBox({ clip, track }: { clip: Clip; track: Track }) {
       setDragging(true);
       e2eDisableSnapRef.current = ev.altKey;
       const raw = Math.max(0, timeAt(ev.clientX) - grabOffset);
-      const snapped = snap(raw, clipRef.current.duration);
-      useEditor.getState().setSnapGuide(snapped.guide);
-      const start = Math.max(0, snapped.start);
+      const dur = clipRef.current.duration;
+      const snapped = snap(raw, dur);
+      const start = place(Math.max(0, snapped.start), dur);
+      // guia só aparece quando a posição imantada sobreviveu à checagem de colisão
+      useEditor.getState().setSnapGuide(
+        snapped.guide != null && Math.abs(start - snapped.start) < 1e-6 ? snapped.guide : null,
+      );
       last = start;
-      setGhost({ start, duration: clipRef.current.duration });
+      setGhost({ start, duration: dur });
+
     };
     const up = () => {
       window.removeEventListener("pointermove", move);
@@ -495,9 +512,14 @@ function ClipBox({ clip, track }: { clip: Clip; track: Track }) {
       )}
       style={{
         left: start * zoom + 1,
-        width: Math.max(6, dur * zoom - 2),
+        // clipes muito curtos não podem "vazar" por cima do vizinho: no máximo
+        // a própria largura real, com 2px de piso só para continuarem visíveis.
+        width: Math.max(2, Math.min(dur * zoom - 2, Math.max(2, dur * zoom - 2))),
+        paddingLeft: dur * zoom < 24 ? 0 : undefined,
+        paddingRight: dur * zoom < 24 ? 0 : undefined,
         zIndex: dragging ? 20 : selected ? 10 : 1,
       }}
+
     >
       <span className="pointer-events-none truncate">
         {clip.type === "text"
