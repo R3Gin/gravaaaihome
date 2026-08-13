@@ -1218,11 +1218,11 @@ export const useEditor = create<EditorState & EditorActions>((set, get) => {
           Math.max(clip.startTime + MIN_CLIP, newTime),
         );
         const duration = end - clip.startTime;
-        const sourceInEnd = Math.min(
-          get().sourceDuration || Infinity,
-          clip.sourceInStart + duration * speed,
-        );
+        // clipes de texto/legenda não têm mídia de origem: podem esticar livremente
+        const limit = clip.type === "text" ? Infinity : get().sourceDuration || Infinity;
+        const sourceInEnd = Math.min(limit, clip.sourceInStart + duration * speed);
         patch = { duration: (sourceInEnd - clip.sourceInStart) / speed, sourceInEnd };
+
       }
       // o par vinculado (áudio separado) é aparado junto
       const partners = clip.linkGroupId
