@@ -869,19 +869,49 @@ export function Timeline() {
         </button>
 
         <button
-          disabled={!selectedClipId}
-          onClick={() => selectedClipId && duplicateClip(selectedClipId)}
+          disabled={selectedClipIds.length === 0}
+          onClick={duplicateSelected}
           className="flex items-center gap-1.5 rounded-lg border border-[var(--border)] px-2.5 py-1.5 text-xs font-semibold text-[var(--muted-foreground)] disabled:opacity-40"
         >
           <Copy className="h-4 w-4" /> Duplicar
+          {selectedClipIds.length > 1 ? ` (${selectedClipIds.length})` : ""}
         </button>
         <button
-          disabled={!selectedClipId}
-          onClick={() => selectedClipId && removeClip(selectedClipId)}
+          disabled={selectedClipIds.length === 0}
+          onClick={removeSelected}
           className="flex items-center gap-1.5 rounded-lg border border-[var(--border)] px-2.5 py-1.5 text-xs font-semibold text-[var(--muted-foreground)] disabled:opacity-40"
         >
           <Trash2 className="h-4 w-4" /> Deletar
+          {selectedClipIds.length > 1 ? ` (${selectedClipIds.length})` : ""}
         </button>
+        {selectedClip ? (
+          selectedClip.linkGroupId ? (
+            <button
+              onClick={() => toggleLink(selectedClip.id)}
+              title="Desvincular áudio e vídeo (passam a se mover separados)"
+              className="flex items-center gap-1.5 rounded-lg border border-[var(--brand)] bg-[var(--brand)]/15 px-2.5 py-1.5 text-xs font-semibold text-[var(--brand)]"
+            >
+              <Link2Off className="h-4 w-4" /> Desvincular
+            </button>
+          ) : selectedClip.type === "video" ? (
+            <button
+              onClick={() => detachAudio(selectedClip.id)}
+              title="Separa o áudio em uma faixa própria, ainda colado ao vídeo"
+              className="flex items-center gap-1.5 rounded-lg border border-[var(--border)] px-2.5 py-1.5 text-xs font-semibold text-[var(--muted-foreground)]"
+            >
+              <Music className="h-4 w-4" /> Separar áudio
+            </button>
+          ) : selectedClip.type === "audio" ? (
+            <button
+              onClick={() => toggleLink(selectedClip.id)}
+              title="Vincular novamente ao clipe de vídeo mais próximo"
+              className="flex items-center gap-1.5 rounded-lg border border-[var(--border)] px-2.5 py-1.5 text-xs font-semibold text-[var(--muted-foreground)]"
+            >
+              <Link2 className="h-4 w-4" /> Vincular
+            </button>
+          ) : null
+        ) : null}
+
         <button
           onClick={toggleSnap}
           title="Imantação: gruda clipes nas bordas vizinhas e na agulha (segure Alt para ignorar)"
