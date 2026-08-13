@@ -5,8 +5,20 @@ import {
   type TextOverlayImage,
   type TimelineClip,
 } from "@/lib/ffmpeg-convert";
-import type { AspectRatio, Clip, Track } from "@/state/editor-store";
+import {
+  DEFAULT_CAPTION_STYLE,
+  type AspectRatio,
+  type CaptionStyle,
+  type Clip,
+  type MediaItem,
+  type Track,
+} from "@/state/editor-store";
 import { drawAnnotation } from "@/lib/annotations";
+import {
+  exportWithWebCodecs,
+  webcodecsAvailable,
+  type ExportQuality,
+} from "@/lib/export-webcodecs";
 
 function frameSize(aspect: AspectRatio, base: { width: number; height: number }): OutputFrame {
   const h = Math.max(360, Math.min(1080, base.height || 720));
