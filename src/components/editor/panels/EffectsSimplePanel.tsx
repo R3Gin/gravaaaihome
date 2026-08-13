@@ -23,6 +23,9 @@ function Chips({ clip }: { clip: Clip }) {
   const effects = useEditor((s) => s.effects);
   const selectedEffectId = useEditor((s) => s.selectedEffectId);
   const selectEffect = useEditor((s) => s.selectEffect);
+  const pending = useEditor((s) => s.pendingEffectPreset);
+  const setPendingRepoint = useEditor((s) => s.setPendingEffectPreset);
+  const repointing = pending && pending.mode === "repoint" ? pending.effectId : null;
   const applied = effects.filter((e) => e.targetType === clip.type);
   if (applied.length === 0) return null;
 
@@ -106,7 +109,7 @@ function Chips({ clip }: { clip: Clip }) {
             ) : null}
           </div>
         );
-
+      })}
     </div>
   );
 }
