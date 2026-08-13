@@ -256,6 +256,8 @@ export interface EditorState {
   annotationDuration: number;
   /** imantação (snap) entre clipes — ligada por padrão */
   snapEnabled: boolean;
+  /** edição em ondulação: mover/apagar um corte arrasta os clipes seguintes */
+  rippleEnabled: boolean;
   /** linha-guia temporária exibida durante o arraste (segundos) */
   snapGuide: number | null;
   /** arquivos importados durante a edição (apenas em memória, nesta sessão) */
@@ -304,6 +306,12 @@ export interface EditorActions {
   addOverlayClip: (kind: "blur" | "spotlight") => void;
   /* --- imantação --- */
   toggleSnap: () => void;
+  /** liga/desliga a edição em ondulação (ripple) */
+  toggleRipple: () => void;
+  /** encosta todos os clipes de cada faixa, fechando as lacunas dos cortes */
+  alignAllClips: () => void;
+  /** true quando existe alguma lacuna a ser fechada */
+  hasGaps: () => boolean;
   setSnapGuide: (t: number | null) => void;
   /* --- biblioteca de mídia --- */
   addMediaItem: (item: MediaItem) => void;
@@ -449,6 +457,89 @@ function mapTracks(tracks: Track[], fn: (clips: Clip[], track: Track) => Clip[])
   return tracks.map((t) => ({ ...t, clips: fn(t.clips, t) }));
 }
 
+const EPS = 1e-6;
+
+/** Posições finais de cada clipe quando a faixa é compactada a partir de 0. */
+function packedStarts(tracks: Track[]): Map<string, number> {
+  const out = new Map<string, number>();
+  for (const t of tracks) {
+    let cursor = 0;
+    for (const c of [...t.clips].sort((a, b) => a.startTime - b.startTime)) {
+      out.set(c.id, cursor);
+      cursor += c.duration;
+    }
+  }
+  return out;
+}
+
+/** Compacta todas as faixas mantendo vídeo+áudio vinculados no mesmo tempo. */
+function alignTracks(tracks: Track[]): Track[] {
+  const packed = packedStarts(tracks);
+  // clipes vinculados recebem o menor tempo do grupo, preservando o sincronismo
+  const groupStart = new Map<string, number>();
+  for (const c of allClips(tracks)) {
+    if (!c.linkGroupId) continue;
+    const v = packed.get(c.id) ?? c.startTime;
+    const cur = groupStart.get(c.linkGroupId);
+    groupStart.set(c.linkGroupId, cur == null ? v : Math.min(cur, v));
+  }
+  return mapTracks(tracks, (clips) =>
+    clips
+      .map((c) => {
+        const start =
+          (c.linkGroupId ? groupStart.get(c.linkGroupId) : undefined) ??
+          packed.get(c.id) ??
+          c.startTime;
+        return start === c.startTime ? c : { ...c, startTime: Math.max(0, start) };
+      })
+      .sort((a, b) => a.startTime - b.startTime),
+  );
+}
+
+/**
+ * Ondulação: desloca `movingIds` por `delta` e leva junto todo clipe que
+ * começa depois deles na mesma faixa (mantendo os espaçamentos).
+ */
+function rippleMove(tracks: Track[], movingIds: Set<string>, delta: number): Track[] {
+  if (Math.abs(delta) < EPS) return tracks;
+  const followers = new Set<string>();
+  for (const t of tracks) {
+    const moving = t.clips.filter((c) => movingIds.has(c.id));
+    if (moving.length === 0) continue;
+    const lastEnd = moving.reduce((m, c) => Math.max(m, c.startTime + c.duration), 0);
+    for (const c of t.clips)
+      if (!movingIds.has(c.id) && c.startTime >= lastEnd - EPS) followers.add(c.id);
+  }
+  const affected = (c: Clip) => movingIds.has(c.id) || followers.has(c.id);
+  // limite: nada pode ir para antes de 0
+  let applied = delta;
+  for (const c of allClips(tracks))
+    if (affected(c)) applied = Math.max(applied, -c.startTime);
+  if (Math.abs(applied) < EPS) return tracks;
+  return mapTracks(tracks, (clips) =>
+    clips
+      .map((c) => (affected(c) ? { ...c, startTime: Math.max(0, c.startTime + applied) } : c))
+      .sort((a, b) => a.startTime - b.startTime),
+  );
+}
+
+/** Ondulação ao apagar: os clipes seguintes recuam pelo espaço liberado. */
+function rippleRemove(tracks: Track[], ids: Set<string>): Track[] {
+  return mapTracks(tracks, (clips) => {
+    const sorted = [...clips].sort((a, b) => a.startTime - b.startTime);
+    let shift = 0;
+    const out: Clip[] = [];
+    for (const c of sorted) {
+      if (ids.has(c.id)) {
+        shift += c.duration;
+        continue;
+      }
+      out.push(shift > EPS ? { ...c, startTime: Math.max(0, c.startTime - shift) } : c);
+    }
+    return out;
+  });
+}
+
 export const useEditor = create<EditorState & EditorActions>((set, get) => {
   const snapshot = () =>
     set((s) => ({ past: [...s.past.slice(-49), s.tracks], future: [] }));
@@ -488,6 +579,7 @@ export const useEditor = create<EditorState & EditorActions>((set, get) => {
     kfClipboard: [],
     pendingEffectPreset: null,
     snapEnabled: true,
+    rippleEnabled: false,
     snapGuide: null,
     mediaLibrary: [],
     annotationTool: null,
@@ -623,6 +715,10 @@ export const useEditor = create<EditorState & EditorActions>((set, get) => {
       const delta = Math.max(newStart - anchor.startTime, -minStart);
       if (!Number.isFinite(delta) || Math.abs(delta) < 1e-6) return;
       const movingIds = new Set(ids);
+      if (s.rippleEnabled) {
+        write((tracks) => rippleMove(tracks, movingIds, delta));
+        return;
+      }
       write((tracks) =>
         mapTracks(tracks, (clips) => {
           if (!clips.some((c) => movingIds.has(c.id))) return clips;
@@ -650,7 +746,11 @@ export const useEditor = create<EditorState & EditorActions>((set, get) => {
       for (const id of s.selectedClipIds)
         for (const g of selectionGroup(s.tracks, [id], id)) ids.add(g);
       if (ids.size === 0) return;
-      write((tracks) => mapTracks(tracks, (clips) => clips.filter((c) => !ids.has(c.id))));
+      write((tracks) =>
+        s.rippleEnabled
+          ? rippleRemove(tracks, ids)
+          : mapTracks(tracks, (clips) => clips.filter((c) => !ids.has(c.id))),
+      );
       set({ selectedClipId: null, selectedClipIds: [] });
     },
 
@@ -802,7 +902,12 @@ export const useEditor = create<EditorState & EditorActions>((set, get) => {
 
     removeClip: (id) => {
       const ids = new Set(selectionGroup(get().tracks, [id], id));
-      write((tracks) => mapTracks(tracks, (clips) => clips.filter((c) => !ids.has(c.id))));
+      const ripple = get().rippleEnabled;
+      write((tracks) =>
+        ripple
+          ? rippleRemove(tracks, ids)
+          : mapTracks(tracks, (clips) => clips.filter((c) => !ids.has(c.id))),
+      );
       if (ids.has(get().selectedClipId ?? "")) set({ selectedClipId: null, selectedClipIds: [] });
     },
 
@@ -839,6 +944,11 @@ export const useEditor = create<EditorState & EditorActions>((set, get) => {
         const db = b.guide != null ? Math.abs(b.time - (desired + clip.duration)) : Infinity;
         if (da <= db && a.guide != null) desired = a.time;
         else if (b.guide != null) desired = Math.max(0, b.time - clip.duration);
+      }
+      if (get().rippleEnabled) {
+        const group = new Set(selectionGroup(allTracks, [id], id));
+        write((tracks) => rippleMove(tracks, group, desired - clip.startTime));
+        return;
       }
       write((tracks) =>
         mapTracks(tracks, (clips, track) => {
@@ -958,6 +1068,20 @@ export const useEditor = create<EditorState & EditorActions>((set, get) => {
     },
 
     toggleSnap: () => set((s) => ({ snapEnabled: !s.snapEnabled, snapGuide: null })),
+    toggleRipple: () => set((s) => ({ rippleEnabled: !s.rippleEnabled })),
+
+    hasGaps: () => {
+      const packed = packedStarts(get().tracks);
+      return allClips(get().tracks).some(
+        (c) => Math.abs((packed.get(c.id) ?? c.startTime) - c.startTime) > 1e-3,
+      );
+    },
+
+    alignAllClips: () => {
+      if (!get().hasGaps()) return;
+      write((tracks) => alignTracks(tracks));
+      set({ snapGuide: null });
+    },
     setSnapGuide: (snapGuide) => set({ snapGuide }),
 
     addMediaItem: (item) => set((s) => ({ mediaLibrary: [...s.mediaLibrary, item] })),
