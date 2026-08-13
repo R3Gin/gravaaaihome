@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef } from "react";
 import { clipAt, useEditor, type AspectRatio } from "@/state/editor-store";
 import { buildFrame, drawFrame, type HitRegion } from "@/lib/preview-compose";
+import { mediaSourceFor, syncMediaClips } from "@/lib/media-elements";
 import {
   drawAnnotation,
   translateAnnotation,
@@ -87,7 +88,10 @@ export function Preview({ videoRef }: Props) {
       if (clip) time = clip.startTime + (v.currentTime - clip.sourceInStart) / (clip.speed ?? 1);
     }
     const frame = buildFrame(s.tracks, s.captionStyle, time, s.selectedClipId);
-    hitsRef.current = drawFrame(ctx, v, frame, W, H);
+    syncMediaClips(s.tracks, s.mediaLibrary, time, s.playing);
+    hitsRef.current = drawFrame(ctx, v, frame, W, H, (clip) =>
+      mediaSourceFor(clip, s.mediaLibrary),
+    );
     if (draftRef.current) drawAnnotation(ctx, draftRef.current, W, H);
   }, [videoRef]);
 
