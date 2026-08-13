@@ -47,6 +47,12 @@ export function Preview({ videoRef }: Props) {
   
   const annotationTool = useEditor((s) => s.annotationTool);
   const pendingEffectPreset = useEditor((s) => s.pendingEffectPreset);
+  const selectedEffectId = useEditor((s) => s.selectedEffectId);
+  const effectsList = useEditor((s) => s.effects);
+  const focusPoint = (() => {
+    const fx = effectsList.find((e) => e.id === selectedEffectId);
+    return fx && fx.category === "zoom" ? fx.params.point : undefined;
+  })();
   const setPendingEffectPreset = useEditor((s) => s.setPendingEffectPreset);
 
   /* Esc cancela o modo "clique no ponto" dos presets de zoom */
@@ -674,6 +680,13 @@ export function Preview({ videoRef }: Props) {
             <div className="absolute inset-0 grid place-items-center text-sm text-[var(--muted-foreground)]">
               Nenhum vídeo carregado
             </div>
+          ) : null}
+
+          {focusPoint ? (
+            <span
+              className="pointer-events-none absolute z-10 h-5 w-5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-[var(--brand)] bg-[var(--brand)]/25"
+              style={{ left: `${focusPoint.x * 100}%`, top: `${focusPoint.y * 100}%` }}
+            />
           ) : null}
 
           {pendingEffectPreset ? (
