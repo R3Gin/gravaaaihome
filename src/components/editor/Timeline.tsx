@@ -523,6 +523,7 @@ function ClipBox({ clip, track }: { clip: Clip; track: Track }) {
         tool === "blade" ? "cursor-crosshair" : dragging ? "cursor-grabbing" : "cursor-grab",
         selected && "ring-2 ring-[var(--brand)] ring-offset-1 ring-offset-[var(--surface-2)]",
         dragging && "opacity-80",
+        magnetized && "brightness-125 ring-2 ring-[var(--brand)]",
       )}
       style={{
         left: start * zoom + 1,
