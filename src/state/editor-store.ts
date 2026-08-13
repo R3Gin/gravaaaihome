@@ -617,30 +617,32 @@ export const useEditor = create<EditorState & EditorActions>((set, get) => {
       const moving = ids
         .map((id) => findClip(s.tracks, id))
         .filter((c): c is Clip => Boolean(c));
-      let minDelta = -Infinity;
-      let maxDelta = Infinity;
-      for (const c of moving) {
-        const statics =
-          s.tracks.find((t) => t.id === c.trackId)?.clips.filter((x) => !ids.includes(x.id)) ?? [];
-        const left = statics
-          .filter((x) => x.startTime + x.duration <= c.startTime + 1e-6)
-          .reduce((m, x) => Math.max(m, x.startTime + x.duration), 0);
-        const right = statics
-          .filter((x) => x.startTime >= c.startTime + c.duration - 1e-6)
-          .reduce((m, x) => Math.min(m, x.startTime), Infinity);
-        minDelta = Math.max(minDelta, left - c.startTime);
-        if (right !== Infinity) maxDelta = Math.min(maxDelta, right - (c.startTime + c.duration));
-      }
-      const delta = Math.min(Math.max(newStart - anchor.startTime, minDelta), maxDelta);
+      if (moving.length === 0) return;
+      // o grupo se move junto; o único limite é não passar do tempo zero.
+      const minStart = moving.reduce((m, c) => Math.min(m, c.startTime), Infinity);
+      const delta = Math.max(newStart - anchor.startTime, -minStart);
       if (!Number.isFinite(delta) || Math.abs(delta) < 1e-6) return;
+      const movingIds = new Set(ids);
       write((tracks) =>
-        mapTracks(tracks, (clips) =>
-          clips
-            .map((c) => (ids.includes(c.id) ? { ...c, startTime: Math.max(0, c.startTime + delta) } : c))
-            .sort((a, b) => a.startTime - b.startTime),
-        ),
+        mapTracks(tracks, (clips) => {
+          if (!clips.some((c) => movingIds.has(c.id))) return clips;
+          const moved = clips
+            .filter((c) => movingIds.has(c.id))
+            .map((c) => ({ ...c, startTime: Math.max(0, c.startTime + delta) }));
+          // vizinhos parados são reacomodados na lacuna livre mais próxima,
+          // preservando a ordem — o grupo nunca fica travado.
+          const placed: Clip[] = [...moved];
+          for (const c of clips
+            .filter((x) => !movingIds.has(x.id))
+            .sort((a, b) => a.startTime - b.startTime)) {
+            const start = freeStart(placed, c.startTime, c.duration);
+            placed.push({ ...c, startTime: start });
+          }
+          return placed.sort((a, b) => a.startTime - b.startTime);
+        }),
       );
     },
+
 
     removeSelected: () => {
       const s = get();

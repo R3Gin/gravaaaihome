@@ -796,7 +796,16 @@ export function Timeline() {
   );
 
   const startMarquee = (e: React.PointerEvent) => {
-    if (e.button !== 0 || e.target !== e.currentTarget) return;
+    if (e.button !== 0) return;
+    const target = e.target as HTMLElement;
+    // pode começar em qualquer área vazia da timeline (inclusive fora das faixas),
+    // mas nunca por cima de clipes, botões, régua/agulha ou rótulos.
+    if (
+      target.closest(
+        "[data-clip-id],button,input,select,textarea,[data-no-marquee],.cursor-ew-resize,.cursor-grab,.cursor-grabbing",
+      )
+    )
+      return;
     const additive = e.shiftKey || e.metaKey || e.ctrlKey;
     if (!additive) select(null);
     const x1 = e.clientX;
@@ -828,6 +837,7 @@ export function Timeline() {
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerup", up);
   };
+
 
   const rowHeights = useMemo(
     () =>
@@ -884,7 +894,10 @@ export function Timeline() {
 
 
   return (
-    <div className="flex h-[280px] shrink-0 flex-col border-t border-[var(--border)] bg-[var(--surface-2)]">
+    <div
+      onPointerDown={startMarquee}
+      className="flex h-[280px] shrink-0 flex-col border-t border-[var(--border)] bg-[var(--surface-2)]"
+    >
       {/* barra de ações */}
       <div className="flex h-11 shrink-0 items-center gap-2 border-b border-[var(--border)] px-3">
         <button
