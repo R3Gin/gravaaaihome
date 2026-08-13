@@ -142,6 +142,40 @@ export function Preview({ videoRef }: Props) {
     }
   }, [currentTime, playing, videoRef]);
 
+  /* --- áudio separado do vídeo: um <audio> segue o clipe da faixa de áudio --- */
+  const audioRef = useRef<HTMLAudioElement>(null);
+  useEffect(() => {
+    const sync = () => {
+      const a = audioRef.current;
+      const v = videoRef.current;
+      const s = useEditor.getState();
+      const videoClip = clipAt(s.tracks, "video", s.currentTime);
+      if (v) v.muted = Boolean(videoClip?.muted);
+      if (!a) return;
+      const audioClip = clipAt(s.tracks, "audio", s.currentTime);
+      if (!audioClip || !audioClip.sourceUrl) {
+        if (!a.paused) a.pause();
+        return;
+      }
+      a.volume = Math.max(0, Math.min(1, audioClip.volume ?? 1));
+      a.playbackRate = audioClip.speed ?? 1;
+      const target =
+        audioClip.sourceInStart +
+        (s.currentTime - audioClip.startTime) * (audioClip.speed ?? 1);
+      if (Math.abs(a.currentTime - target) > 0.12) a.currentTime = target;
+      if (s.playing && a.paused) void a.play().catch(() => undefined);
+      if (!s.playing && !a.paused) a.pause();
+    };
+    sync();
+    const unsub = useEditor.subscribe(sync);
+    const id = window.setInterval(sync, 250);
+    return () => {
+      unsub();
+      window.clearInterval(id);
+      audioRef.current?.pause();
+    };
+  }, [videoRef, sourceUrl]);
+
   /* --- trocar de aba apenas pausa: o estado do editor é preservado --- */
   useEffect(() => {
     const onHidden = () => {
@@ -150,6 +184,7 @@ export function Preview({ videoRef }: Props) {
     document.addEventListener("visibilitychange", onHidden);
     return () => document.removeEventListener("visibilitychange", onHidden);
   }, [setPlaying]);
+
 
   /* --- loop de reprodução: contínuo, nunca pausa ao trocar de clipe --- */
   useEffect(() => {
