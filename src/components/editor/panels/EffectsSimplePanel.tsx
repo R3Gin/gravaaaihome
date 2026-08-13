@@ -254,7 +254,7 @@ export function EffectsSimplePanel({ clip }: { clip: Clip }) {
             </span>
             <div className="grid grid-cols-2 gap-1.5">
               {items.map((p) => {
-                const armed = pending?.presetId === p.id;
+                const armed = pending?.mode !== "repoint" && pending?.presetId === p.id;
                 return (
                   <button
                     key={p.id}
