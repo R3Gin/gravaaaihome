@@ -97,6 +97,30 @@ export async function detectSilences(
   return silencesFromEnvelope(env, sensitivity, minDuration);
 }
 
+/**
+ * Junta silêncios separados por um trecho de fala curtíssimo e descarta
+ * silêncios muito pequenos. Menos emendas = reprodução mais fluida.
+ */
+export function mergeCloseSegments(
+  segs: Segment[],
+  maxGap = 0.25,
+  minKeep = 0.15,
+): Segment[] {
+  const sorted = [...segs].sort((a, b) => a.start - b.start);
+  const out: Segment[] = [];
+  for (const s of sorted) {
+    const last = out[out.length - 1];
+    if (last && s.start - last.end <= maxGap) {
+      last.end = Math.max(last.end, s.end);
+    } else {
+      out.push({ ...s });
+    }
+  }
+  return out.filter((s) => s.end - s.start >= minKeep);
+}
+
+
+
 
 /** Trechos com fala = complemento dos silêncios, fatiados em blocos curtos. */
 export async function detectSpeechBlocks(

@@ -31,7 +31,18 @@ export interface WebCodecsExportInput {
   mediaLibrary?: MediaItem[];
   quality?: ExportQuality;
   onProgress?: (ratio: number) => void;
+  /** permite cancelar a exportação em andamento */
+  signal?: AbortSignal;
 }
+
+/** Erro lançado quando o usuário cancela a exportação. */
+export class ExportAbortedError extends Error {
+  constructor() {
+    super("Exportação cancelada.");
+    this.name = "ExportAbortedError";
+  }
+}
+
 
 export function webcodecsAvailable(): boolean {
   return (
@@ -196,7 +207,14 @@ export async function exportWithWebCodecs(input: WebCodecsExportInput): Promise<
     mediaLibrary = [],
     quality = "rapida",
     onProgress,
+    signal,
   } = input;
+
+  const throwIfAborted = () => {
+    if (signal?.aborted) throw new ExportAbortedError();
+  };
+  throwIfAborted();
+
 
   const preset = QUALITY_PRESETS[quality];
   const videoClips = [...(tracks.find((t) => t.type === "video")?.clips ?? [])].sort(
@@ -270,7 +288,9 @@ export async function exportWithWebCodecs(input: WebCodecsExportInput): Promise<
 
   /** Desenha o estado da timeline em `timelineTime` e codifica o quadro. */
   const emit = (timelineTime: number) => {
+    throwIfAborted();
     if (encodeError) throw encodeError;
+
     let ts = Math.round(timelineTime * 1e6);
     if (ts <= lastTs) ts = lastTs + 1000;
     const data = buildFrame(tracks, captionStyle, timelineTime, null);
@@ -380,22 +400,28 @@ export async function exportWithWebCodecs(input: WebCodecsExportInput): Promise<
 
   try {
     for (const clip of videoClips) {
+      throwIfAborted();
       const ok = await captureByPlayback(clip);
       if (!ok) await captureBySeek(clip);
     }
 
-
+    throwIfAborted();
     await encoder.flush();
     encoder.close();
     if (encodeError) throw encodeError;
 
     if (audioBuffer && audioCodec) {
+      throwIfAborted();
       try {
         await encodeAudio(audioBuffer, muxer, audioCodec.codec);
       } catch (err) {
+        if (err instanceof ExportAbortedError) throw err;
         console.warn("[export] falha ao codificar o áudio, exportando sem som", err);
       }
     }
+
+    throwIfAborted();
+
 
     onProgress?.(0.99);
     muxer.finalize();

@@ -1,7 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Loader2, Scissors } from "lucide-react";
 import { toast } from "sonner";
-import { detectSilences, mapSourceRangesToTimeline, type Segment } from "@/lib/audio-tools";
+import {
+  detectSilences,
+  mapSourceRangesToTimeline,
+  mergeCloseSegments,
+  type Segment,
+} from "@/lib/audio-tools";
+
 import { allClips, useEditor } from "@/state/editor-store";
 
 export function SilencePanel({ onClose }: { onClose: () => void }) {
@@ -61,8 +67,10 @@ export function SilencePanel({ onClose }: { onClose: () => void }) {
       void detectSilences(sourceBlob, sensitivity, minDur)
         .then((segs) => {
           if (!alive) return;
-          setRaw(segs);
+          // menos emendas: silêncios quase colados viram um corte só
+          setRaw(mergeCloseSegments(segs));
         })
+
         .catch(() => {
           if (!alive) return;
           setRaw([]);
