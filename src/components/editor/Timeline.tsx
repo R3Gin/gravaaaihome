@@ -556,8 +556,9 @@ function ClipBox({ clip, track }: { clip: Clip; track: Track }) {
       data-clip-id={clip.id}
       onPointerDown={onPointerDown}
       className={cn(
-        "absolute top-1 flex h-[calc(100%-8px)] touch-none select-none items-center overflow-hidden rounded-md border bg-gradient-to-b px-2 text-[11px] font-semibold text-white",
+        "absolute top-1 flex h-[calc(100%-8px)] touch-none select-none items-center gap-1 overflow-hidden rounded-md border bg-gradient-to-b px-2 text-[11px] font-semibold text-white animate-scale-in",
         color,
+        !dragging && "transition-[left,width] duration-150 ease-out",
         tool === "blade" ? "cursor-crosshair" : dragging ? "cursor-grabbing" : "cursor-grab",
         selected && "ring-2 ring-[var(--brand)] ring-offset-1 ring-offset-[var(--surface-2)]",
         dragging && "opacity-80",
@@ -574,6 +575,9 @@ function ClipBox({ clip, track }: { clip: Clip; track: Track }) {
       }}
 
     >
+      {clip.linkGroupId && dur * zoom >= 40 ? (
+        <Link2 className="pointer-events-none h-3 w-3 shrink-0 opacity-80" />
+      ) : null}
       <span className="pointer-events-none truncate">
         {clip.type === "text"
           ? clip.textContent
@@ -581,6 +585,7 @@ function ClipBox({ clip, track }: { clip: Clip; track: Track }) {
             ? ANNOTATION_LABEL[clip.annotation?.type ?? "pen"]
             : (clip.overlayKind ?? track.label)}
       </span>
+
       {selected && tool !== "blade" ? (
         <>
           <span
