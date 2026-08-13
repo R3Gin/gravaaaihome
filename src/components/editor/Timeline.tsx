@@ -384,10 +384,7 @@ function ClipBox({ clip, track }: { clip: Clip; track: Track }) {
   /** imantação: aproxima o tempo das bordas vizinhas, agulha e início/fim */
   const snap = (start: number, dur: number | null) => {
     const s = useEditor.getState();
-    if (!s.snapEnabled || (e2eDisableSnapRef.current ?? false)) {
-      console.log("[snap-trace] disabled", { snapEnabled: s.snapEnabled, start });
-      return { start, guide: null };
-    }
+    if (!s.snapEnabled || e2eDisableSnapRef.current) return { start, guide: null };
     const targets = snapTargets(s.tracks, {
       excludeClipId: clipRef.current.id,
       playhead: s.currentTime,
@@ -395,15 +392,24 @@ function ClipBox({ clip, track }: { clip: Clip; track: Track }) {
     });
     const tol = snapTolerance(s.zoom);
     const a = applySnap(start, targets, tol);
-    console.log("[snap-trace]", { start, dur, zoom: s.zoom, tol, targets, hitStart: a.guide });
     if (a.guide != null) return { start: a.time, guide: a.guide };
     if (dur != null) {
       const b = applySnap(start + dur, targets, tol);
-      console.log("[snap-trace] end", { end: start + dur, hitEnd: b.guide });
       if (b.guide != null) return { start: b.time - dur, guide: b.guide };
     }
     return { start, guide: null };
   };
+
+  /** posição livre mais próxima na faixa (mesma regra aplicada no store) */
+  const place = (start: number, dur: number) => {
+    const s = useEditor.getState();
+    const others =
+      s.tracks.find((t) => t.id === clipRef.current.trackId)?.clips.filter(
+        (c) => c.id !== clipRef.current.id,
+      ) ?? [];
+    return freeStart(others, start, dur);
+  };
+
 
 
   const e2eDisableSnapRef = useRef(false);
