@@ -733,6 +733,8 @@ export const useEditor = create<EditorState & EditorActions>((set, get) => {
     removedRanges: [],
     captionStyle: DEFAULT_CAPTION_STYLE,
     transcript: null,
+    captionsSig: null,
+
     kfExpanded: "none",
     selectedKeyframes: [],
     kfClipboard: [],
