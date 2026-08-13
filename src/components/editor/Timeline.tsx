@@ -25,8 +25,10 @@ import {
   selectionGroup,
   useEditor,
   type Clip,
+  type TimelineEffect,
   type Track,
 } from "@/state/editor-store";
+
 
 import {
   EASINGS,
@@ -51,6 +53,77 @@ const ANNOTATION_LABEL: Record<string, string> = {
 const LABEL_W = 96;
 const LANE_H = 56;
 const KF_H = 22;
+const FX_H = 34;
+
+/** barra de um efeito com janela própria (arrastar move, bordas esticam) */
+function EffectBar({ fx }: { fx: TimelineEffect }) {
+  const zoom = useEditor((s) => s.zoom);
+  const moveEffect = useEditor((s) => s.moveEffect);
+  const resizeEffect = useEditor((s) => s.resizeEffect);
+  const selectEffect = useEditor((s) => s.selectEffect);
+  const removeEffect = useEditor((s) => s.removeEffectPreset);
+  const selected = useEditor((s) => s.selectedEffectId) === fx.id;
+
+  const drag = (mode: "move" | "start" | "end") => (e: React.PointerEvent) => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    e.stopPropagation();
+    selectEffect(fx.id);
+    const x0 = e.clientX;
+    const { start, end } = fx;
+    const move = (ev: PointerEvent) => {
+      const d = (ev.clientX - x0) / zoom;
+      if (mode === "move") moveEffect(fx.id, Math.max(0, start + d));
+      else if (mode === "start") resizeEffect(fx.id, Math.max(0, start + d), end);
+      else resizeEffect(fx.id, start, Math.max(start + 0.2, end + d));
+    };
+    const up = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+  };
+
+  const left = fx.start * zoom;
+  const width = Math.max(18, (fx.end - fx.start) * zoom);
+
+  return (
+    <div
+      data-no-marquee
+      onPointerDown={drag("move")}
+      title={`${fx.label} — arraste para mover, puxe as bordas para esticar`}
+      className={cn(
+        "absolute top-1 flex cursor-grab items-center gap-1 overflow-hidden rounded-md border px-2 text-[10px] font-semibold transition-colors",
+        selected
+          ? "border-[var(--brand)] bg-[var(--brand)]/30 text-[var(--foreground)]"
+          : "border-amber-400/60 bg-amber-400/20 text-amber-100",
+      )}
+      style={{ left, width, height: FX_H - 8 }}
+    >
+      <span
+        onPointerDown={drag("start")}
+        className="absolute left-0 top-0 h-full w-2 cursor-ew-resize bg-amber-300/60"
+      />
+      <Sparkles className="ml-1.5 h-3 w-3 shrink-0" />
+      <span className="truncate">{fx.label}</span>
+      <button
+        data-no-marquee
+        onPointerDown={(e) => e.stopPropagation()}
+        onClick={() => removeEffect("", fx.id)}
+        aria-label="Remover efeito"
+        className="ml-auto shrink-0 pr-1.5 opacity-70 hover:opacity-100"
+      >
+        ×
+      </button>
+      <span
+        onPointerDown={drag("end")}
+        className="absolute right-0 top-0 h-full w-2 cursor-ew-resize bg-amber-300/60"
+      />
+    </div>
+  );
+}
+
 
 function fmt(t: number) {
   const m = Math.floor(t / 60);
@@ -778,7 +851,10 @@ export function Timeline() {
     return () => window.removeEventListener("pointerdown", close);
   }, [menu]);
 
-  const lanesHeight = visibleTracks.length * LANE_H + kfRows.length * KF_H;
+  const effects = useEditor((s) => s.effects);
+  const lanesHeight =
+    visibleTracks.length * LANE_H + kfRows.length * KF_H + (effects.length ? FX_H : 0);
+
 
   const snapEnabled = useEditor((s) => s.snapEnabled);
   const snapGuide = useEditor((s) => s.snapGuide);
@@ -1084,7 +1160,20 @@ export function Timeline() {
                   : null}
               </div>
             ))}
+            {effects.length ? (
+              <div
+                className="flex animate-fade-in items-center gap-1.5 border-b border-[var(--border)] px-2 text-[11px] font-semibold text-amber-300"
+                style={{ height: FX_H }}
+              >
+                <Sparkles className="h-3.5 w-3.5 shrink-0" />
+                <span className="truncate">Efeitos</span>
+                <span className="ml-auto shrink-0 rounded bg-[var(--border)] px-1 text-[9px] tabular-nums">
+                  {effects.length}
+                </span>
+              </div>
+            ) : null}
           </div>
+
         </div>
 
 
@@ -1191,7 +1280,18 @@ export function Timeline() {
                     : null}
                 </div>
               ))}
+              {effects.length ? (
+                <div
+                  className="relative animate-fade-in border-b border-[var(--border)] bg-[var(--surface-2)]/40"
+                  style={{ height: FX_H }}
+                >
+                  {effects.map((fx) => (
+                    <EffectBar key={fx.id} fx={fx} />
+                  ))}
+                </div>
+              ) : null}
             </div>
+
 
 
             {/* linha-guia da imantação */}

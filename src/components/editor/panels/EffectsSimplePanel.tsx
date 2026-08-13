@@ -20,8 +20,10 @@ const CATEGORIES: EffectCategory[] = ["zoom", "in", "out", "emphasis"];
 function Chips({ clip }: { clip: Clip }) {
   const remove = useEditor((s) => s.removeEffectPreset);
   const update = useEditor((s) => s.updateEffectPresetParams);
-  const [open, setOpen] = useState<string | null>(null);
-  const applied = clip.effectPresets ?? [];
+  const effects = useEditor((s) => s.effects);
+  const selectedEffectId = useEditor((s) => s.selectedEffectId);
+  const selectEffect = useEditor((s) => s.selectEffect);
+  const applied = effects.filter((e) => e.targetType === clip.type);
   if (applied.length === 0) return null;
 
   return (
@@ -33,22 +35,22 @@ function Chips({ clip }: { clip: Clip }) {
 
         {applied.map((inst) => {
           const def = presetById(inst.presetId);
+          const open = selectedEffectId === inst.id;
           return (
             <span
               key={inst.id}
               className={cn(
                 "flex items-center gap-1 rounded-full border px-2 py-1 text-[11px] font-semibold",
-                open === inst.id
+                open
                   ? "border-[var(--brand)] bg-[var(--brand)]/15 text-[var(--brand)]"
                   : "border-[var(--border)] text-[var(--foreground)]",
               )}
             >
-              <button onClick={() => setOpen(open === inst.id ? null : inst.id)}>
+              <button onClick={() => selectEffect(open ? null : inst.id)}>
                 {def?.label ?? inst.presetId}
                 <span className="ml-1 font-normal text-[10px] text-[var(--muted-foreground)]">
-                  {fmt(clip.startTime + (inst.anchor ?? 0))}
+                  {fmt(inst.start)} – {fmt(inst.end)}
                 </span>
-                {inst.edited ? " (editado)" : ""}
               </button>
 
               <button
@@ -64,7 +66,7 @@ function Chips({ clip }: { clip: Clip }) {
       </div>
 
       {applied.map((inst) => {
-        if (open !== inst.id) return null;
+        if (selectedEffectId !== inst.id) return null;
         const def = presetById(inst.presetId);
         if (!def) return null;
         return (
@@ -80,6 +82,7 @@ function Chips({ clip }: { clip: Clip }) {
     </div>
   );
 }
+
 
 function Controls({
   controls,
@@ -247,11 +250,12 @@ export function EffectsSimplePanel({ clip }: { clip: Clip }) {
       })}
 
       <p className="text-[10px] leading-relaxed text-[var(--muted-foreground)]">
-        O efeito começa na posição da agulha. Você pode aplicar quantos efeitos quiser, inclusive o
-        mesmo efeito em tempos diferentes — cada aplicação vira um chip que pode ser ajustado ou
-        removido individualmente. Nos efeitos de zoom, clique no efeito e depois no ponto do vídeo
-        que deve ficar em destaque. Use “Reverter zoom” para voltar ao enquadramento normal.
+        O efeito começa na posição da agulha e tem duração própria: ele aparece como uma barra na
+        faixa <strong>Efeitos</strong> da linha do tempo, onde você pode arrastar para mudar de
+        lugar e puxar as bordas para esticar — inclusive por cima de vários cortes. Nos efeitos de
+        zoom, clique no efeito e depois no ponto do vídeo que deve ficar em destaque.
       </p>
+
 
     </div>
   );
