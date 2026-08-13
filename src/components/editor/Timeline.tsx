@@ -1070,11 +1070,17 @@ export function Timeline() {
               </div>
             ) : null}
 
-            <div onPointerDown={(e) => e.target === e.currentTarget && select(null)}>
-              {tracks.map((track) => (
-                <div key={track.id}>
+            <div onPointerDown={startMarquee}>
+              {visibleTracks.length === 0 ? (
+                <div className="px-3 py-6 text-xs text-[var(--muted-foreground)]">
+                  As faixas aparecem aqui conforme você adiciona vídeo, áudio, texto ou efeitos.
+                </div>
+              ) : null}
+              {visibleTracks.map((track) => (
+                <div key={track.id} className="animate-fade-in">
                   <div
-                    onPointerDown={(e) => e.target === e.currentTarget && select(null)}
+                    onPointerDown={startMarquee}
+
                     onDragOver={(e) => {
                       if (!e.dataTransfer.types.includes("application/x-gravaai-media")) return;
                       e.preventDefault();
