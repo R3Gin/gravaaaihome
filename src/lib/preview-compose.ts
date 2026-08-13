@@ -114,6 +114,7 @@ export function buildFrame(
     if (time >= start && time <= end) {
       const dur = Math.max(0.01, toSeconds(c.duration));
       caption = { clip: c, progress: Math.max(0, Math.min(1, (time - start) / dur)) };
+      if (c.captionOverride) captionStyle = { ...captionStyle, ...c.captionOverride };
       break;
     }
   }
