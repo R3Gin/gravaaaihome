@@ -21,6 +21,8 @@ import {
 import { applySnap, freeStart, snapReleaseTolerance, snapTargets, snapTolerance } from "@/lib/snap";
 import {
   MIN_CLIP,
+  canDetachAudio,
+
   findClip,
   selectionGroup,
   useEditor,
