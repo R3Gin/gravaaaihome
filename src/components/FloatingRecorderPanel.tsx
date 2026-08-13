@@ -164,7 +164,10 @@ export const FloatingRecorderPanel = forwardRef<
     // @ts-expect-error - experimental API
     const existing: PipWindow | null = window.documentPictureInPicture?.window ?? null;
     if (pipWindow || existing) {
-      if (!pipWindow && existing) setPipWindow(existing);
+      if (!pipWindow && existing) {
+        if (document.visibilityState === "visible") hidePipWindow(existing);
+        setPipWindow(existing);
+      }
       return;
     }
     try {
