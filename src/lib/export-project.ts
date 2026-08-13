@@ -143,7 +143,11 @@ export async function exportProject(
       panYKeys: panY,
       opacityKeys,
       denoise: c.denoise ?? false,
-      volume: c.volume ?? 1,
+      // áudio separado: o volume vem do clipe da faixa de áudio vinculado
+      volume: c.muted
+        ? (audioClips.find((a) => a.linkGroupId && a.linkGroupId === c.linkGroupId)?.volume ?? 0)
+        : (c.volume ?? 1),
+
       fadeIn: c.fadeIn ?? 0,
       fadeOut: c.fadeOut ?? 0,
     };
