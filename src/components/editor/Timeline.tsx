@@ -651,6 +651,11 @@ export function Timeline() {
 
   const lanesHeight = tracks.length * LANE_H + kfRows.length * KF_H;
 
+  const snapEnabled = useEditor((s) => s.snapEnabled);
+  const snapGuide = useEditor((s) => s.snapGuide);
+  const toggleSnap = useEditor((s) => s.toggleSnap);
+  const addMediaClip = useEditor((s) => s.addMediaClip);
+
   /* --- reordenar faixas (arraste vertical nos rótulos) --- */
   const reorderTracks = useEditor((s) => s.reorderTracks);
   const labelsRef = useRef<HTMLDivElement>(null);
