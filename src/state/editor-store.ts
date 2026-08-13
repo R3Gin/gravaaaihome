@@ -378,7 +378,12 @@ export interface EditorActions {
   addCaptionClips: (
     segments: { start: number; end: number; text: string }[],
     words?: WordTiming[],
+    /** tempos já na linha do tempo editada + assinatura do áudio usado */
+    meta?: { timeline?: boolean; sig?: string | null },
   ) => void;
+  /** assinatura atual do áudio da timeline (para detectar legenda desatualizada) */
+  audioSignature: () => string;
+
   /** aplica estilo: a todas as legendas (padrão) ou só aos ids informados */
   setCaptionStyle: (patch: Partial<CaptionStyle>, ids?: string[]) => void;
   /** reagrupa as legendas a partir da transcrição guardada (sem retranscrever) */
