@@ -92,7 +92,7 @@ export function freeStart(
   let best = cursor;
   let bestDist = Infinity;
   for (const [lo, hi] of gaps) {
-    const candidate = Math.min(Math.max(want, lo), hi === Infinity ? want : hi);
+    const candidate = hi === Infinity ? Math.max(want, lo) : Math.min(Math.max(want, lo), hi);
     const d = Math.abs(candidate - want);
     if (d < bestDist) {
       bestDist = d;
