@@ -321,14 +321,24 @@ export function Preview({ videoRef }: Props) {
 
 
 
+    const jlog = (o: Record<string, unknown>) => {
+      const w = window as unknown as { __jlog?: unknown[] };
+      (w.__jlog ??= []).push({ t: Math.round(performance.now()), ...o });
+    };
+
     /** Salta para o próximo clipe da timeline sem pausar o elemento <video>. */
     const jumpTo = (cur: HTMLVideoElement, next: (typeof clips0)[number]) => {
       activeId = next.id;
       const rate = next.speed ?? 1;
       const contiguous = Math.abs(cur.currentTime - next.sourceInStart) <= 0.06;
       const prep = preps.get(next.id);
+      jlog({
+        ev: "jump",
+        path: contiguous ? "contiguous" : prep?.ready ? "standby" : "fallback-seek",
+      });
 
       if (!contiguous && prep && prep.ready) {
+
         // corte descontínuo: o decodificador reserva já está no ponto certo
         prep.el.playbackRate = rate;
         prep.el.muted = Boolean(next.muted);
