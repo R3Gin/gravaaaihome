@@ -235,7 +235,7 @@ export async function exportWithWebCodecs(input: WebCodecsExportInput): Promise<
   const muxer = new Muxer({
     target,
     fastStart: "in-memory",
-    video: { codec: "avc", width: W, height: H },
+    video: { codec: codec.mux, width: W, height: H },
     ...(audioBuffer
       ? { audio: { codec: "aac" as const, numberOfChannels: 2, sampleRate: 48000 } }
       : {}),
@@ -249,13 +249,13 @@ export async function exportWithWebCodecs(input: WebCodecsExportInput): Promise<
     },
   });
   encoder.configure({
-    codec,
+    codec: codec.codec,
     width: W,
     height: H,
     bitrate,
     framerate: preset.fps,
     latencyMode: "quality",
-    avc: { format: "avc" },
+    ...(codec.mux === "avc" ? { avc: { format: "avc" as const } } : {}),
   });
 
   const getMedia = (clip: Clip) => mediaSourceFor(clip, mediaLibrary);
