@@ -244,6 +244,25 @@ export const FloatingRecorderPanel = forwardRef<
   }, [visible, pipWindow, pipSupported, openPip]);
 
 
+  // Visibilidade: a janela PiP fica sempre aberta (a gravação nunca é afetada),
+  // mas só é trazida para a tela quando o usuário sai da aba do Gravaai.
+  useEffect(() => {
+    if (!pipWindow) return;
+    const sync = () => {
+      if (document.visibilityState === "hidden") showPipWindow(pipWindow);
+      else hidePipWindow(pipWindow);
+    };
+    sync();
+    document.addEventListener("visibilitychange", sync);
+    window.addEventListener("blur", sync);
+    window.addEventListener("focus", sync);
+    return () => {
+      document.removeEventListener("visibilitychange", sync);
+      window.removeEventListener("blur", sync);
+      window.removeEventListener("focus", sync);
+    };
+  }, [pipWindow]);
+
   // Auto Picture-in-Picture (apenas durante uma sessão de gravação ativa).
   // Em PWAs instalados, o navegador pode acionar esta ação sozinho quando o
   // usuário troca de aba/janela — reutilizamos a mesma lógica de abrir o PiP.
