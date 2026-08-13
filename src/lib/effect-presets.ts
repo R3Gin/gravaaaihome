@@ -184,8 +184,53 @@ export const EFFECT_PRESETS: EffectPresetDef[] = [
       };
     },
   },
+  {
+    id: "zoom-reset",
+    label: "Reverter zoom",
+    category: "zoom",
+    controls: ["speed"],
+    types: ["video"],
+    build: (clip, p, anchor) => {
+      const a = anchorOf(clip, anchor);
+      const d = Math.min(SPEED_SECONDS[p.speed ?? "medium"], remaining(clip, a) * 0.9);
+      const base = basePosition(clip);
+      const curZoom = valueAt(clip.keyframes?.["zoom"], a);
+      const curPos = valueAt(clip.keyframes?.["position"], a);
+      const from = typeof curZoom === "number" ? curZoom : (clip.zoom ?? 1);
+      const fromPos =
+        curPos && typeof curPos === "object" ? curPos : (clip.position ?? base);
+      return {
+        zoom: [k(a, from, "ease-in-out"), k(a + d, 1, "ease-in-out")],
+        position: [k(a, fromPos, "ease-in-out"), k(a + d, base, "ease-in-out")],
+      };
+    },
+  },
+  {
+    id: "zoom-drift",
+    label: "Zoom contínuo (Ken Burns)",
+    category: "zoom",
+    needsPoint: true,
+    controls: ["zoomLevel", "duration"],
+    types: ["video"],
+    build: (clip, p, anchor) => {
+      const a = anchorOf(clip, anchor);
+      const avail = remaining(clip, a);
+      const scale = p.zoomLevel ?? 1.5;
+      const pan = panForPoint(p.point, scale);
+      const base = basePosition(clip);
+      const d = Math.max(0.6, Math.min((p.duration ?? 2) * 2, avail));
+      return {
+        zoom: [k(a, 1, "linear"), k(a + d, scale, "linear")],
+        position: [
+          k(a, base, "linear"),
+          k(a + d, { x: base.x + pan.x, y: base.y + pan.y }, "linear"),
+        ],
+      };
+    },
+  },
 
   /* --------------------------- Entrada --------------------------- */
+
   {
     id: "in-fade",
     label: "Aparecer com fade",
