@@ -144,6 +144,27 @@ export function validateTranscript(
 
   if (segments.length === 0) throw new Error(NO_SPEECH);
 
+  /* Guarda de densidade: o Whisper às vezes devolve um resto de token ("e A")
+     cobrindo dezenas de segundos. Isso NÃO é legenda válida — vira erro
+     explícito em vez de aparecer silenciosamente na timeline. */
+  const covered = segments.reduce((n, s) => n + (s.end - s.start), 0);
+  const letters = segments.reduce(
+    (n, s) => n + s.text.replace(/[^\p{L}\p{N}]/gu, "").length,
+    0,
+  );
+  const density = covered > 0 ? letters / covered : 0;
+  console.info(
+    `[legendas] densidade: ${letters} letras em ${covered.toFixed(1)}s → ${density.toFixed(2)} letras/s`,
+  );
+  if (covered > 3 && density < 1.5) {
+    throw new Error(
+      `A transcrição saiu inconsistente (${letters} caracteres para ${covered.toFixed(0)}s de áudio). ` +
+        "Isso costuma acontecer quando o áudio está muito baixo ou o idioma escolhido não bate com a fala. " +
+        "Confira o idioma e tente de novo.",
+    );
+  }
+
+
   return { segments, words };
 }
 
