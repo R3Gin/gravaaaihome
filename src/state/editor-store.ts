@@ -33,10 +33,13 @@ import {
 import type { WordTiming } from "@/lib/captions";
 import type { Annotation, AnnotationTool } from "@/lib/annotations";
 import {
+  buildForWindow,
+  naturalWindow,
   presetById,
   type EffectCategory,
   type PresetParams,
 } from "@/lib/effect-presets";
+
 
 
 
@@ -72,6 +75,26 @@ export interface AppliedPreset {
   /** o usuário editou manualmente algum keyframe gerado */
   edited?: boolean;
 }
+
+/**
+ * Efeito com janela própria na linha do tempo: começa e termina em tempo
+ * global e pode atravessar vários clipes. Os keyframes gerados ficam em
+ * cada clipe coberto, marcados com `origin` = id do efeito.
+ */
+export interface TimelineEffect {
+  id: string;
+  presetId: string;
+  category: EffectCategory;
+  params: PresetParams;
+  /** tempo global (s) */
+  start: number;
+  end: number;
+  /** tipo de clipe alvo (o mesmo do clipe onde foi aplicado) */
+  targetType: TrackType;
+  label: string;
+}
+
+
 
 
 export interface Clip {
@@ -246,6 +269,10 @@ export interface EditorState {
   kfClipboard: { prop: string; offset: number; value: KeyValue; easing: Easing }[];
   /** preset de zoom aguardando o clique no ponto do preview (modo Simples) */
   pendingEffectPreset: { presetId: string; params: PresetParams } | null;
+  /** efeitos com janela própria na linha do tempo */
+  effects: TimelineEffect[];
+  selectedEffectId: string | null;
+
   /** ferramenta de anotação ativa no preview (null = seleção normal) */
   annotationTool: AnnotationTool | null;
   annotationColor: string;
@@ -372,8 +399,14 @@ export interface EditorActions {
   applyEffectPreset: (clipId: string, presetId: string, params?: PresetParams) => void;
   updateEffectPresetParams: (clipId: string, instanceId: string, params: PresetParams) => void;
   removeEffectPreset: (clipId: string, instanceId: string) => void;
+  /** move o efeito na linha do tempo (mantém a duração) */
+  moveEffect: (effectId: string, start: number) => void;
+  /** estica/encurta a janela do efeito */
+  resizeEffect: (effectId: string, start: number, end: number) => void;
+  selectEffect: (effectId: string | null) => void;
   /** arma o modo "clique no ponto do preview" para presets de zoom */
   setPendingEffectPreset: (value: { presetId: string; params: PresetParams } | null) => void;
+
 
   removeKeyframe: (clipId: string, prop: string, kfId: string) => void;
   removeSelectedKeyframes: () => void;
@@ -416,6 +449,43 @@ function emptyTracks(): Track[] {
 export function allClips(tracks: Track[]): Clip[] {
   return tracks.flatMap((t) => t.clips);
 }
+
+/**
+ * Regera os keyframes de todos os efeitos com janela própria.
+ * Keyframes marcados com `origin` começando por "fx-" pertencem a efeitos
+ * e são sempre reconstruídos; keyframes manuais ficam intactos.
+ */
+export function applyEffectsToTracks(tracks: Track[], effects: TimelineEffect[]): Track[] {
+  return tracks.map((track) => ({
+    ...track,
+    clips: track.clips.map((clip) => {
+      const map: KeyframeMap = {};
+      for (const [prop, keys] of Object.entries(clip.keyframes ?? {})) {
+        const rest = keys.filter((k) => !k.origin?.startsWith("fx-"));
+        if (rest.length) map[prop] = rest;
+      }
+      const clipEnd = clip.startTime + clip.duration;
+      for (const fx of effects) {
+        if (fx.targetType !== clip.type) continue;
+        const from = Math.max(fx.start, clip.startTime);
+        const to = Math.min(fx.end, clipEnd);
+        if (to - from <= 0.02) continue;
+        const def = presetById(fx.presetId);
+        if (!def) continue;
+        const generated = buildForWindow(clip, def, fx.params, fx.start, fx.end);
+        for (const [prop, keys] of Object.entries(generated)) {
+          const tagged = keys.map((k) => ({ ...k, origin: fx.id }));
+          const existing = (map[prop] ?? []).filter(
+            (k) => !tagged.some((t) => Math.abs(t.time - k.time) < 0.005),
+          );
+          map[prop] = sortKeys([...existing, ...tagged]);
+        }
+      }
+      return { ...clip, keyframes: map };
+    }),
+  }));
+}
+
 
 export function findClip(tracks: Track[], id: string | null): Clip | null {
   if (!id) return null;
@@ -577,6 +647,9 @@ export const useEditor = create<EditorState & EditorActions>((set, get) => {
     kfExpanded: "none",
     selectedKeyframes: [],
     kfClipboard: [],
+    effects: [],
+    selectedEffectId: null,
+
     pendingEffectPreset: null,
     snapEnabled: true,
     rippleEnabled: false,
@@ -1517,86 +1590,83 @@ export const useEditor = create<EditorState & EditorActions>((set, get) => {
       });
     },
 
-    /* ---------------- presets de efeito (modo Simples) ---------------- */
+    /* ---------------- efeitos com janela própria (modo Simples) ------- */
 
     applyEffectPreset: (clipId, presetId, params) => {
       const clip = findClip(get().tracks, clipId);
       const def = presetById(presetId);
       if (!clip || !def) return;
       const merged: PresetParams = { ...params };
-      const instanceId = `fx-${uid()}`;
-      const anchor = Math.max(0, Math.min(clip.duration, get().currentTime - clip.startTime));
-      const generated = def.build(clip, merged, anchor);
+      const id = `fx-${uid()}`;
+      const playhead = get().currentTime;
+      const clipEnd = clip.startTime + clip.duration;
+      const win = naturalWindow(def, merged);
+      const start =
+        def.category === "out"
+          ? Math.max(0, clipEnd - win)
+          : Math.max(clip.startTime, Math.min(clipEnd - 0.05, playhead));
+      const end = def.category === "out" ? clipEnd : start + win;
 
-
-      // presets são cumulativos: nada é removido ao aplicar um novo.
-      // Só evitamos keyframes duplicados exatamente no mesmo instante/propriedade.
-      const map: KeyframeMap = {};
-      for (const [prop, keys] of Object.entries(clip.keyframes ?? {})) {
-        if (keys.length) map[prop] = [...keys];
-      }
-      for (const [prop, keys] of Object.entries(generated)) {
-        const tagged = keys.map((k) => ({ ...k, origin: instanceId }));
-        const existing = (map[prop] ?? []).filter(
-          (k) => !tagged.some((t) => Math.abs(t.time - k.time) < 0.005),
-        );
-        map[prop] = sortKeys([...existing, ...tagged]);
-      }
-
-      const presets: AppliedPreset[] = [
-        ...(clip.effectPresets ?? []),
-        { id: instanceId, presetId, category: def.category, params: merged, anchor },
-      ];
-
-      get().updateClip(clipId, { keyframes: map, effectPresets: presets });
-      set({ pendingEffectPreset: null, selectedKeyframes: [] });
-    },
-
-    updateEffectPresetParams: (clipId, instanceId, params) => {
-      const clip = findClip(get().tracks, clipId);
-      const inst = clip?.effectPresets?.find((p) => p.id === instanceId);
-      const def = inst ? presetById(inst.presetId) : undefined;
-      if (!clip || !inst || !def) return;
-      const merged: PresetParams = { ...inst.params, ...params };
-      const generated = def.build(clip, merged, inst.anchor ?? 0);
-      const map: KeyframeMap = {};
-      for (const [prop, keys] of Object.entries(clip.keyframes ?? {})) {
-        const rest = keys.filter((k) => k.origin !== instanceId);
-        if (rest.length) map[prop] = rest;
-      }
-      for (const [prop, keys] of Object.entries(generated)) {
-        const tagged = keys.map((k) => ({ ...k, origin: instanceId }));
-        // preserva keyframes manuais e de outros presets
-        const existing = (map[prop] ?? []).filter(
-          (k) => !tagged.some((t) => Math.abs(t.time - k.time) < 0.005),
-        );
-        map[prop] = sortKeys([...existing, ...tagged]);
-      }
-
-      get().updateClip(clipId, {
-        keyframes: map,
-        effectPresets: (clip.effectPresets ?? []).map((p) =>
-          p.id === instanceId ? { ...p, params: merged, edited: false } : p,
-        ),
+      const fx: TimelineEffect = {
+        id,
+        presetId,
+        category: def.category,
+        params: merged,
+        start,
+        end,
+        targetType: clip.type,
+        label: def.label,
+      };
+      const effects = [...get().effects, fx];
+      set({
+        effects,
+        tracks: applyEffectsToTracks(get().tracks, effects),
+        pendingEffectPreset: null,
+        selectedKeyframes: [],
+        selectedEffectId: id,
       });
     },
 
-    removeEffectPreset: (clipId, instanceId) => {
-      const clip = findClip(get().tracks, clipId);
-      if (!clip) return;
-      const map: KeyframeMap = {};
-      for (const [prop, keys] of Object.entries(clip.keyframes ?? {})) {
-        const rest = keys.filter((k) => k.origin !== instanceId);
-        if (rest.length) map[prop] = rest;
-      }
-      get().updateClip(clipId, {
-        keyframes: map,
-        effectPresets: (clip.effectPresets ?? []).filter((p) => p.id !== instanceId),
-      });
-      set({ selectedKeyframes: [] });
+    updateEffectPresetParams: (_clipId, effectId, params) => {
+      const effects = get().effects.map((e) =>
+        e.id === effectId ? { ...e, params: { ...e.params, ...params } } : e,
+      );
+      set({ effects, tracks: applyEffectsToTracks(get().tracks, effects) });
     },
+
+    removeEffectPreset: (_clipId, effectId) => {
+      const effects = get().effects.filter((e) => e.id !== effectId);
+      set({
+        effects,
+        tracks: applyEffectsToTracks(get().tracks, effects),
+        selectedKeyframes: [],
+        selectedEffectId: get().selectedEffectId === effectId ? null : get().selectedEffectId,
+      });
+    },
+
+    moveEffect: (effectId, start) => {
+      const effects = get().effects.map((e) => {
+        if (e.id !== effectId) return e;
+        const len = e.end - e.start;
+        const s = Math.max(0, start);
+        return { ...e, start: s, end: s + len };
+      });
+      set({ effects, tracks: applyEffectsToTracks(get().tracks, effects) });
+    },
+
+    resizeEffect: (effectId, start, end) => {
+      const effects = get().effects.map((e) => {
+        if (e.id !== effectId) return e;
+        const s = Math.max(0, Math.min(start, end - 0.2));
+        return { ...e, start: s, end: Math.max(s + 0.2, end) };
+      });
+      set({ effects, tracks: applyEffectsToTracks(get().tracks, effects) });
+    },
+
+    selectEffect: (effectId) => set({ selectedEffectId: effectId }),
 
     setPendingEffectPreset: (value) => set({ pendingEffectPreset: value }),
+
 
 
 

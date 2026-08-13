@@ -476,3 +476,44 @@ export function presetById(id: string): EffectPresetDef | undefined {
 export function presetsFor(clip: Clip): EffectPresetDef[] {
   return EFFECT_PRESETS.filter((p) => !p.types || p.types.includes(clip.type));
 }
+
+/* ------------------------------------------------------------------ *
+ * Efeitos com janela própria na linha do tempo.
+ *
+ * Um efeito passa a ter início e fim em tempo global; os keyframes são
+ * gerados sobre um clipe "sintético" com a duração da janela e depois
+ * deslocados para o tempo local de cada clipe que a janela cobrir.
+ * ------------------------------------------------------------------ */
+
+/** duração inicial sugerida (s) de um efeito recém-aplicado */
+export function naturalWindow(def: EffectPresetDef, params: PresetParams): number {
+  const speed = SPEED_SECONDS[params.speed ?? "medium"];
+  if (def.id === "zoom-back") return Math.max(1, (params.duration ?? 2) + 1);
+  if (def.id === "zoom-drift") return Math.max(1, (params.duration ?? 2) * 2);
+  if (def.category === "zoom") return def.id === "zoom-fast" ? 0.9 : def.id === "zoom-reset" ? speed : 1.8;
+  if (def.category === "emphasis") return 2;
+  return Math.max(0.3, speed * 1.4);
+}
+
+/**
+ * Gera os keyframes de um efeito para um clipe específico.
+ * `winStart`/`winEnd` são tempos globais da linha do tempo.
+ */
+export function buildForWindow(
+  clip: Clip,
+  def: EffectPresetDef,
+  params: PresetParams,
+  winStart: number,
+  winEnd: number,
+): Record<string, Keyframe[]> {
+  const len = Math.max(0.2, winEnd - winStart);
+  const synthetic: Clip = { ...clip, startTime: winStart, duration: len };
+  const generated = def.build(synthetic, params, 0);
+  const shift = winStart - clip.startTime;
+  const out: Record<string, Keyframe[]> = {};
+  for (const [prop, keys] of Object.entries(generated)) {
+    out[prop] = keys.map((kf) => ({ ...kf, time: kf.time + shift }));
+  }
+  return out;
+}
+
