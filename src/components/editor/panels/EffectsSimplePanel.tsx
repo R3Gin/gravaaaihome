@@ -26,7 +26,11 @@ function Chips({ clip }: { clip: Clip }) {
 
   return (
     <div className="space-y-2">
+      <span className="text-[11px] font-bold uppercase tracking-wide text-[var(--muted-foreground)]">
+        Efeitos aplicados ({applied.length})
+      </span>
       <div className="flex flex-wrap gap-1.5">
+
         {applied.map((inst) => {
           const def = presetById(inst.presetId);
           return (
