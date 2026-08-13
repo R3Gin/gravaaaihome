@@ -16,6 +16,8 @@ import {
   type TangentSpeed,
 } from "@/lib/keyframes";
 import { remapCaptionsAfterCuts, toOriginalTime } from "@/lib/caption-remap";
+import { timelineAudioSignature, type AudioClipRef } from "@/lib/timeline-audio";
+
 import {
   applyPreset,
   revealModeFor,
