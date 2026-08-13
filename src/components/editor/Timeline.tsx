@@ -1,7 +1,31 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AudioLines, Copy, GripVertical, Magnet, Scissors, Trash2, ZoomIn, ZoomOut } from "lucide-react";
+import {
+  AudioLines,
+  Copy,
+  GripVertical,
+  Link2,
+  Link2Off,
+  Magnet,
+  Music,
+  Scissors,
+  Sparkles,
+  Trash2,
+  Type,
+  Video,
+  ZoomIn,
+  ZoomOut,
+} from "lucide-react";
+
 import { applySnap, freeStart, snapReleaseTolerance, snapTargets, snapTolerance } from "@/lib/snap";
-import { MIN_CLIP, findClip, useEditor, type Clip, type Track } from "@/state/editor-store";
+import {
+  MIN_CLIP,
+  findClip,
+  selectionGroup,
+  useEditor,
+  type Clip,
+  type Track,
+} from "@/state/editor-store";
+
 import {
   EASINGS,
   animatedProps,
@@ -363,11 +387,14 @@ function AudioWaveform({
 function ClipBox({ clip, track }: { clip: Clip; track: Track }) {
   const zoom = useEditor((s) => s.zoom);
   const tool = useEditor((s) => s.tool);
-  const selected = useEditor((s) => s.selectedClipId === clip.id);
+  const selected = useEditor((s) => s.selectedClipIds.includes(clip.id));
   const select = useEditor((s) => s.select);
+  const toggleSelect = useEditor((s) => s.toggleSelect);
+  const selectMany = useEditor((s) => s.selectMany);
   const splitAt = useEditor((s) => s.splitAt);
   const trimClip = useEditor((s) => s.trimClip);
-  const moveClip = useEditor((s) => s.moveClip);
+  const moveSelection = useEditor((s) => s.moveSelection);
+
 
   const [ghost, setGhost] = useState<Ghost>(null);
   const [dragging, setDragging] = useState(false);
@@ -460,11 +487,32 @@ function ClipBox({ clip, track }: { clip: Clip; track: Track }) {
       return;
     }
     e.stopPropagation();
-    select(clip.id);
+
+    if (e.metaKey || e.ctrlKey) {
+      toggleSelect(clip.id);
+      return;
+    }
+    if (e.shiftKey) {
+      const anchor = findClip(useEditor.getState().tracks, useEditor.getState().selectedClipId);
+      if (anchor && anchor.trackId === clip.trackId) {
+        const lo = Math.min(anchor.startTime, clip.startTime);
+        const hi = Math.max(anchor.startTime, clip.startTime);
+        selectMany(
+          track.clips.filter((c) => c.startTime >= lo && c.startTime <= hi).map((c) => c.id),
+          true,
+        );
+      } else selectMany([clip.id], true);
+      return;
+    }
+    if (!useEditor.getState().selectedClipIds.includes(clip.id)) select(clip.id);
 
     const grabOffset = timeAt(e.clientX) - clip.startTime;
     let moved = false;
     let last = clip.startTime;
+    const groupSize = () => {
+      const s = useEditor.getState();
+      return selectionGroup(s.tracks, s.selectedClipIds, clipRef.current.id).length;
+    };
     const move = (ev: PointerEvent) => {
       moved = true;
       setDragging(true);
@@ -472,7 +520,8 @@ function ClipBox({ clip, track }: { clip: Clip; track: Track }) {
       const raw = Math.max(0, timeAt(ev.clientX) - grabOffset);
       const dur = clipRef.current.duration;
       const snapped = snap(raw, dur);
-      const start = place(Math.max(0, snapped.start), dur);
+      const multi = groupSize() > 1;
+      const start = multi ? Math.max(0, snapped.start) : place(Math.max(0, snapped.start), dur);
       const stuck = snapped.guide != null && Math.abs(start - snapped.start) < 1e-6;
       // guia só aparece quando a posição imantada sobreviveu à checagem de colisão
       useEditor.getState().setSnapGuide(stuck ? snapped.guide : null);
@@ -492,13 +541,18 @@ function ClipBox({ clip, track }: { clip: Clip; track: Track }) {
         // ao soltar, zona de atração ampliada: encaixa exato se couber
         const dur = clipRef.current.duration;
         const rel = snap(last, dur, snapReleaseTolerance(useEditor.getState().zoom));
-        const target = place(Math.max(0, rel.start), dur);
-        moveClip(clipRef.current.id, Math.abs(target - rel.start) < 1e-6 ? target : last);
+        if (groupSize() > 1) {
+          moveSelection(clipRef.current.id, Math.max(0, rel.start));
+        } else {
+          const target = place(Math.max(0, rel.start), dur);
+          moveSelection(clipRef.current.id, Math.abs(target - rel.start) < 1e-6 ? target : last);
+        }
       }
     };
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerup", up);
   };
+
 
 
   const color =
@@ -518,8 +572,9 @@ function ClipBox({ clip, track }: { clip: Clip; track: Track }) {
       data-clip-id={clip.id}
       onPointerDown={onPointerDown}
       className={cn(
-        "absolute top-1 flex h-[calc(100%-8px)] touch-none select-none items-center overflow-hidden rounded-md border bg-gradient-to-b px-2 text-[11px] font-semibold text-white",
+        "absolute top-1 flex h-[calc(100%-8px)] touch-none select-none items-center gap-1 overflow-hidden rounded-md border bg-gradient-to-b px-2 text-[11px] font-semibold text-white animate-scale-in",
         color,
+        !dragging && "transition-[left,width] duration-150 ease-out",
         tool === "blade" ? "cursor-crosshair" : dragging ? "cursor-grabbing" : "cursor-grab",
         selected && "ring-2 ring-[var(--brand)] ring-offset-1 ring-offset-[var(--surface-2)]",
         dragging && "opacity-80",
@@ -536,6 +591,9 @@ function ClipBox({ clip, track }: { clip: Clip; track: Track }) {
       }}
 
     >
+      {clip.linkGroupId && dur * zoom >= 40 ? (
+        <Link2 className="pointer-events-none h-3 w-3 shrink-0 opacity-80" />
+      ) : null}
       <span className="pointer-events-none truncate">
         {clip.type === "text"
           ? clip.textContent
@@ -543,6 +601,7 @@ function ClipBox({ clip, track }: { clip: Clip; track: Track }) {
             ? ANNOTATION_LABEL[clip.annotation?.type ?? "pen"]
             : (clip.overlayKind ?? track.label)}
       </span>
+
       {selected && tool !== "blade" ? (
         <>
           <span
@@ -567,15 +626,42 @@ export function Timeline() {
   const currentTime = useEditor((s) => s.currentTime);
   const tool = useEditor((s) => s.tool);
   const selectedClipId = useEditor((s) => s.selectedClipId);
+  const selectedClipIds = useEditor((s) => s.selectedClipIds);
   const setZoom = useEditor((s) => s.setZoom);
   const setCurrentTime = useEditor((s) => s.setCurrentTime);
   const setTool = useEditor((s) => s.setTool);
   const select = useEditor((s) => s.select);
-  const removeClip = useEditor((s) => s.removeClip);
-  const duplicateClip = useEditor((s) => s.duplicateClip);
+  const selectMany = useEditor((s) => s.selectMany);
+  const removeSelected = useEditor((s) => s.removeSelected);
+  const duplicateSelected = useEditor((s) => s.duplicateSelected);
+  const detachAudio = useEditor((s) => s.detachAudio);
+  const toggleLink = useEditor((s) => s.toggleLink);
   const splitPlayhead = useEditor((s) => s.splitPlayhead);
   const silences = useEditor((s) => s.silences);
   const sourceUrl = useEditor((s) => s.sourceUrl);
+
+  /* faixas vazias ficam ocultas; reaparecem ao arrastar mídia da biblioteca */
+  const [mediaDragging, setMediaDragging] = useState(false);
+  useEffect(() => {
+    const on = (e: DragEvent) => {
+      if (e.dataTransfer?.types.includes("application/x-gravaai-media")) setMediaDragging(true);
+    };
+    const off = () => setMediaDragging(false);
+    window.addEventListener("dragover", on);
+    window.addEventListener("drop", off);
+    window.addEventListener("dragend", off);
+    return () => {
+      window.removeEventListener("dragover", on);
+      window.removeEventListener("drop", off);
+      window.removeEventListener("dragend", off);
+    };
+  }, []);
+
+  const visibleTracks = useMemo(
+    () => tracks.filter((t) => t.clips.length > 0 || mediaDragging),
+    [tracks, mediaDragging],
+  );
+
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const width = Math.max(600, (duration + 4) * zoom);
@@ -686,7 +772,7 @@ export function Timeline() {
     return () => window.removeEventListener("pointerdown", close);
   }, [menu]);
 
-  const lanesHeight = tracks.length * LANE_H + kfRows.length * KF_H;
+  const lanesHeight = visibleTracks.length * LANE_H + kfRows.length * KF_H;
 
   const snapEnabled = useEditor((s) => s.snapEnabled);
   const snapGuide = useEditor((s) => s.snapGuide);
@@ -700,13 +786,53 @@ export function Timeline() {
     null,
   );
 
+  /* --- laço de seleção (marquee) sobre as faixas --- */
+  const [marquee, setMarquee] = useState<{ x1: number; y1: number; x2: number; y2: number } | null>(
+    null,
+  );
+
+  const startMarquee = (e: React.PointerEvent) => {
+    if (e.button !== 0 || e.target !== e.currentTarget) return;
+    const additive = e.shiftKey || e.metaKey || e.ctrlKey;
+    if (!additive) select(null);
+    const x1 = e.clientX;
+    const y1 = e.clientY;
+    let box = { x1, y1, x2: x1, y2: y1 };
+    setMarquee(box);
+    const move = (ev: PointerEvent) => {
+      box = { x1, y1, x2: ev.clientX, y2: ev.clientY };
+      setMarquee(box);
+    };
+    const up = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      setMarquee(null);
+      const left = Math.min(box.x1, box.x2);
+      const right = Math.max(box.x1, box.x2);
+      const top = Math.min(box.y1, box.y2);
+      const bottom = Math.max(box.y1, box.y2);
+      if (right - left < 4 && bottom - top < 4) return;
+      const ids: string[] = [];
+      document.querySelectorAll<HTMLElement>("[data-clip-id]").forEach((el) => {
+        const r = el.getBoundingClientRect();
+        if (r.right < left || r.left > right || r.bottom < top || r.top > bottom) return;
+        const id = el.dataset.clipId;
+        if (id) ids.push(id);
+      });
+      if (ids.length) selectMany(ids, additive);
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+  };
+
   const rowHeights = useMemo(
     () =>
-      tracks.map(
+      visibleTracks.map(
         (t) => LANE_H + (selectedClip?.trackId === t.id ? kfRows.length * KF_H : 0),
       ),
-    [tracks, selectedClip, kfRows.length],
+    [visibleTracks, selectedClip, kfRows.length],
   );
+
 
   const indexFromY = useCallback(
     (clientY: number) => {
@@ -727,7 +853,7 @@ export function Timeline() {
   const startTrackDrag = (index: number) => (e: React.PointerEvent) => {
     if (e.button !== 0) return;
     e.preventDefault();
-    const track = tracks[index];
+    const track = visibleTracks[index];
     if (!track) return;
     let over = index;
     setDragTrack({ id: track.id, index, overIndex: index });
@@ -739,8 +865,11 @@ export function Timeline() {
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", up);
       setDragTrack(null);
-      if (over !== index) reorderTracks(index, over);
+      const target = visibleTracks[over];
+      if (over !== index && target)
+        reorderTracks(tracks.indexOf(track), tracks.indexOf(target));
     };
+
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerup", up);
   };
@@ -783,19 +912,49 @@ export function Timeline() {
         </button>
 
         <button
-          disabled={!selectedClipId}
-          onClick={() => selectedClipId && duplicateClip(selectedClipId)}
+          disabled={selectedClipIds.length === 0}
+          onClick={duplicateSelected}
           className="flex items-center gap-1.5 rounded-lg border border-[var(--border)] px-2.5 py-1.5 text-xs font-semibold text-[var(--muted-foreground)] disabled:opacity-40"
         >
           <Copy className="h-4 w-4" /> Duplicar
+          {selectedClipIds.length > 1 ? ` (${selectedClipIds.length})` : ""}
         </button>
         <button
-          disabled={!selectedClipId}
-          onClick={() => selectedClipId && removeClip(selectedClipId)}
+          disabled={selectedClipIds.length === 0}
+          onClick={removeSelected}
           className="flex items-center gap-1.5 rounded-lg border border-[var(--border)] px-2.5 py-1.5 text-xs font-semibold text-[var(--muted-foreground)] disabled:opacity-40"
         >
           <Trash2 className="h-4 w-4" /> Deletar
+          {selectedClipIds.length > 1 ? ` (${selectedClipIds.length})` : ""}
         </button>
+        {selectedClip ? (
+          selectedClip.linkGroupId ? (
+            <button
+              onClick={() => toggleLink(selectedClip.id)}
+              title="Desvincular áudio e vídeo (passam a se mover separados)"
+              className="flex items-center gap-1.5 rounded-lg border border-[var(--brand)] bg-[var(--brand)]/15 px-2.5 py-1.5 text-xs font-semibold text-[var(--brand)]"
+            >
+              <Link2Off className="h-4 w-4" /> Desvincular
+            </button>
+          ) : selectedClip.type === "video" ? (
+            <button
+              onClick={() => detachAudio(selectedClip.id)}
+              title="Separa o áudio em uma faixa própria, ainda colado ao vídeo"
+              className="flex items-center gap-1.5 rounded-lg border border-[var(--border)] px-2.5 py-1.5 text-xs font-semibold text-[var(--muted-foreground)]"
+            >
+              <Music className="h-4 w-4" /> Separar áudio
+            </button>
+          ) : selectedClip.type === "audio" ? (
+            <button
+              onClick={() => toggleLink(selectedClip.id)}
+              title="Vincular novamente ao clipe de vídeo mais próximo"
+              className="flex items-center gap-1.5 rounded-lg border border-[var(--border)] px-2.5 py-1.5 text-xs font-semibold text-[var(--muted-foreground)]"
+            >
+              <Link2 className="h-4 w-4" /> Vincular
+            </button>
+          ) : null
+        ) : null}
+
         <button
           onClick={toggleSnap}
           title="Imantação: gruda clipes nas bordas vizinhas e na agulha (segure Alt para ignorar)"
@@ -826,8 +985,8 @@ export function Timeline() {
         <div className="shrink-0 border-r border-[var(--border)]" style={{ width: LABEL_W }}>
           <div className="h-7 border-b border-[var(--border)]" />
           <div ref={labelsRef} className="overflow-hidden">
-            {tracks.map((t, i) => (
-              <div key={t.id}>
+            {visibleTracks.map((t, i) => (
+              <div key={t.id} className="animate-fade-in">
                 <div
                   onPointerDown={startTrackDrag(i)}
                   title="Arraste para cima ou para baixo para reordenar"
@@ -839,8 +998,23 @@ export function Timeline() {
                   style={{ height: LANE_H }}
                 >
                   <GripVertical className="h-3.5 w-3.5 shrink-0 opacity-40 group-hover:opacity-90" />
+                  {t.type === "video" ? (
+                    <Video className="h-3.5 w-3.5 shrink-0 text-[var(--brand)]" />
+                  ) : t.type === "audio" ? (
+                    <Music className="h-3.5 w-3.5 shrink-0 text-emerald-400" />
+                  ) : t.type === "text" ? (
+                    <Type className="h-3.5 w-3.5 shrink-0 text-sky-400" />
+                  ) : (
+                    <Sparkles className="h-3.5 w-3.5 shrink-0 text-amber-400" />
+                  )}
                   <span className="truncate">{t.label}</span>
+                  {t.clips.length > 1 ? (
+                    <span className="ml-auto shrink-0 rounded bg-[var(--border)] px-1 text-[9px] tabular-nums">
+                      {t.clips.length}
+                    </span>
+                  ) : null}
                 </div>
+
                 {selectedClip?.trackId === t.id
                   ? kfRows.map((p) => (
                       <div
@@ -896,11 +1070,17 @@ export function Timeline() {
               </div>
             ) : null}
 
-            <div onPointerDown={(e) => e.target === e.currentTarget && select(null)}>
-              {tracks.map((track) => (
-                <div key={track.id}>
+            <div onPointerDown={startMarquee}>
+              {visibleTracks.length === 0 ? (
+                <div className="px-3 py-6 text-xs text-[var(--muted-foreground)]">
+                  As faixas aparecem aqui conforme você adiciona vídeo, áudio, texto ou efeitos.
+                </div>
+              ) : null}
+              {visibleTracks.map((track) => (
+                <div key={track.id} className="animate-fade-in">
                   <div
-                    onPointerDown={(e) => e.target === e.currentTarget && select(null)}
+                    onPointerDown={startMarquee}
+
                     onDragOver={(e) => {
                       if (!e.dataTransfer.types.includes("application/x-gravaai-media")) return;
                       e.preventDefault();
@@ -933,10 +1113,11 @@ export function Timeline() {
                     {track.clips
                       .filter(
                         (clip) =>
-                          clip.id === selectedClipId ||
+                          selectedClipIds.includes(clip.id) ||
                           (clip.startTime + clip.duration >= visible.from &&
                             clip.startTime <= visible.to),
                       )
+
                       .map((clip) => (
                         <ClipBox key={clip.id} clip={clip} track={track} />
                       ))}
@@ -979,6 +1160,21 @@ export function Timeline() {
           </div>
         </div>
       </div>
+
+      {/* laço de seleção múltipla */}
+      {marquee ? (
+        <div
+          className="pointer-events-none fixed z-50 rounded-sm border border-[var(--brand)] bg-[var(--brand)]/15"
+          style={{
+            left: Math.min(marquee.x1, marquee.x2),
+            top: Math.min(marquee.y1, marquee.y2),
+            width: Math.abs(marquee.x2 - marquee.x1),
+            height: Math.abs(marquee.y2 - marquee.y1),
+          }}
+        />
+      ) : null}
+
+
 
       {/* menu do keyframe (duplo clique ou botão direito) */}
       {menu && selectedClip ? (

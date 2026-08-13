@@ -89,6 +89,11 @@ export interface Clip {
   contrast?: number;
   saturation?: number;
   speed?: number;
+  /** clipes com o mesmo grupo se movem/cortam juntos (vídeo + áudio separado) */
+  linkGroupId?: string;
+  /** áudio do próprio clipe silenciado (usado quando o áudio foi separado) */
+  muted?: boolean;
+
   /** transição de ENTRADA deste clipe (sobrepõe o fim do clipe anterior) */
   transition?: TransitionKind;
   transitionDuration?: number;
@@ -220,6 +225,9 @@ export interface EditorState {
   aspect: AspectRatio;
   tool: Tool;
   selectedClipId: string | null;
+  /** seleção múltipla (o último item é o "âncora" = selectedClipId) */
+  selectedClipIds: string[];
+
   tracks: Track[];
   past: Track[][];
   future: Track[][];
@@ -265,6 +273,21 @@ export interface EditorActions {
   setAspect: (a: AspectRatio) => void;
   setTool: (t: Tool) => void;
   select: (id: string | null) => void;
+  /** Alterna um clipe na seleção (Ctrl/Cmd + clique). */
+  toggleSelect: (id: string) => void;
+  /** Substitui (ou soma) a seleção — usado pelo laço de seleção. */
+  selectMany: (ids: string[], additive?: boolean) => void;
+  /** Move todos os clipes selecionados (e seus vinculados) de uma vez. */
+  moveSelection: (anchorId: string, newStart: number) => void;
+  /** Remove todos os clipes selecionados. */
+  removeSelected: () => void;
+  /** Duplica todos os clipes selecionados. */
+  duplicateSelected: () => void;
+  /** Separa o áudio do clipe de vídeo em uma faixa própria (vinculado). */
+  detachAudio: (clipId: string) => void;
+  /** Liga/desliga o vínculo entre vídeo e áudio separado. */
+  toggleLink: (clipId: string) => void;
+
   /** Reordena as faixas da timeline (arraste vertical). */
   reorderTracks: (from: number, to: number) => void;
 
@@ -395,6 +418,28 @@ export function findClip(tracks: Track[], id: string | null): Clip | null {
   return null;
 }
 
+/**
+ * Ids que devem se mover/apagar juntos: a seleção atual (quando o clipe
+ * arrastado faz parte dela) somada aos clipes vinculados (vídeo + áudio).
+ */
+export function selectionGroup(
+  tracks: Track[],
+  selectedIds: string[],
+  anchorId: string,
+): string[] {
+  const base = selectedIds.includes(anchorId) ? selectedIds : [anchorId];
+  const out = new Set<string>();
+  for (const id of base) {
+    out.add(id);
+    const clip = findClip(tracks, id);
+    if (!clip?.linkGroupId) continue;
+    for (const other of allClips(tracks))
+      if (other.linkGroupId === clip.linkGroupId) out.add(other.id);
+  }
+  return [...out];
+}
+
+
 export function timelineDuration(tracks: Track[]): number {
   return allClips(tracks).reduce((m, c) => Math.max(m, c.startTime + c.duration), 0);
 }
@@ -428,6 +473,9 @@ export const useEditor = create<EditorState & EditorActions>((set, get) => {
     aspect: "16:9",
     tool: "select",
     selectedClipId: null,
+    selectedClipIds: [],
+
+
     tracks: emptyTracks(),
     past: [],
     future: [],
@@ -481,6 +529,7 @@ export const useEditor = create<EditorState & EditorActions>((set, get) => {
         currentTime: 0,
         playing: false,
         selectedClipId: clip.id,
+        selectedClipIds: [clip.id],
         past: [],
         future: [],
         silences: [],
@@ -497,6 +546,7 @@ export const useEditor = create<EditorState & EditorActions>((set, get) => {
         currentTime: 0,
         playing: false,
         selectedClipId: null,
+        selectedClipIds: [],
         past: [],
         future: [],
       }),
@@ -507,7 +557,145 @@ export const useEditor = create<EditorState & EditorActions>((set, get) => {
     setZoom: (z) => set({ zoom: Math.min(400, Math.max(10, z)) }),
     setAspect: (aspect) => set({ aspect }),
     setTool: (tool) => set({ tool }),
-    select: (selectedClipId) => set({ selectedClipId, selectedKeyframes: [] }),
+    select: (selectedClipId) =>
+      set({
+        selectedClipId,
+        selectedClipIds: selectedClipId ? [selectedClipId] : [],
+        selectedKeyframes: [],
+      }),
+
+    toggleSelect: (id) =>
+      set((s) => {
+        const has = s.selectedClipIds.includes(id);
+        const ids = has ? s.selectedClipIds.filter((x) => x !== id) : [...s.selectedClipIds, id];
+        return {
+          selectedClipIds: ids,
+          selectedClipId: ids[ids.length - 1] ?? null,
+          selectedKeyframes: [],
+        };
+      }),
+
+    selectMany: (ids, additive) =>
+      set((s) => {
+        const next = additive ? [...new Set([...s.selectedClipIds, ...ids])] : [...new Set(ids)];
+        return {
+          selectedClipIds: next,
+          selectedClipId: next[next.length - 1] ?? null,
+          selectedKeyframes: [],
+        };
+      }),
+
+    moveSelection: (anchorId, newStart) => {
+      const s = get();
+      const ids = selectionGroup(s.tracks, s.selectedClipIds, anchorId);
+      if (ids.length <= 1) {
+        get().moveClip(anchorId, newStart);
+        return;
+      }
+      const anchor = findClip(s.tracks, anchorId);
+      if (!anchor) return;
+      const moving = ids
+        .map((id) => findClip(s.tracks, id))
+        .filter((c): c is Clip => Boolean(c));
+      let minDelta = -Infinity;
+      let maxDelta = Infinity;
+      for (const c of moving) {
+        const statics =
+          s.tracks.find((t) => t.id === c.trackId)?.clips.filter((x) => !ids.includes(x.id)) ?? [];
+        const left = statics
+          .filter((x) => x.startTime + x.duration <= c.startTime + 1e-6)
+          .reduce((m, x) => Math.max(m, x.startTime + x.duration), 0);
+        const right = statics
+          .filter((x) => x.startTime >= c.startTime + c.duration - 1e-6)
+          .reduce((m, x) => Math.min(m, x.startTime), Infinity);
+        minDelta = Math.max(minDelta, left - c.startTime);
+        if (right !== Infinity) maxDelta = Math.min(maxDelta, right - (c.startTime + c.duration));
+      }
+      const delta = Math.min(Math.max(newStart - anchor.startTime, minDelta), maxDelta);
+      if (!Number.isFinite(delta) || Math.abs(delta) < 1e-6) return;
+      write((tracks) =>
+        mapTracks(tracks, (clips) =>
+          clips
+            .map((c) => (ids.includes(c.id) ? { ...c, startTime: Math.max(0, c.startTime + delta) } : c))
+            .sort((a, b) => a.startTime - b.startTime),
+        ),
+      );
+    },
+
+    removeSelected: () => {
+      const s = get();
+      const ids = new Set<string>();
+      for (const id of s.selectedClipIds)
+        for (const g of selectionGroup(s.tracks, [id], id)) ids.add(g);
+      if (ids.size === 0) return;
+      write((tracks) => mapTracks(tracks, (clips) => clips.filter((c) => !ids.has(c.id))));
+      set({ selectedClipId: null, selectedClipIds: [] });
+    },
+
+    duplicateSelected: () => {
+      const ids = [...get().selectedClipIds];
+      for (const id of ids) get().duplicateClip(id);
+    },
+
+    detachAudio: (clipId) => {
+      const clip = findClip(get().tracks, clipId);
+      if (!clip || clip.type !== "video") return;
+      const linkGroupId = clip.linkGroupId ?? uid();
+      const audio: Clip = {
+        id: uid(),
+        trackId: AUDIO_TRACK,
+        type: "audio",
+        sourceUrl: clip.sourceUrl,
+        startTime: clip.startTime,
+        duration: clip.duration,
+        sourceInStart: clip.sourceInStart,
+        sourceInEnd: clip.sourceInEnd,
+        speed: clip.speed ?? 1,
+        volume: clip.volume ?? 1,
+        linkGroupId,
+      };
+      write((tracks) =>
+        mapTracks(tracks, (clips, track) => {
+          if (track.id === clip.trackId)
+            return clips.map((c) => (c.id === clipId ? { ...c, linkGroupId, muted: true } : c));
+          if (track.id === AUDIO_TRACK)
+            return [...clips, audio].sort((a, b) => a.startTime - b.startTime);
+          return clips;
+        }),
+      );
+      set({ selectedClipId: audio.id, selectedClipIds: [audio.id] });
+    },
+
+    toggleLink: (clipId) => {
+      const clip = findClip(get().tracks, clipId);
+      if (!clip) return;
+      if (clip.linkGroupId) {
+        const group = clip.linkGroupId;
+        write((tracks) =>
+          mapTracks(tracks, (clips) =>
+            clips.map((c) => (c.linkGroupId === group ? { ...c, linkGroupId: undefined } : c)),
+          ),
+        );
+        return;
+      }
+      // religa: procura o par de áudio/vídeo mais próximo no tempo, sem vínculo
+      const partnerType = clip.type === "audio" ? "video" : "audio";
+      const partner = allClips(get().tracks)
+        .filter((c) => c.type === partnerType && !c.linkGroupId)
+        .sort(
+          (a, b) => Math.abs(a.startTime - clip.startTime) - Math.abs(b.startTime - clip.startTime),
+        )[0];
+      if (!partner) return;
+      const group = uid();
+      write((tracks) =>
+        mapTracks(tracks, (clips) =>
+          clips.map((c) =>
+            c.id === clip.id || c.id === partner.id ? { ...c, linkGroupId: group } : c,
+          ),
+        ),
+      );
+    },
+
 
     reorderTracks: (from, to) =>
       set((s) => {
@@ -540,23 +728,44 @@ export const useEditor = create<EditorState & EditorActions>((set, get) => {
       if (!clip) return;
       const local = time - clip.startTime;
       if (local < MIN_CLIP || clip.duration - local < MIN_CLIP) return;
-      const speed = clip.speed ?? 1;
-      const cutSource = clip.sourceInStart + local * speed;
-      const a: Clip = { ...clip, duration: local, sourceInEnd: cutSource };
-      const b: Clip = {
-        ...clip,
-        id: uid(),
-        startTime: clip.startTime + local,
-        duration: clip.duration - local,
-        sourceInStart: cutSource,
-        transition: "none",
+      // clipes vinculados (vídeo + áudio separado) são cortados no mesmo ponto
+      const targets = clip.linkGroupId
+        ? allClips(get().tracks).filter(
+            (c) =>
+              c.linkGroupId === clip.linkGroupId &&
+              time > c.startTime + MIN_CLIP &&
+              time < c.startTime + c.duration - MIN_CLIP,
+          )
+        : [clip];
+      const splitOne = (c: Clip): Clip[] => {
+        const l = time - c.startTime;
+        const speed = c.speed ?? 1;
+        const cut = c.sourceInStart + l * speed;
+        return [
+          { ...c, duration: l, sourceInEnd: cut },
+          {
+            ...c,
+            id: uid(),
+            startTime: c.startTime + l,
+            duration: c.duration - l,
+            sourceInStart: cut,
+            transition: "none",
+          },
+        ];
       };
+      const ids = new Set(targets.map((c) => c.id));
+      let selected: string | null = null;
       write((tracks) =>
         mapTracks(tracks, (clips) =>
-          clips.flatMap((c) => (c.id === clipId ? [a, b] : [c])),
+          clips.flatMap((c) => {
+            if (!ids.has(c.id)) return [c];
+            const parts = splitOne(c);
+            if (c.id === clipId) selected = parts[1].id;
+            return parts;
+          }),
         ),
       );
-      set({ selectedClipId: b.id });
+      if (selected) set({ selectedClipId: selected, selectedClipIds: [selected] });
     },
 
     splitPlayhead: () => {
@@ -570,9 +779,11 @@ export const useEditor = create<EditorState & EditorActions>((set, get) => {
     },
 
     removeClip: (id) => {
-      write((tracks) => mapTracks(tracks, (clips) => clips.filter((c) => c.id !== id)));
-      if (get().selectedClipId === id) set({ selectedClipId: null });
+      const ids = new Set(selectionGroup(get().tracks, [id], id));
+      write((tracks) => mapTracks(tracks, (clips) => clips.filter((c) => !ids.has(c.id))));
+      if (ids.has(get().selectedClipId ?? "")) set({ selectedClipId: null, selectedClipIds: [] });
     },
+
 
     duplicateClip: (id) => {
       const clip = findClip(get().tracks, id);
@@ -585,7 +796,7 @@ export const useEditor = create<EditorState & EditorActions>((set, get) => {
           return [...clips, copy].sort((a, b) => a.startTime - b.startTime);
         }),
       );
-      set({ selectedClipId: copy.id });
+      set({ selectedClipId: copy.id, selectedClipIds: [copy.id] });
     },
 
     moveClip: (id, newStart) => {
@@ -657,13 +868,23 @@ export const useEditor = create<EditorState & EditorActions>((set, get) => {
         );
         patch = { duration: (sourceInEnd - clip.sourceInStart) / speed, sourceInEnd };
       }
+      // o par vinculado (áudio separado) é aparado junto
+      const partners = clip.linkGroupId
+        ? allClips(get().tracks).filter(
+            (c) => c.linkGroupId === clip.linkGroupId && c.id !== id,
+          )
+        : [];
       write((tracks) =>
-        mapTracks(tracks, (clips, track) => {
-          if (track.id !== clip.trackId) return clips;
-          return clips.map((c) => (c.id === id ? { ...c, ...patch } : c));
-        }),
+        mapTracks(tracks, (clips) =>
+          clips.map((c) => {
+            if (c.id === id) return { ...c, ...patch };
+            if (!partners.some((p) => p.id === c.id)) return c;
+            return { ...c, ...patch };
+          }),
+        ),
       );
     },
+
 
 
     addTextClip: (text) => {
@@ -688,7 +909,7 @@ export const useEditor = create<EditorState & EditorActions>((set, get) => {
           track.id === TEXT_TRACK ? [...clips, clip] : clips,
         ),
       );
-      set({ selectedClipId: clip.id });
+      set({ selectedClipId: clip.id, selectedClipIds: [clip.id] });
     },
 
     addOverlayClip: (kind) => {
@@ -711,7 +932,7 @@ export const useEditor = create<EditorState & EditorActions>((set, get) => {
           track.id === OVERLAY_TRACK ? [...clips, clip] : clips,
         ),
       );
-      set({ selectedClipId: clip.id });
+      set({ selectedClipId: clip.id, selectedClipIds: [clip.id] });
     },
 
     toggleSnap: () => set((s) => ({ snapEnabled: !s.snapEnabled, snapGuide: null })),
@@ -749,7 +970,7 @@ export const useEditor = create<EditorState & EditorActions>((set, get) => {
           return [...clips, clip].sort((a, b) => a.startTime - b.startTime);
         }),
       );
-      set({ selectedClipId: clip.id, snapGuide: null });
+      set({ selectedClipId: clip.id, selectedClipIds: [clip.id], snapGuide: null });
     },
 
     addAnnotationClip: (annotation) => {
@@ -772,7 +993,7 @@ export const useEditor = create<EditorState & EditorActions>((set, get) => {
           track.id === OVERLAY_TRACK ? [...clips, clip] : clips,
         ),
       );
-      set({ selectedClipId: clip.id });
+      set({ selectedClipId: clip.id, selectedClipIds: [clip.id] });
     },
 
     setAnnotationTool: (annotationTool) => set({ annotationTool }),
@@ -900,6 +1121,7 @@ export const useEditor = create<EditorState & EditorActions>((set, get) => {
       }));
       set({
         selectedClipId: null,
+        selectedClipIds: [],
         silences: [],
         removedRanges: [...prev, ...inOriginal].sort((a, b) => a.start - b.start),
       });
