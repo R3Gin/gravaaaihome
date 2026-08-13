@@ -728,23 +728,44 @@ export const useEditor = create<EditorState & EditorActions>((set, get) => {
       if (!clip) return;
       const local = time - clip.startTime;
       if (local < MIN_CLIP || clip.duration - local < MIN_CLIP) return;
-      const speed = clip.speed ?? 1;
-      const cutSource = clip.sourceInStart + local * speed;
-      const a: Clip = { ...clip, duration: local, sourceInEnd: cutSource };
-      const b: Clip = {
-        ...clip,
-        id: uid(),
-        startTime: clip.startTime + local,
-        duration: clip.duration - local,
-        sourceInStart: cutSource,
-        transition: "none",
+      // clipes vinculados (vídeo + áudio separado) são cortados no mesmo ponto
+      const targets = clip.linkGroupId
+        ? allClips(get().tracks).filter(
+            (c) =>
+              c.linkGroupId === clip.linkGroupId &&
+              time > c.startTime + MIN_CLIP &&
+              time < c.startTime + c.duration - MIN_CLIP,
+          )
+        : [clip];
+      const splitOne = (c: Clip): Clip[] => {
+        const l = time - c.startTime;
+        const speed = c.speed ?? 1;
+        const cut = c.sourceInStart + l * speed;
+        return [
+          { ...c, duration: l, sourceInEnd: cut },
+          {
+            ...c,
+            id: uid(),
+            startTime: c.startTime + l,
+            duration: c.duration - l,
+            sourceInStart: cut,
+            transition: "none",
+          },
+        ];
       };
+      const ids = new Set(targets.map((c) => c.id));
+      let selected: string | null = null;
       write((tracks) =>
         mapTracks(tracks, (clips) =>
-          clips.flatMap((c) => (c.id === clipId ? [a, b] : [c])),
+          clips.flatMap((c) => {
+            if (!ids.has(c.id)) return [c];
+            const parts = splitOne(c);
+            if (c.id === clipId) selected = parts[1].id;
+            return parts;
+          }),
         ),
       );
-      set({ selectedClipId: b.id, selectedClipIds: [b.id] });
+      if (selected) set({ selectedClipId: selected, selectedClipIds: [selected] });
     },
 
     splitPlayhead: () => {
@@ -758,9 +779,11 @@ export const useEditor = create<EditorState & EditorActions>((set, get) => {
     },
 
     removeClip: (id) => {
-      write((tracks) => mapTracks(tracks, (clips) => clips.filter((c) => c.id !== id)));
-      if (get().selectedClipId === id) set({ selectedClipId: null, selectedClipIds: [] });
+      const ids = new Set(selectionGroup(get().tracks, [id], id));
+      write((tracks) => mapTracks(tracks, (clips) => clips.filter((c) => !ids.has(c.id))));
+      if (ids.has(get().selectedClipId ?? "")) set({ selectedClipId: null, selectedClipIds: [] });
     },
+
 
     duplicateClip: (id) => {
       const clip = findClip(get().tracks, id);
