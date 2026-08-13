@@ -38,12 +38,26 @@ export async function transcribe(
   language: string | "auto" = "portuguese",
   events: TranscribeEvents = {},
 ): Promise<TranscribeResult> {
-  const lang = !language || language === "auto" ? undefined : language;
   events.onStage?.("audio");
   const audio = await decodeMono16k(blob);
+  if (!audio) throw new Error("Não encontrei áudio nesse vídeo.");
+  return transcribeSamples(audio, language, events);
+}
+
+/**
+ * Mesma transcrição, mas a partir de PCM mono 16 kHz já montado — é o caminho
+ * usado pelo editor, que envia o áudio FINAL da timeline (já com os cortes).
+ */
+export async function transcribeSamples(
+  audio: Float32Array,
+  language: string | "auto" = "portuguese",
+  events: TranscribeEvents = {},
+): Promise<TranscribeResult> {
+  const lang = !language || language === "auto" ? undefined : language;
   if (!audio || audio.length < 16000 * 0.3) {
     throw new Error("Não encontrei áudio nesse vídeo.");
   }
+
 
   // diagnóstico do áudio extraído (16 kHz, mono, PCM float32)
   const duration = audio.length / 16000;
