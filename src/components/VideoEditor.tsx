@@ -3,7 +3,7 @@ import {
   AudioLines,
   Captions,
   Download,
-  
+  Keyboard,
   Pause,
   Play,
   Redo2,
@@ -41,6 +41,7 @@ type PanelId =
   | "annotations"
   | "text"
   | "effects"
+  | "shortcuts"
   | null;
 
 const TOOLS: { id: Exclude<PanelId, null>; label: string; icon: typeof Upload }[] = [
@@ -52,6 +53,7 @@ const TOOLS: { id: Exclude<PanelId, null>; label: string; icon: typeof Upload }[
   { id: "annotations", label: "Anotações", icon: PenTool },
   { id: "text", label: "Texto", icon: Type },
   { id: "effects", label: "Efeitos", icon: Shapes },
+  { id: "shortcuts", label: "Atalhos", icon: Keyboard },
 ];
 
 function useVideoMeta() {
@@ -81,6 +83,28 @@ function useVideoMeta() {
     });
     return { url, ...meta };
   }, []);
+}
+
+function ShortcutGroup({ items }: { items: { keys: string[]; action: string }[] }) {
+  return (
+    <div className="space-y-2">
+      {items.map((item, i) => (
+        <div key={i} className="flex items-start justify-between gap-3">
+          <span className="text-xs text-[var(--muted-foreground)] leading-5">{item.action}</span>
+          <span className="flex shrink-0 items-center gap-1">
+            {item.keys.map((k, j) => (
+              <span
+                key={j}
+                className="rounded border border-[var(--border)] bg-[var(--background)] px-1.5 py-0.5 text-[10px] font-semibold text-[var(--foreground)]"
+              >
+                {k}
+              </span>
+            ))}
+          </span>
+        </div>
+      ))}
+    </div>
+  );
 }
 
 export function VideoEditor() {
@@ -364,6 +388,31 @@ export function VideoEditor() {
                   >
                     <Sparkles className="h-3.5 w-3.5" /> Destaque (spotlight)
                   </button>
+                </div>
+              ) : null}
+
+              {panel === "shortcuts" ? (
+                <div className="space-y-3">
+                  <p className="text-xs text-[var(--muted-foreground)]">
+                    Atalhos disponíveis no editor. Eles funcionam em qualquer lugar da tela, exceto dentro de campos de texto.
+                  </p>
+                  <ShortcutGroup
+                    items={[
+                      { keys: ["Espaço"], action: "Reproduzir / Pausar" },
+                      { keys: ["S"], action: "Dividir vídeo no playhead" },
+                      { keys: ["U"], action: "Expandir propriedades com keyframes" },
+                      { keys: ["U", "U"], action: "Mostrar todas as propriedades modificadas" },
+                      { keys: ["Ctrl/⌘", "A"], action: "Selecionar todos os clipes" },
+                      { keys: ["Delete"], action: "Remover clipes/keyframes selecionados" },
+                      { keys: ["Ctrl/⌘", "Z"], action: "Desfazer" },
+                      { keys: ["Ctrl/⌘", "Shift", "Z"], action: "Refazer" },
+                      { keys: ["Ctrl/⌘", "C"], action: "Copiar keyframes selecionados" },
+                      { keys: ["Ctrl/⌘", "V"], action: "Colar keyframes" },
+                      { keys: ["←", "→"], action: "Navegar entre keyframes" },
+                      { keys: ["Alt", "←", "→"], action: "Deslocar keyframes no tempo" },
+                      { keys: ["Esc"], action: "Cancelar modo ponto de efeito" },
+                    ]}
+                  />
                 </div>
               ) : null}
             </div>
