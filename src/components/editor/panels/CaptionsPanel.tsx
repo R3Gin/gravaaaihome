@@ -456,35 +456,98 @@ export function CaptionsPanel() {
               Nenhuma legenda ainda. Gere as legendas para editar aqui.
             </p>
           ) : (
-            captions.map((c) => (
-              <div
-                key={c.id}
-                className="space-y-1.5 rounded-lg border border-[var(--border)] p-2 transition-colors hover:border-white/25"
-              >
-                <div className="flex items-center justify-between text-[10px] text-[var(--muted-foreground)]">
-                  <span className="font-mono">
-                    {fmt(c.startTime)} → {fmt(c.startTime + c.duration)}
-                  </span>
+            <>
+              <div className="flex items-center justify-between text-[10px] text-[var(--muted-foreground)]">
+                <span>
+                  {selectedCaptionIds.length
+                    ? `${selectedCaptionIds.length} selecionada(s) — o estilo vai só nelas`
+                    : "Clique para selecionar · Ctrl/Shift para várias"}
+                </span>
+                {selectedCaptionIds.length ? (
                   <button
-                    onClick={() => {
-                      select(c.id);
-                      setCurrentTime(c.startTime + 0.01);
-                    }}
+                    onClick={() => selectMany([])}
                     className="flex items-center gap-1 font-semibold text-[var(--brand)]"
                   >
-                    <Play className="h-3 w-3" /> Ir
+                    <X className="h-3 w-3" /> Limpar
                   </button>
-                </div>
-                <input
-                  value={c.textContent ?? ""}
-                  onChange={(e) => updateClip(c.id, { textContent: e.target.value })}
-                  className="w-full rounded-md bg-white/5 px-2 py-1 text-[11px] text-[var(--foreground)] outline-none focus:ring-1 focus:ring-[var(--brand)]"
-                />
+                ) : (
+                  <button
+                    onClick={() => selectMany(captions.map((c) => c.id))}
+                    className="font-semibold text-[var(--brand)]"
+                  >
+                    Selecionar todas
+                  </button>
+                )}
               </div>
-            ))
+
+              <div
+                ref={listRef}
+                className="max-h-72 space-y-1.5 overflow-y-auto rounded-lg border border-[var(--border)] bg-black/20 p-1.5"
+              >
+                {captions.map((c, i) => {
+                  const selected = selectedCaptionIds.includes(c.id);
+                  return (
+                    <div
+                      key={c.id}
+                      data-cap={c.id}
+                      onClick={(e) => {
+                        if (e.metaKey || e.ctrlKey || e.shiftKey) toggleSelect(c.id);
+                        else {
+                          select(c.id);
+                          setCurrentTime(c.startTime + 0.01);
+                        }
+                      }}
+                      className={cn(
+                        "cursor-pointer rounded-md border p-2 transition-colors",
+                        selected
+                          ? "border-[var(--brand)] bg-[var(--brand)]/10"
+                          : activeId === c.id
+                            ? "border-white/30 bg-white/5"
+                            : "border-transparent hover:border-white/20",
+                      )}
+                    >
+                      <div className="flex items-center justify-between text-[10px] text-[var(--muted-foreground)]">
+                        <span className="font-mono">
+                          {String(i + 1).padStart(2, "0")} · {fmt(c.startTime)} →{" "}
+                          {fmt(c.startTime + c.duration)}
+                        </span>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            removeClip(c.id);
+                          }}
+                          title="Apagar legenda"
+                          className="text-[var(--muted-foreground)] hover:text-red-400"
+                        >
+                          <Trash2 className="h-3 w-3" />
+                        </button>
+                      </div>
+                      <input
+                        value={c.textContent ?? ""}
+                        onClick={(e) => e.stopPropagation()}
+                        onChange={(e) => updateClip(c.id, { textContent: e.target.value })}
+                        className="mt-1 w-full rounded-md bg-white/5 px-2 py-1 text-[11px] text-[var(--foreground)] outline-none focus:ring-1 focus:ring-[var(--brand)]"
+                      />
+                      {c.captionOverride ? (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            updateClip(c.id, { captionOverride: undefined });
+                          }}
+                          className="mt-1 text-[10px] font-semibold text-[var(--brand)]"
+                        >
+                          Voltar ao estilo geral
+                        </button>
+                      ) : null}
+                    </div>
+                  );
+                })}
+              </div>
+            </>
           )}
         </div>
       )}
+
 
       <button
         onClick={clearCaptions}
