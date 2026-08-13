@@ -233,7 +233,16 @@ export function drawFrame(
     hits.push({ id: clip.id, kind: "overlay", ...px });
     ctx.save();
     ctx.globalAlpha = clip.opacity ?? 1;
-    if (clip.overlayKind === "spotlight") {
+    if (clip.overlayKind === "media") {
+      const src = getMedia?.(clip) ?? null;
+      if (src) {
+        try {
+          ctx.drawImage(src, px.x, px.y, px.w, px.h);
+        } catch {
+          /* mídia ainda carregando */
+        }
+      }
+    } else if (clip.overlayKind === "spotlight") {
       ctx.fillStyle = `rgba(0,0,0,${clip.strength ?? 0.7})`;
       ctx.fillRect(0, 0, W, H);
       ctx.globalCompositeOperation = "destination-out";
