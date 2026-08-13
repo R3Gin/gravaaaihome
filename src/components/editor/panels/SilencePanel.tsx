@@ -40,6 +40,18 @@ export function SilencePanel({ onClose }: { onClose: () => void }) {
   };
 
 
+  // ao abrir o painel, descarta qualquer marcação da sessão anterior
+  useEffect(() => {
+    setSilences([]);
+    setRaw([]);
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+      setSilences([]);
+    };
+  }, [setSilences]);
+
+  // detecção no áudio original (redecodifica a cada abertura / ajuste)
   useEffect(() => {
     if (!sourceBlob) return;
     let alive = true;
@@ -49,21 +61,36 @@ export function SilencePanel({ onClose }: { onClose: () => void }) {
       void detectSilences(sourceBlob, sensitivity, minDur)
         .then((segs) => {
           if (!alive) return;
-          setSilences(segs);
-          if (segs.length === 0) setError("Nenhum silêncio encontrado com esses ajustes.");
+          setRaw(segs);
         })
-        .catch(() => alive && setError("Não consegui analisar o áudio desse vídeo."))
+        .catch(() => {
+          if (!alive) return;
+          setRaw([]);
+          setError("Não consegui analisar o áudio desse vídeo.");
+        })
         .finally(() => alive && setBusy(false));
     }, 200);
     return () => {
       alive = false;
       clearTimeout(id);
     };
-  }, [minDur, sensitivity, setSilences, sourceBlob]);
+  }, [minDur, sensitivity, sourceBlob]);
 
-  useEffect(() => () => setSilences([]), [setSilences]);
+  // remapeia para o tempo ATUAL da timeline sempre que os clipes mudarem
+  const mapped = useMemo(
+    () => mapSourceRangesToTimeline(raw, allClips(tracks)),
+    [raw, tracks],
+  );
+
+  useEffect(() => {
+    setSilences(mapped);
+    if (!busy) {
+      setError(mapped.length === 0 ? "Nenhum silêncio encontrado com esses ajustes." : null);
+    }
+  }, [busy, mapped, setSilences]);
 
   const total = silences.reduce((sum, s) => sum + (s.end - s.start), 0);
+
 
   return (
     <div className="space-y-4">
