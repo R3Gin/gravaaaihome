@@ -19,6 +19,11 @@ interface Props {
 }
 
 export function Preview({ videoRef }: Props) {
+  console.debug("[video-trace] Preview render", {
+    file: "src/components/editor/Preview.tsx:Preview",
+    currentTime: videoRef.current?.currentTime ?? null,
+    playing: useEditor.getState().playing,
+  });
   const sourceUrl = useEditor((s) => s.sourceUrl);
   const playing = useEditor((s) => s.playing);
   const aspect = useEditor((s) => s.aspect);
@@ -47,6 +52,63 @@ export function Preview({ videoRef }: Props) {
   const annotationTool = useEditor((s) => s.annotationTool);
   const pendingEffectPreset = useEditor((s) => s.pendingEffectPreset);
   const setPendingEffectPreset = useEditor((s) => s.setPendingEffectPreset);
+
+  const trace = useCallback(
+    (action: string, detail?: Record<string, unknown>) => {
+      const video = videoRef.current;
+      console.debug("[video-trace]", {
+        action,
+        file: "src/components/editor/Preview.tsx",
+        currentTime: video?.currentTime ?? null,
+        paused: video?.paused ?? null,
+        seeking: video?.seeking ?? null,
+        editorTime: useEditor.getState().currentTime,
+        playing: useEditor.getState().playing,
+        ...detail,
+      });
+    },
+    [videoRef],
+  );
+
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
+    trace("video mounted", { src: video.currentSrc || video.getAttribute("src") });
+    const events = [
+      "play",
+      "playing",
+      "pause",
+      "seeking",
+      "seeked",
+      "waiting",
+      "stalled",
+      "suspend",
+      "emptied",
+      "abort",
+      "error",
+      "ended",
+      "loadedmetadata",
+      "loadeddata",
+    ];
+    const onMediaEvent = (event: Event) => trace(`media event: ${event.type}`);
+    events.forEach((event) => video.addEventListener(event, onMediaEvent));
+    const observer = new MutationObserver((mutations) => {
+      for (const mutation of mutations) {
+        if (mutation.type === "attributes" && mutation.attributeName === "src") {
+          trace("video src attribute changed", {
+            src: video.getAttribute("src"),
+            oldValue: mutation.oldValue,
+          });
+        }
+      }
+    });
+    observer.observe(video, { attributes: true, attributeOldValue: true, attributeFilter: ["src"] });
+    return () => {
+      trace("video unmounted");
+      events.forEach((event) => video.removeEventListener(event, onMediaEvent));
+      observer.disconnect();
+    };
+  }, [sourceUrl, trace, videoRef]);
 
 
 
@@ -136,8 +198,11 @@ export function Preview({ videoRef }: Props) {
     if (!clip) return;
     const speed = clip.speed ?? 1;
     const target = clip.sourceInStart + (currentTime - clip.startTime) * speed;
-    if (Math.abs(v.currentTime - target) > 0.04) v.currentTime = target;
-  }, [currentTime, playing, videoRef]);
+    if (Math.abs(v.currentTime - target) > 0.04) {
+      trace("set currentTime: external playhead seek", { target });
+      v.currentTime = target;
+    }
+  }, [currentTime, playing, trace, videoRef]);
 
   /* --- trocar de aba apenas pausa: o estado do editor é preservado --- */
   useEffect(() => {
@@ -153,6 +218,7 @@ export function Preview({ videoRef }: Props) {
     const v = videoRef.current;
     if (!v) return;
     if (!playing) {
+      trace("pause(): playing state false");
       v.pause();
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
       rafRef.current = null;
@@ -170,6 +236,7 @@ export function Preview({ videoRef }: Props) {
       clips0.find((c) => c.startTime + c.duration > state.currentTime) ??
       null;
     if (!startClip) {
+      trace("setPlaying(false): no start clip");
       setPlaying(false);
       return;
     }
@@ -179,8 +246,15 @@ export function Preview({ videoRef }: Props) {
     const startSource =
       startClip.sourceInStart +
       Math.max(0, state.currentTime - startClip.startTime) * (startClip.speed ?? 1);
-    if (Math.abs(v.currentTime - startSource) > 0.05) v.currentTime = startSource;
-    void v.play().catch(() => setPlaying(false));
+    if (Math.abs(v.currentTime - startSource) > 0.05) {
+      trace("set currentTime: playback start", { target: startSource, clipId: startClip.id });
+      v.currentTime = startSource;
+    }
+    trace("play(): playback start", { clipId: startClip.id });
+    void v.play().catch((error) => {
+      trace("setPlaying(false): playback start rejected", { error: String(error) });
+      setPlaying(false);
+    });
 
     let activeId = startClip.id;
 
@@ -192,10 +266,14 @@ export function Preview({ videoRef }: Props) {
       // Só reposiciona o arquivo quando o próximo clipe NÃO é contíguo:
       // trechos contíguos continuam tocando sem seek algum.
       if (Math.abs(v.currentTime - next.sourceInStart) > 0.06) {
+        trace("set currentTime: clip transition", { target: next.sourceInStart, clipId: next.id });
         v.currentTime = next.sourceInStart;
       }
       setCurrentTime(next.startTime + 0.001);
-      if (v.paused) void v.play().catch(() => undefined);
+      if (v.paused) {
+        trace("play(): clip transition found paused", { clipId: next.id });
+        void v.play().catch((error) => trace("play(): clip transition rejected", { error: String(error) }));
+      }
     };
 
     const tick = () => {
@@ -203,6 +281,7 @@ export function Preview({ videoRef }: Props) {
       const s = useEditor.getState();
       const clips = videoClips();
       if (clips.length === 0) {
+        trace("setPlaying(false): no clips during tick");
         setPlaying(false);
         return;
       }
@@ -216,7 +295,10 @@ export function Preview({ videoRef }: Props) {
       const speed = clip.speed ?? 1;
       if (v.playbackRate !== speed) v.playbackRate = speed;
       // o navegador pode pausar por buffering/seek: retomamos sempre
-      if (v.paused && !v.seeking) void v.play().catch(() => undefined);
+      if (v.paused && !v.seeking) {
+        trace("play(): tick found paused", { clipId: clip.id });
+        void v.play().catch((error) => trace("play(): tick resume rejected", { error: String(error) }));
+      }
 
       const reachedEnd = v.currentTime >= clip.sourceInEnd - 0.02 || (v.ended && !v.seeking);
       if (reachedEnd) {
@@ -226,6 +308,7 @@ export function Preview({ videoRef }: Props) {
           return;
         }
         setCurrentTime(clip.startTime + clip.duration);
+        trace("setPlaying(false): final clip ended", { clipId: clip.id });
         setPlaying(false);
         return;
       }
@@ -237,7 +320,7 @@ export function Preview({ videoRef }: Props) {
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
       rafRef.current = null;
     };
-  }, [playing, setCurrentTime, setPlaying, videoRef]);
+  }, [playing, setCurrentTime, setPlaying, trace, videoRef]);
 
 
   /* --- interação: hit-test das áreas desenhadas no canvas --- */
