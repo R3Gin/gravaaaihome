@@ -79,10 +79,11 @@ function transitionAt(clip: Clip, time: number): TransitionFx | null {
 /** Estado consolidado do quadro: uma passagem de interpolação por frame. */
 export function buildFrame(
   tracks: Track[],
-  captionStyle: CaptionStyle,
+  globalCaptionStyle: CaptionStyle,
   time: number,
   selectedId: string | null,
 ): FrameData {
+  let captionStyle = globalCaptionStyle;
   const raw = clipAt(tracks, "video", time);
   let video: VideoFx | null = null;
   if (raw) {
