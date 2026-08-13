@@ -410,6 +410,13 @@ export function allClips(tracks: Track[]): Clip[] {
 }
 
 export function findClip(tracks: Track[], id: string | null): Clip | null {
+  if (!id) return null;
+  for (const t of tracks) {
+    const c = t.clips.find((x) => x.id === id);
+    if (c) return c;
+  }
+  return null;
+}
 
 /**
  * Ids que devem se mover/apagar juntos: a seleção atual (quando o clipe
@@ -432,13 +439,6 @@ export function selectionGroup(
   return [...out];
 }
 
-  if (!id) return null;
-  for (const t of tracks) {
-    const c = t.clips.find((x) => x.id === id);
-    if (c) return c;
-  }
-  return null;
-}
 
 export function timelineDuration(tracks: Track[]): number {
   return allClips(tracks).reduce((m, c) => Math.max(m, c.startTime + c.duration), 0);
