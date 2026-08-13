@@ -859,6 +859,9 @@ export const useEditor = create<EditorState & EditorActions>((set, get) => {
               time < c.startTime + c.duration - MIN_CLIP,
           )
         : [clip];
+      // as partes da direita ganham um vínculo próprio: cada pedaço de vídeo
+      // fica ligado só ao seu pedaço de áudio (e não a todos os cortes).
+      const rightGroup = clip.linkGroupId ? uid() : undefined;
       const splitOne = (c: Clip): Clip[] => {
         const l = time - c.startTime;
         const speed = c.speed ?? 1;
@@ -872,6 +875,7 @@ export const useEditor = create<EditorState & EditorActions>((set, get) => {
             duration: c.duration - l,
             sourceInStart: cut,
             transition: "none",
+            ...(c.linkGroupId ? { linkGroupId: rightGroup } : {}),
           },
         ];
       };
