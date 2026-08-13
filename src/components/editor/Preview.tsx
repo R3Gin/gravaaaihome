@@ -283,6 +283,11 @@ export function Preview({ videoRef }: Props) {
 
     let activeId = startClip.id;
 
+    const jlog = (o: Record<string, unknown>) => {
+      const w = window as unknown as { __jlog?: unknown[] };
+      (w.__jlog ??= []).push({ t: Math.round(performance.now()), ...o });
+    };
+
     /** Salta para o próximo clipe da timeline sem pausar o elemento <video>. */
     const jumpTo = (cur: HTMLVideoElement, next: (typeof clips0)[number]) => {
       activeId = next.id;
@@ -293,6 +298,7 @@ export function Preview({ videoRef }: Props) {
 
       if (!contiguous && standby && prep?.clipId === next.id && prep.ready) {
         // corte descontínuo: o segundo decodificador já está no ponto certo
+        jlog({ ev: "jump", path: "standby", clip: next.id, rs: standby.readyState });
         standby.playbackRate = rate;
         standby.muted = Boolean(next.muted);
         cur.pause();
@@ -304,6 +310,12 @@ export function Preview({ videoRef }: Props) {
         return;
       }
 
+      jlog({
+        ev: "jump",
+        path: contiguous ? "contiguous" : "fallback-seek",
+        clip: next.id,
+        prep: prep ? { id: prep.clipId, ready: prep.ready } : null,
+      });
       if (cur.playbackRate !== rate) cur.playbackRate = rate;
       if (!contiguous) cur.currentTime = next.sourceInStart;
       setCurrentTime(next.startTime + 0.001);
@@ -317,10 +329,13 @@ export function Preview({ videoRef }: Props) {
       if (videoPrepRef.current?.clipId === next.id) return;
       if (Math.abs(cur.currentTime - next.sourceInStart) <= 0.06) return; // contíguo: nada a fazer
       videoPrepRef.current = { clipId: next.id, ready: false };
+      const t0 = performance.now();
+      jlog({ ev: "prep-start", clip: next.id, to: next.sourceInStart });
       standby.pause();
       standby.muted = true;
       const onSeeked = () => {
         standby.removeEventListener("seeked", onSeeked);
+        jlog({ ev: "prep-ready", clip: next.id, ms: Math.round(performance.now() - t0) });
         if (videoPrepRef.current?.clipId === next.id) videoPrepRef.current.ready = true;
       };
       standby.addEventListener("seeked", onSeeked);
@@ -330,6 +345,7 @@ export function Preview({ videoRef }: Props) {
         videoPrepRef.current = null;
       }
     };
+
 
     const tick = () => {
       rafRef.current = requestAnimationFrame(tick);
