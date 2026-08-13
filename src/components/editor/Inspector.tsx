@@ -275,12 +275,24 @@ function PresetSection({ clip, side }: { clip: Clip; side: "in" | "out" }) {
 export function Inspector() {
   const tracks = useEditor((s) => s.tracks);
   const selectedClipId = useEditor((s) => s.selectedClipId);
-  const currentTime = useEditor((s) => s.currentTime);
+  const selectedEffectId = useEditor((s) => s.selectedEffectId);
   const updateClip = useEditor((s) => s.updateClip);
-  const addZoomKeyframe = useEditor((s) => s.addZoomKeyframe);
-  const removeZoomKeyframe = useEditor((s) => s.removeZoomKeyframe);
   const clip = findClip(tracks, selectedClipId);
-  const [mode, setMode] = useState<"simple" | "advanced">("simple");
+  const effect = useEditor((s) => s.effects.find((e) => e.id === selectedEffectId) ?? null);
+  const effectLabel = effect ? presetById(effect.presetId)?.label ?? "Efeito" : null;
+
+  if (effect) {
+    return (
+      <aside className="flex w-72 shrink-0 flex-col border-l border-[var(--border)] bg-[var(--surface-2)]">
+        <div className="shrink-0 border-b border-[var(--border)] px-4 py-3 text-xs font-bold uppercase tracking-wide text-[var(--brand)]">
+          {`Efeito · ${effectLabel}`}
+        </div>
+        <div className="min-h-0 flex-1 overflow-y-auto p-4">
+          <EffectInspector effectId={effect.id} />
+        </div>
+      </aside>
+    );
+  }
 
   return (
     <aside className="flex w-72 shrink-0 flex-col border-l border-[var(--border)] bg-[var(--surface-2)]">
@@ -290,36 +302,18 @@ export function Inspector() {
       <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-4">
         {!clip ? (
           <p className="text-xs text-[var(--muted-foreground)]">
-            Selecione um clipe na timeline para editar suas propriedades.
+            Selecione um clipe na timeline para editar suas propriedades — ou um efeito na faixa
+            Efeitos para ajustar o efeito.
           </p>
         ) : (
           <>
-            <div className="grid grid-cols-2 gap-1 rounded-lg border border-[var(--border)] p-1">
-              {(["simple", "advanced"] as const).map((m) => (
-                <button
-                  key={m}
-                  onClick={() => setMode(m)}
-                  className={cn(
-                    "rounded-md px-2 py-1.5 text-[11px] font-bold",
-                    mode === m
-                      ? "bg-[var(--brand)] text-white"
-                      : "text-[var(--muted-foreground)] hover:text-[var(--foreground)]",
-                  )}
-                >
-                  {m === "simple" ? "Simples" : "Avançado"}
-                </button>
-              ))}
-            </div>
-            {mode === "simple" ? (
-              <EffectsSimplePanel clip={clip} />
-            ) : (
-              <>
-                <KeyframeEditor clip={clip} />
-                <AnimSection clip={clip} />
-              </>
-            )}
+            <ImageSection clip={clip} />
+            <KeyframeEditor clip={clip} />
+            <AnimSection clip={clip} />
           </>
         )}
+
+
 
 
         {clip?.type === "video" ? (
