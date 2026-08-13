@@ -56,7 +56,7 @@ function outputSize(aspect: AspectRatio, videoSize: { width: number; height: num
 }
 
 async function pickVideoCodec(width: number, height: number, bitrate: number, framerate: number) {
-  const candidates = ["avc1.640028", "avc1.4D4028", "avc1.42E01E"];
+  const candidates = ["avc1.640028", "avc1.4D4028", "avc1.42E01E", "vp09.00.10.08"];
   for (const codec of candidates) {
     try {
       const support = await VideoEncoder.isConfigSupported({ codec, width, height, bitrate, framerate });
