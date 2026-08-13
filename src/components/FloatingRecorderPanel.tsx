@@ -65,32 +65,29 @@ type PipWindow = Window & { document: Document };
 
 const PIP_W = 340;
 const PIP_H = 64;
-const OFFSCREEN = -9999;
 
-/** Move a janela PiP para fora da área visível da tela (sem fechá-la). */
-function hidePipWindow(w: PipWindow) {
-  try {
-    w.resizeTo(PIP_W, PIP_H);
-    w.moveTo(OFFSCREEN, OFFSCREEN);
-  } catch {
-    /* noop */
-  }
-}
+/**
+ * IMPORTANTE (auditado em 13/08/2026 contra a spec da Document PiP API):
+ * a janela de Document PiP NÃO pode ser reposicionada por script. A spec
+ * (WICG/document-picture-in-picture) expõe apenas `resizeTo()/resizeBy()`
+ * — e mesmo assim só com gesto do usuário DENTRO da janela PiP. Não existe
+ * `moveTo()` funcional: quem decide a posição é o navegador. Por isso a
+ * estratégia antiga de `moveTo(-9999,-9999)` era engolida pelo try/catch e a
+ * barra ficava visível o tempo todo em cima da aba do Gravaai.
+ *
+ * O único mecanismo suportado para "some quando estou na aba / aparece quando
+ * saio" é o Auto Picture-in-Picture do Chrome: registramos a ação de Media
+ * Session `enterpictureinpicture` e o navegador abre a janela sozinho quando o
+ * usuário sai da aba (permitido porque a página está capturando a tela), e nós
+ * a fechamos quando ele volta.
+ */
 
-/** Traz a janela PiP de volta para o canto inferior direito da tela. */
-function showPipWindow(w: PipWindow) {
-  try {
-    const margin = 20;
-    const sw = window.screen?.availWidth ?? window.screen?.width ?? 1280;
-    const sh = window.screen?.availHeight ?? window.screen?.height ?? 720;
-    w.resizeTo(PIP_W, PIP_H);
-    w.moveTo(
-      Math.max(0, sw - PIP_W - margin),
-      Math.max(0, sh - PIP_H - margin * 3),
-    );
-  } catch {
-    /* noop */
-  }
+/** Janela PiP que o navegador já mantém aberta para este documento, se houver. */
+function currentPipWindow(): PipWindow | null {
+  if (typeof window === "undefined") return null;
+  // @ts-expect-error - experimental API
+  const w: PipWindow | null = window.documentPictureInPicture?.window ?? null;
+  return w && !w.closed ? w : null;
 }
 
 function supportsDocumentPip() {
@@ -144,35 +141,46 @@ export const FloatingRecorderPanel = forwardRef<
     setPipSupported(supportsDocumentPip());
   }, []);
 
-  const closePip = useCallback(() => {
-    closedByUserRef.current = true;
-    if (pipWindow) {
+  // Referência única da janela: um ref (não perde entre re-renders) espelhado
+  // em estado só para disparar o portal do React.
+  const pipRef = useRef<PipWindow | null>(null);
+  const closedByUserRef2 = closedByUserRef;
+
+  const attachPip = useCallback((w: PipWindow | null) => {
+    pipRef.current = w;
+    setPipWindow(w);
+  }, []);
+
+  const destroyPip = useCallback(
+    (reason: string) => {
+      const w = pipRef.current ?? currentPipWindow();
+      if (!w) return;
+      console.log("[pip] fechando janela flutuante:", reason);
       try {
-        pipWindow.close();
+        w.close();
       } catch {
         /* noop */
       }
-    }
-    setPipWindow(null);
-  }, [pipWindow]);
+      attachPip(null);
+    },
+    [attachPip],
+  );
 
+  const closePip = useCallback(() => {
+    closedByUserRef2.current = true;
+    destroyPip("fechado pelo usuário");
+  }, [destroyPip, closedByUserRef2]);
 
-  const openPip = useCallback(async () => {
-    if (!supportsDocumentPip()) return;
-    closedByUserRef.current = false;
-    // Reaproveita a janela existente do navegador, se houver.
-    // @ts-expect-error - experimental API
-    const existing: PipWindow | null = window.documentPictureInPicture?.window ?? null;
-    if (pipWindow || existing) {
-      if (!pipWindow && existing) {
-        if (document.visibilityState === "visible") hidePipWindow(existing);
-        setPipWindow(existing);
+  /** Abre a janela flutuante — reutiliza a existente, nunca cria duas. */
+  const openPip = useCallback(
+    async (reason = "manual") => {
+      if (!supportsDocumentPip()) return;
+      const existing = pipRef.current ?? currentPipWindow();
+      if (existing && !existing.closed) {
+        console.log("[pip] janela já existe, reaproveitando (motivo:", reason, ")");
+        if (!pipRef.current) attachPip(existing);
+        return;
       }
-      return;
-    }
-    try {
-      // Janela real do sistema operacional, sempre por cima de qualquer app,
-      // e desvinculada da aba de origem (o usuário pode navegar livremente).
       // @ts-expect-error - experimental API
       const w: PipWindow = await window.documentPictureInPicture.requestWindow({
         width: PIP_W,
@@ -180,35 +188,30 @@ export const FloatingRecorderPanel = forwardRef<
         disallowReturnToOpener: true,
         preferInitialWindowPlacement: true,
       });
+      console.log("[pip] janela aberta (motivo:", reason, ")");
       copyStylesInto(w.document);
       w.document.body.style.margin = "0";
       w.document.body.style.overflow = "hidden";
-      w.addEventListener("pagehide", () => setPipWindow(null));
-      // Nasce fora da área visível: só aparece quando o usuário sai da aba.
-      hidePipWindow(w);
-      setPipWindow(w);
-    } catch (err) {
-      console.warn("[recorder-panel] Document PiP recusado:", err);
-      throw err;
-    }
-  }, [pipWindow]);
-
-
-
+      w.addEventListener("pagehide", () => {
+        console.log("[pip] pagehide — janela encerrada pelo navegador/usuário");
+        attachPip(null);
+      });
+      attachPip(w);
+    },
+    [attachPip],
+  );
 
   useImperativeHandle(
     ref,
     () => ({
-      openPip,
+      openPip: () => openPip("api"),
       closePip,
       isPipSupported: supportsDocumentPip,
     }),
     [openPip, closePip],
   );
 
-  // Fecha o PiP quando a sessão termina (visível -> invisível). A janela pode
-  // ser aberta ANTES de a sessão ficar visível (no gesto do usuário), então
-  // nunca fechamos por "ainda não visível".
+  // Fim da sessão de gravação: a janela some junto (sem processo órfão).
   const wasVisibleRef = useRef(false);
   useEffect(() => {
     if (visible) {
@@ -217,65 +220,49 @@ export const FloatingRecorderPanel = forwardRef<
     }
     if (wasVisibleRef.current) {
       wasVisibleRef.current = false;
-      if (pipWindow) {
-        try {
-          pipWindow.close();
-        } catch {
-          /* noop */
-        }
-        setPipWindow(null);
-      }
-      closedByUserRef.current = false;
+      closedByUserRef2.current = false;
+      destroyPip("sessão de gravação finalizada");
     }
-  }, [visible, pipWindow]);
+  }, [visible, destroyPip, closedByUserRef2]);
 
-
-  // Fallback de user activation: se a abertura automática (feita no mesmo
-  // gesto do usuário que iniciou a captura) tiver sido recusada, o primeiro
-  // clique seguinte em qualquer lugar da página reabre a janela.
+  // ÚNICO controlador de visibilidade: saiu da aba → barra aparece;
+  // voltou para a aba → barra some. Como o navegador não deixa mover a
+  // janela, "sumir" significa fechá-la e "aparecer" significa abri-la — que é
+  // exatamente o ciclo que o próprio Auto-PiP do Chrome executa.
   useEffect(() => {
-    if (!visible || pipWindow || !pipSupported || closedByUserRef.current) return;
-    const onClick = () => {
-      if (closedByUserRef.current) return;
-      openPip().catch(() => {});
-    };
-    window.addEventListener("pointerdown", onClick, { once: true });
-    return () => window.removeEventListener("pointerdown", onClick);
-  }, [visible, pipWindow, pipSupported, openPip]);
-
-
-  // Visibilidade: a janela PiP fica sempre aberta (a gravação nunca é afetada),
-  // mas só é trazida para a tela quando o usuário sai da aba do Gravaai.
-  useEffect(() => {
-    if (!pipWindow) return;
+    if (!visible || !pipSupported) return;
     const sync = () => {
-      if (document.visibilityState === "hidden") showPipWindow(pipWindow);
-      else hidePipWindow(pipWindow);
+      const hidden = document.visibilityState === "hidden";
+      console.log("[pip] visibilitychange →", document.visibilityState);
+      if (hidden) {
+        if (closedByUserRef2.current) return;
+        openPip("saiu da aba").catch((err) => {
+          console.warn("[pip] navegador recusou abrir automaticamente:", err);
+        });
+      } else {
+        destroyPip("voltou para a aba");
+      }
     };
-    sync();
     document.addEventListener("visibilitychange", sync);
-    window.addEventListener("blur", sync);
-    window.addEventListener("focus", sync);
-    return () => {
-      document.removeEventListener("visibilitychange", sync);
-      window.removeEventListener("blur", sync);
-      window.removeEventListener("focus", sync);
-    };
-  }, [pipWindow]);
+    return () => document.removeEventListener("visibilitychange", sync);
+  }, [visible, pipSupported, openPip, destroyPip, closedByUserRef2]);
 
-  // Auto Picture-in-Picture (apenas durante uma sessão de gravação ativa).
-  // Em PWAs instalados, o navegador pode acionar esta ação sozinho quando o
-  // usuário troca de aba/janela — reutilizamos a mesma lógica de abrir o PiP.
+  // Auto Picture-in-Picture: é ESTE caminho que o Chrome usa para abrir a
+  // janela sem gesto do usuário quando a aba deixa de estar em foco durante
+  // uma captura de tela. Sem ele, o requestWindow() acima é bloqueado.
   useEffect(() => {
     if (!visible || !pipSupported) return;
     if (typeof navigator === "undefined" || !("mediaSession" in navigator)) return;
     const ms = navigator.mediaSession;
     try {
       ms.setActionHandler("enterpictureinpicture" as MediaSessionAction, () => {
-        openPip().catch(() => {});
+        console.log("[pip] Auto-PiP acionado pelo navegador");
+        openPip("auto-pip").catch((err) => console.warn("[pip] auto-pip falhou:", err));
       });
+      console.log("[pip] Auto-PiP registrado");
     } catch {
-      return; // navegador não suporta esta ação
+      console.warn("[pip] este navegador não expõe a ação enterpictureinpicture");
+      return;
     }
     return () => {
       try {
@@ -286,18 +273,18 @@ export const FloatingRecorderPanel = forwardRef<
     };
   }, [visible, pipSupported, openPip]);
 
-
   useEffect(() => {
     return () => {
-      if (pipWindow) {
+      const w = pipRef.current;
+      if (w) {
         try {
-          pipWindow.close();
+          w.close();
         } catch {
           /* noop */
         }
       }
     };
-  }, [pipWindow]);
+  }, []);
 
   const onDragStart = (e: React.PointerEvent<HTMLDivElement>) => {
     if (pipWindow) return;
