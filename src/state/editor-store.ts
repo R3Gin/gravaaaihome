@@ -775,7 +775,7 @@ export const useEditor = create<EditorState & EditorActions>((set, get) => {
         selectedClipId,
         selectedClipIds: selectedClipId ? [selectedClipId] : [],
         selectedKeyframes: [],
-        selectedEffectId: selectedClipId ? null : undefined as unknown as null,
+        selectedEffectId: null,
       }),
 
     toggleSelect: (id) =>
