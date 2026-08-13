@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Loader2, Sparkles, Trash2, X } from "lucide-react";
-import { speechPlaceholders, transcribe } from "@/lib/captions";
+import { speechPlaceholders, transcribe, transcribeSamples } from "@/lib/captions";
+import { composeTimelineAudio, type AudioClipRef } from "@/lib/timeline-audio";
+
 import { CAPTION_ANIMS } from "@/lib/caption-styles";
 import { useEditor } from "@/state/editor-store";
 import { cn } from "@/lib/utils";
