@@ -392,16 +392,10 @@ export function ScreenRecorder() {
     }
     downloadBlobRef.current = null;
     rawRecordingSizeRef.current = 0;
-    // Abre a JANELA REAL do sistema (Document PiP) ANTES de qualquer await —
-    // é o único ponto onde a ativação de usuário do clique ainda é válida
-    // com certeza. A janela abre "vazia" e é populada em seguida.
-    let pipOpened = false;
-    try {
-      await panelRef.current?.openPip();
-      pipOpened = true;
-    } catch {
-      /* negado ou sem suporte: fallback é o primeiro clique seguinte */
-    }
+    // NÃO abrimos o Document PiP aqui: o navegador não permite mover/esconder
+    // essa janela, então abri-la agora deixaria a barra por cima da aba do
+    // Gravaai. Ela é aberta pelo Auto-PiP/visibilitychange, só quando o
+    // usuário sai da aba (ver FloatingRecorderPanel).
     try {
       const stream = await navigator.mediaDevices.getDisplayMedia({
         video: true,
@@ -414,13 +408,6 @@ export function ScreenRecorder() {
         systemAudio: screenAudio ? "include" : "exclude",
       });
       displayStreamRef.current = stream;
-      if (!pipOpened) {
-        try {
-          await panelRef.current?.openPip();
-        } catch {
-          /* fallback: primeiro clique seguinte */
-        }
-      }
 
       {
         const st = stream.getVideoTracks()[0]?.getSettings() as
@@ -709,11 +696,6 @@ export function ScreenRecorder() {
     recorderRef.current = rec;
     try {
       rec.start(1000);
-      // Abre a janela de Document PiP no MESMO gesto do clique em "Gravar"
-      // — requestWindow() precisa de user activation.
-      panelRef.current?.openPip().catch(() => {
-        /* usuário pode ter negado; painel cai no fallback fixo */
-      });
     } catch (err) {
       console.error("[gravaai] rec.start falhou:", err);
       setError("Não foi possível iniciar a gravação. Reinicie a captura e tente novamente.");
