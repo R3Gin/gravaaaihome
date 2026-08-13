@@ -626,15 +626,42 @@ export function Timeline() {
   const currentTime = useEditor((s) => s.currentTime);
   const tool = useEditor((s) => s.tool);
   const selectedClipId = useEditor((s) => s.selectedClipId);
+  const selectedClipIds = useEditor((s) => s.selectedClipIds);
   const setZoom = useEditor((s) => s.setZoom);
   const setCurrentTime = useEditor((s) => s.setCurrentTime);
   const setTool = useEditor((s) => s.setTool);
   const select = useEditor((s) => s.select);
-  const removeClip = useEditor((s) => s.removeClip);
-  const duplicateClip = useEditor((s) => s.duplicateClip);
+  const selectMany = useEditor((s) => s.selectMany);
+  const removeSelected = useEditor((s) => s.removeSelected);
+  const duplicateSelected = useEditor((s) => s.duplicateSelected);
+  const detachAudio = useEditor((s) => s.detachAudio);
+  const toggleLink = useEditor((s) => s.toggleLink);
   const splitPlayhead = useEditor((s) => s.splitPlayhead);
   const silences = useEditor((s) => s.silences);
   const sourceUrl = useEditor((s) => s.sourceUrl);
+
+  /* faixas vazias ficam ocultas; reaparecem ao arrastar mídia da biblioteca */
+  const [mediaDragging, setMediaDragging] = useState(false);
+  useEffect(() => {
+    const on = (e: DragEvent) => {
+      if (e.dataTransfer?.types.includes("application/x-gravaai-media")) setMediaDragging(true);
+    };
+    const off = () => setMediaDragging(false);
+    window.addEventListener("dragover", on);
+    window.addEventListener("drop", off);
+    window.addEventListener("dragend", off);
+    return () => {
+      window.removeEventListener("dragover", on);
+      window.removeEventListener("drop", off);
+      window.removeEventListener("dragend", off);
+    };
+  }, []);
+
+  const visibleTracks = useMemo(
+    () => tracks.filter((t) => t.clips.length > 0 || mediaDragging),
+    [tracks, mediaDragging],
+  );
+
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const width = Math.max(600, (duration + 4) * zoom);
