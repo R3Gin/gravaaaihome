@@ -374,18 +374,40 @@ export function Preview({ videoRef }: Props) {
       rafRef.current = requestAnimationFrame(tick);
       const s = useEditor.getState();
       const cur = videoRef.current;
-      if (!cur) return;
+      const now = performance.now();
+      const dt = Math.min(0.25, (now - last) / 1000);
+      last = now;
+
+      // trecho sem vídeo: a agulha continua andando para o áudio/texto tocar
+      if (mode === "clock" || !cur) {
+        const t = s.currentTime + dt;
+        const end = projectEnd();
+        if (t >= end) {
+          setCurrentTime(end);
+          setPlaying(false);
+          return;
+        }
+        const entering = clipAt(s.tracks, "video", t);
+        if (entering && cur) {
+          setCurrentTime(Math.max(t, entering.startTime + 0.001));
+          enterVideo(entering, t);
+          return;
+        }
+        setCurrentTime(t);
+        return;
+      }
+
       const clips = videoClips();
       if (clips.length === 0) {
-        setPlaying(false);
+        enterClock();
         return;
       }
       // clipe "ativo" é só uma referência conceitual: trocar não toca no <video>
-      const clip =
-        clips.find((c) => c.id === activeId) ??
-        clipAt(s.tracks, "video", s.currentTime) ??
-        clips.find((c) => c.startTime + c.duration > s.currentTime) ??
-        clips[clips.length - 1]!;
+      const clip = clips.find((c) => c.id === activeId) ?? clipAt(s.tracks, "video", s.currentTime);
+      if (!clip) {
+        enterClock();
+        return;
+      }
       activeId = clip.id;
       const speed = clip.speed ?? 1;
       if (cur.playbackRate !== speed) cur.playbackRate = speed;
@@ -400,14 +422,21 @@ export function Preview({ videoRef }: Props) {
       const next2 = idx >= 0 ? clips[idx + 2] : undefined;
       const reachedEnd = cur.currentTime >= clip.sourceInEnd - 0.02 || (cur.ended && !cur.seeking);
       if (reachedEnd) {
-        if (next) {
+        const endT = clip.startTime + clip.duration;
+        // só emenda direto quando o próximo corte é colado; havendo buraco, vira relógio
+        if (next && next.startTime - endT <= 0.05) {
           jumpTo(cur, next);
           return;
         }
-        setCurrentTime(clip.startTime + clip.duration);
-        setPlaying(false);
+        setCurrentTime(endT);
+        if (endT >= projectEnd() - 0.02) {
+          setPlaying(false);
+          return;
+        }
+        enterClock();
         return;
       }
+
       // preparo imediato dos dois próximos cortes: o seek roda em paralelo
       const upcoming = new Set([next?.id, next2?.id].filter(Boolean) as string[]);
       preps.forEach((_, id) => {
