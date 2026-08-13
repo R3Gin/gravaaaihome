@@ -142,10 +142,13 @@ export function Preview({ videoRef }: Props) {
     }
   }, [currentTime, playing, videoRef]);
 
-  /* --- duplo buffer de vídeo: evita seek (e congelamento) nas emendas --- */
+  /* --- pool de decodificadores: evita seek (e congelamento) nas emendas --- */
   const videoARef = useRef<HTMLVideoElement | null>(null);
   const videoBRef = useRef<HTMLVideoElement | null>(null);
-  const videoPrepRef = useRef<{ clipId: string; ready: boolean } | null>(null);
+  const videoCRef = useRef<HTMLVideoElement | null>(null);
+  /** reservas por clipe: elemento já posicionado no início do corte seguinte */
+  const videoPrepRef = useRef<Map<string, { el: HTMLVideoElement; ready: boolean }>>(new Map());
+
 
   /* --- áudio separado do vídeo: dois <audio> alternados (sem pausa na emenda) --- */
 
