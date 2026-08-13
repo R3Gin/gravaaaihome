@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  AlignHorizontalJustifyStart,
   AudioLines,
   Copy,
   GripVertical,
   Link2,
   Link2Off,
   Magnet,
+  MoveHorizontal,
   Music,
   Scissors,
   Sparkles,
@@ -781,6 +783,20 @@ export function Timeline() {
   const snapEnabled = useEditor((s) => s.snapEnabled);
   const snapGuide = useEditor((s) => s.snapGuide);
   const toggleSnap = useEditor((s) => s.toggleSnap);
+  const rippleEnabled = useEditor((s) => s.rippleEnabled);
+  const toggleRipple = useEditor((s) => s.toggleRipple);
+  const alignAllClips = useEditor((s) => s.alignAllClips);
+  const tracksForGaps = useEditor((s) => s.tracks);
+  const canAlign = useMemo(() => {
+    for (const t of tracksForGaps) {
+      let cursor = 0;
+      for (const c of [...t.clips].sort((a, b) => a.startTime - b.startTime)) {
+        if (Math.abs(c.startTime - cursor) > 1e-3) return true;
+        cursor += c.duration;
+      }
+    }
+    return false;
+  }, [tracksForGaps]);
   const addMediaClip = useEditor((s) => s.addMediaClip);
 
   /* --- reordenar faixas (arraste vertical nos rótulos) --- */
@@ -984,6 +1000,26 @@ export function Timeline() {
           )}
         >
           <Magnet className="h-4 w-4" /> Imantar
+        </button>
+        <button
+          onClick={toggleRipple}
+          title="Ondulação: ao mover ou apagar um corte, os clipes seguintes acompanham"
+          className={cn(
+            "flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-semibold",
+            rippleEnabled
+              ? "border-[var(--brand)] bg-[var(--brand)]/15 text-[var(--brand)]"
+              : "border-[var(--border)] text-[var(--muted-foreground)]",
+          )}
+        >
+          <MoveHorizontal className="h-4 w-4" /> Ondulação
+        </button>
+        <button
+          onClick={alignAllClips}
+          disabled={!canAlign}
+          title="Ajustar: encosta todos os clipes, fechando os espaços dos cortes"
+          className="flex items-center gap-1.5 rounded-lg border border-[var(--border)] px-2.5 py-1.5 text-xs font-semibold text-[var(--muted-foreground)] disabled:opacity-40"
+        >
+          <AlignHorizontalJustifyStart className="h-4 w-4" /> Ajustar
         </button>
         <div className="ml-auto flex items-center gap-1.5">
           <button onClick={() => setZoom(zoom / 1.4)} className="rounded-md border border-[var(--border)] p-1.5">
