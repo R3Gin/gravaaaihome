@@ -380,6 +380,27 @@ function ClipBox({ clip, track }: { clip: Clip; track: Track }) {
     return Math.max(0, (clientX - box.left + lane.scrollLeft) / zoom);
   };
 
+  /** imantação: aproxima o tempo das bordas vizinhas, agulha e início/fim */
+  const snap = (start: number, dur: number | null) => {
+    const s = useEditor.getState();
+    if (!s.snapEnabled || (e2eDisableSnapRef.current ?? false)) return { start, guide: null };
+    const targets = snapTargets(s.tracks, {
+      excludeClipId: clipRef.current.id,
+      playhead: s.currentTime,
+      duration: s.duration,
+    });
+    const tol = snapTolerance(s.zoom);
+    const a = applySnap(start, targets, tol);
+    if (a.guide != null) return { start: a.time, guide: a.guide };
+    if (dur != null) {
+      const b = applySnap(start + dur, targets, tol);
+      if (b.guide != null) return { start: b.time - dur, guide: b.guide };
+    }
+    return { start, guide: null };
+  };
+
+  const e2eDisableSnapRef = useRef(false);
+
   const startTrim = (side: "start" | "end") => (e: React.PointerEvent) => {
     e.stopPropagation();
     e.preventDefault();
@@ -388,7 +409,10 @@ function ClipBox({ clip, track }: { clip: Clip; track: Track }) {
     let last = side === "start" ? clip.startTime : clip.startTime + clip.duration;
     const move = (ev: PointerEvent) => {
       const c = clipRef.current;
-      const t = timeAt(ev.clientX);
+      e2eDisableSnapRef.current = ev.altKey;
+      const snapped = snap(timeAt(ev.clientX), null);
+      useEditor.getState().setSnapGuide(snapped.guide);
+      const t = snapped.start;
       last = t;
       if (side === "start") {
         const start = Math.min(t, c.startTime + c.duration - MIN_CLIP);
@@ -402,6 +426,7 @@ function ClipBox({ clip, track }: { clip: Clip; track: Track }) {
       window.removeEventListener("pointerup", up);
       setGhost(null);
       setDragging(false);
+      useEditor.getState().setSnapGuide(null);
       trimClip(clipRef.current.id, side, Math.max(0, last));
     };
     window.addEventListener("pointermove", move);
@@ -424,7 +449,11 @@ function ClipBox({ clip, track }: { clip: Clip; track: Track }) {
     const move = (ev: PointerEvent) => {
       moved = true;
       setDragging(true);
-      const start = Math.max(0, timeAt(ev.clientX) - grabOffset);
+      e2eDisableSnapRef.current = ev.altKey;
+      const raw = Math.max(0, timeAt(ev.clientX) - grabOffset);
+      const snapped = snap(raw, clipRef.current.duration);
+      useEditor.getState().setSnapGuide(snapped.guide);
+      const start = Math.max(0, snapped.start);
       last = start;
       setGhost({ start, duration: clipRef.current.duration });
     };
@@ -433,6 +462,7 @@ function ClipBox({ clip, track }: { clip: Clip; track: Track }) {
       window.removeEventListener("pointerup", up);
       setGhost(null);
       setDragging(false);
+      useEditor.getState().setSnapGuide(null);
       if (moved) moveClip(clipRef.current.id, last);
     };
     window.addEventListener("pointermove", move);
