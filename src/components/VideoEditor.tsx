@@ -25,6 +25,7 @@ import { CaptionsPanel } from "@/components/editor/panels/CaptionsPanel";
 import { AudioPanel } from "@/components/editor/panels/AudioPanel";
 import { TransitionsPanel } from "@/components/editor/panels/TransitionsPanel";
 import { AnnotationsPanel } from "@/components/editor/panels/AnnotationsPanel";
+import { MediaPanel } from "@/components/editor/panels/MediaPanel";
 import { findClip, useEditor } from "@/state/editor-store";
 import { takeEditorHandoff } from "@/lib/editor-handoff";
 import { exportProject } from "@/lib/export-project";
@@ -338,19 +339,9 @@ export function VideoEditor() {
               </div>
 
               {panel === "media" ? (
-                <label className="flex cursor-pointer flex-col items-center gap-2 rounded-xl border border-dashed border-[var(--border)] p-6 text-center text-xs text-[var(--muted-foreground)]">
-                  <Upload className="h-5 w-5" />
-                  Selecionar vídeo
-                  <input
-                    type="file"
-                    accept="video/*"
-                    className="hidden"
-                    onChange={(e) => {
-                      const file = e.target.files?.[0];
-                      if (file) void load(file, file.name.replace(/\.[^.]+$/, ""));
-                    }}
-                  />
-                </label>
+                <MediaPanel
+                  onLoadMain={(file) => void load(file, file.name.replace(/\.[^.]+$/, ""))}
+                />
               ) : null}
 
               {panel === "silence" ? <SilencePanel onClose={() => setPanel(null)} /> : null}
