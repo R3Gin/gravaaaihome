@@ -200,14 +200,16 @@ export function Preview({ videoRef }: Props) {
       if (s.playing && act.paused) void act.play().catch(() => undefined);
       if (!s.playing && !act.paused) act.pause();
 
-      // pré-posiciona o próximo clipe de áudio (descontínuo) antes da emenda
+      // pré-posiciona o próximo clipe de áudio assim que o atual começa:
+      // o seek pode demorar mais de 1 s, tempo que uma janela curta não daria
       if (!s.playing || !other) return;
       const idx = audioClips.findIndex((c) => c.id === audioClip.id);
       const next = idx >= 0 ? audioClips[idx + 1] : undefined;
       if (!next) return;
       const remaining = audioClip.startTime + audioClip.duration - s.currentTime;
-      if (remaining > 0.8 || remaining < 0) return;
+      if (remaining < 0) return;
       if (audioPrepRef.current?.clipId === next.id) return;
+
       audioPrepRef.current = { clipId: next.id, ready: false };
       other.pause();
       other.volume = Math.max(0, Math.min(1, next.volume ?? 1));
