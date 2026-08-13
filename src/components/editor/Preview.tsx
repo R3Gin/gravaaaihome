@@ -48,9 +48,6 @@ export function Preview({ videoRef }: Props) {
   const pendingEffectPreset = useEditor((s) => s.pendingEffectPreset);
   const setPendingEffectPreset = useEditor((s) => s.setPendingEffectPreset);
 
-
-
-
   /* Esc cancela o modo "clique no ponto" dos presets de zoom */
   useEffect(() => {
     if (!pendingEffectPreset) return;
@@ -136,7 +133,9 @@ export function Preview({ videoRef }: Props) {
     if (!clip) return;
     const speed = clip.speed ?? 1;
     const target = clip.sourceInStart + (currentTime - clip.startTime) * speed;
-    if (Math.abs(v.currentTime - target) > 0.04) v.currentTime = target;
+    if (Math.abs(v.currentTime - target) > 0.04) {
+      v.currentTime = target;
+    }
   }, [currentTime, playing, videoRef]);
 
   /* --- trocar de aba apenas pausa: o estado do editor é preservado --- */
@@ -179,7 +178,9 @@ export function Preview({ videoRef }: Props) {
     const startSource =
       startClip.sourceInStart +
       Math.max(0, state.currentTime - startClip.startTime) * (startClip.speed ?? 1);
-    if (Math.abs(v.currentTime - startSource) > 0.05) v.currentTime = startSource;
+    if (Math.abs(v.currentTime - startSource) > 0.05) {
+      v.currentTime = startSource;
+    }
     void v.play().catch(() => setPlaying(false));
 
     let activeId = startClip.id;
@@ -195,7 +196,9 @@ export function Preview({ videoRef }: Props) {
         v.currentTime = next.sourceInStart;
       }
       setCurrentTime(next.startTime + 0.001);
-      if (v.paused) void v.play().catch(() => undefined);
+      if (v.paused) {
+        void v.play().catch(() => undefined);
+      }
     };
 
     const tick = () => {
@@ -216,7 +219,9 @@ export function Preview({ videoRef }: Props) {
       const speed = clip.speed ?? 1;
       if (v.playbackRate !== speed) v.playbackRate = speed;
       // o navegador pode pausar por buffering/seek: retomamos sempre
-      if (v.paused && !v.seeking) void v.play().catch(() => undefined);
+      if (v.paused && !v.seeking) {
+        void v.play().catch(() => undefined);
+      }
 
       const reachedEnd = v.currentTime >= clip.sourceInEnd - 0.02 || (v.ended && !v.seeking);
       if (reachedEnd) {
