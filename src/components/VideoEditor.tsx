@@ -29,6 +29,7 @@ import { MediaPanel } from "@/components/editor/panels/MediaPanel";
 import { findClip, useEditor } from "@/state/editor-store";
 import { takeEditorHandoff } from "@/lib/editor-handoff";
 import { exportProject } from "@/lib/export-project";
+import { QUALITY_PRESETS, type ExportQuality } from "@/lib/export-webcodecs";
 import { cn } from "@/lib/utils";
 
 type PanelId =
@@ -88,6 +89,8 @@ export function VideoEditor() {
   const sourceBlob = useEditor((s) => s.sourceBlob);
   const [exporting, setExporting] = useState(false);
   const [progress, setProgress] = useState(0);
+  const [quality, setQuality] = useState<ExportQuality>("rapida");
+  const [eta, setEta] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const readMeta = useVideoMeta();
 
@@ -107,6 +110,8 @@ export function VideoEditor() {
   const addTextClip = useEditor((s) => s.addTextClip);
   const addOverlayClip = useEditor((s) => s.addOverlayClip);
   const setStoreBlob = useEditor((s) => s.setSourceBlob);
+  const captionStyle = useEditor((s) => s.captionStyle);
+  const mediaLibrary = useEditor((s) => s.mediaLibrary);
 
   const load = useCallback(
     async (blob: Blob, name?: string) => {
@@ -231,10 +236,24 @@ export function VideoEditor() {
     if (!sourceBlob) return;
     setExporting(true);
     setProgress(0);
+    setEta(null);
     setError(null);
     setPlaying(false);
+    const startedAt = performance.now();
+    const onProgress = (ratio: number) => {
+      setProgress(ratio);
+      const elapsed = (performance.now() - startedAt) / 1000;
+      if (ratio > 0.02 && elapsed > 2) {
+        const left = Math.max(0, elapsed / ratio - elapsed);
+        setEta(left > 90 ? `~${Math.ceil(left / 60)} min` : `~${Math.ceil(left)}s`);
+      }
+    };
     try {
-      const out = await exportProject(sourceBlob, tracks, aspect, videoSize, setProgress);
+      const out = await exportProject(sourceBlob, tracks, aspect, videoSize, onProgress, {
+        quality,
+        captionStyle,
+        mediaLibrary,
+      });
       const url = URL.createObjectURL(out);
       const a = document.createElement("a");
       a.href = url;
@@ -245,6 +264,7 @@ export function VideoEditor() {
       setError(err instanceof Error ? err.message : "Falha ao exportar o vídeo.");
     } finally {
       setExporting(false);
+      setEta(null);
     }
   };
 
@@ -286,6 +306,19 @@ export function VideoEditor() {
           <button onClick={redo} className="rounded-lg border border-[var(--border)] p-2" title="Refazer">
             <Redo2 className="h-4 w-4" />
           </button>
+          <select
+            value={quality}
+            onChange={(e) => setQuality(e.target.value as ExportQuality)}
+            disabled={exporting}
+            title="Qualidade da exportação"
+            className="hidden rounded-lg border border-[var(--border)] bg-[var(--surface-2)] px-2 py-2 text-xs text-[var(--muted-foreground)] lg:block"
+          >
+            {(Object.keys(QUALITY_PRESETS) as ExportQuality[]).map((q) => (
+              <option key={q} value={q}>
+                {QUALITY_PRESETS[q].label}
+              </option>
+            ))}
+          </select>
           <button
             onClick={onExport}
             disabled={!sourceBlob || exporting}
@@ -293,7 +326,9 @@ export function VideoEditor() {
           >
             {exporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
             <span className="hidden lg:inline">
-              {exporting ? `Exportando ${Math.round(progress * 100)}%` : "Exportar MP4"}
+              {exporting
+                ? `Exportando ${Math.round(progress * 100)}%${eta ? ` · ${eta}` : ""}`
+                : "Exportar MP4"}
             </span>
           </button>
         </header>
