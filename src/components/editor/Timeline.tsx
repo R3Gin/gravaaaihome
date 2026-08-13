@@ -1113,10 +1113,11 @@ export function Timeline() {
                     {track.clips
                       .filter(
                         (clip) =>
-                          clip.id === selectedClipId ||
+                          selectedClipIds.includes(clip.id) ||
                           (clip.startTime + clip.duration >= visible.from &&
                             clip.startTime <= visible.to),
                       )
+
                       .map((clip) => (
                         <ClipBox key={clip.id} clip={clip} track={track} />
                       ))}
