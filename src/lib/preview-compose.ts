@@ -171,6 +171,7 @@ export function drawFrame(
   frame: FrameData,
   W: number,
   H: number,
+  getMedia?: (clip: Clip) => CanvasImageSource | null,
 ): HitRegion[] {
   const hits: HitRegion[] = [];
   ctx.clearRect(0, 0, W, H);
