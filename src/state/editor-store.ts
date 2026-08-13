@@ -273,6 +273,21 @@ export interface EditorActions {
   setAspect: (a: AspectRatio) => void;
   setTool: (t: Tool) => void;
   select: (id: string | null) => void;
+  /** Alterna um clipe na seleção (Ctrl/Cmd + clique). */
+  toggleSelect: (id: string) => void;
+  /** Substitui (ou soma) a seleção — usado pelo laço de seleção. */
+  selectMany: (ids: string[], additive?: boolean) => void;
+  /** Move todos os clipes selecionados (e seus vinculados) de uma vez. */
+  moveSelection: (anchorId: string, newStart: number) => void;
+  /** Remove todos os clipes selecionados. */
+  removeSelected: () => void;
+  /** Duplica todos os clipes selecionados. */
+  duplicateSelected: () => void;
+  /** Separa o áudio do clipe de vídeo em uma faixa própria (vinculado). */
+  detachAudio: (clipId: string) => void;
+  /** Liga/desliga o vínculo entre vídeo e áudio separado. */
+  toggleLink: (clipId: string) => void;
+
   /** Reordena as faixas da timeline (arraste vertical). */
   reorderTracks: (from: number, to: number) => void;
 
