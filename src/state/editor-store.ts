@@ -1103,8 +1103,13 @@ export const useEditor = create<EditorState & EditorActions>((set, get) => {
       }
       for (const [prop, keys] of Object.entries(generated)) {
         const tagged = keys.map((k) => ({ ...k, origin: instanceId }));
-        map[prop] = sortKeys([...(map[prop] ?? []).filter((k) => !k.origin), ...tagged]);
+        // preserva keyframes manuais e de outros presets
+        const existing = (map[prop] ?? []).filter(
+          (k) => !tagged.some((t) => Math.abs(t.time - k.time) < 0.005),
+        );
+        map[prop] = sortKeys([...existing, ...tagged]);
       }
+
       get().updateClip(clipId, {
         keyframes: map,
         effectPresets: (clip.effectPresets ?? []).map((p) =>
