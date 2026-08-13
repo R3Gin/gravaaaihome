@@ -382,7 +382,7 @@ function ClipBox({ clip, track }: { clip: Clip; track: Track }) {
   };
 
   /** imantação: aproxima o tempo das bordas vizinhas, agulha e início/fim */
-  const snap = (start: number, dur: number | null) => {
+  const snap = (start: number, dur: number | null, tolerance?: number) => {
     const s = useEditor.getState();
     if (!s.snapEnabled || e2eDisableSnapRef.current) return { start, guide: null };
     const targets = snapTargets(s.tracks, {
@@ -390,13 +390,14 @@ function ClipBox({ clip, track }: { clip: Clip; track: Track }) {
       playhead: s.currentTime,
       duration: s.duration,
     });
-    const tol = snapTolerance(s.zoom);
+    const tol = tolerance ?? snapTolerance(s.zoom);
     const a = applySnap(start, targets, tol);
-    if (a.guide != null) return { start: a.time, guide: a.guide };
-    if (dur != null) {
-      const b = applySnap(start + dur, targets, tol);
-      if (b.guide != null) return { start: b.time - dur, guide: b.guide };
-    }
+    const b = dur != null ? applySnap(start + dur, targets, tol) : { time: start, guide: null };
+    // escolhe a borda (esquerda ou direita) que está mais perto de um alvo
+    const da = a.guide != null ? Math.abs(a.time - start) : Infinity;
+    const db = b.guide != null ? Math.abs(b.time - (start + (dur ?? 0))) : Infinity;
+    if (da <= db && a.guide != null) return { start: a.time, guide: a.guide };
+    if (b.guide != null && dur != null) return { start: b.time - dur, guide: b.guide };
     return { start, guide: null };
   };
 
@@ -409,6 +410,7 @@ function ClipBox({ clip, track }: { clip: Clip; track: Track }) {
       ) ?? [];
     return freeStart(others, start, dur);
   };
+
 
 
 
