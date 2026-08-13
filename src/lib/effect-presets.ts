@@ -10,7 +10,7 @@
  * e ênfase começam ali; saída continua ancorada no fim do clipe.
  * ------------------------------------------------------------------ */
 
-import { newKeyframe, type Easing, type Keyframe, type KeyValue } from "@/lib/keyframes";
+import { newKeyframe, valueAt, type Easing, type Keyframe, type KeyValue } from "@/lib/keyframes";
 import type { Clip } from "@/state/editor-store";
 
 export type EffectCategory = "zoom" | "in" | "out" | "emphasis";
