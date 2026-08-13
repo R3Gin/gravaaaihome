@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { freeStart } from "@/lib/snap";
+import { applySnap, freeStart, snapReleaseTolerance, snapTargets } from "@/lib/snap";
 import {
   applyContinuity,
   KF_EPS,
@@ -591,17 +591,34 @@ export const useEditor = create<EditorState & EditorActions>((set, get) => {
     moveClip: (id, newStart) => {
       const clip = findClip(get().tracks, id);
       if (!clip) return;
+      const { snapEnabled, zoom, currentTime, duration, tracks: allTracks } = get();
+      let desired = Math.max(0, newStart);
+      if (snapEnabled) {
+        const targets = snapTargets(allTracks, {
+          excludeClipId: id,
+          playhead: currentTime,
+          duration,
+        });
+        const tol = snapReleaseTolerance(zoom);
+        const a = applySnap(desired, targets, tol);
+        const b = applySnap(desired + clip.duration, targets, tol);
+        const da = a.guide != null ? Math.abs(a.time - desired) : Infinity;
+        const db = b.guide != null ? Math.abs(b.time - (desired + clip.duration)) : Infinity;
+        if (da <= db && a.guide != null) desired = a.time;
+        else if (b.guide != null) desired = Math.max(0, b.time - clip.duration);
+      }
       write((tracks) =>
         mapTracks(tracks, (clips, track) => {
           if (track.id !== clip.trackId) return clips;
           const others = clips.filter((c) => c.id !== id);
-          const start = freeStart(others, Math.max(0, newStart), clip.duration);
+          const start = freeStart(others, desired, clip.duration);
           return clips
             .map((c) => (c.id === id ? { ...c, startTime: start } : c))
             .sort((a, b) => a.startTime - b.startTime);
         }),
       );
     },
+
 
     trimClip: (id, side, newTime) => {
       const clip = findClip(get().tracks, id);
