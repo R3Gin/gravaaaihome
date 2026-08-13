@@ -1,6 +1,7 @@
-import { useState } from "react";
 import { ChevronLeft, ChevronRight, Diamond, Plus } from "lucide-react";
-import { EffectsSimplePanel } from "@/components/editor/panels/EffectsSimplePanel";
+import { EffectInspector } from "@/components/editor/panels/EffectInspector";
+import { ClipTransitionControls } from "@/components/editor/panels/ClipTransitionControls";
+import { presetById } from "@/lib/effect-presets";
 import { findClip, useEditor, type Clip } from "@/state/editor-store";
 import {
   animatablePropsFor,
@@ -165,13 +166,33 @@ function AnimRow({ clip, prop }: { clip: Clip; prop: AnimProp }) {
   );
 }
 
+const IMAGE_KEYS = ["brightness", "contrast", "saturation"];
+
+/** Brilho / contraste / saturação — "coisa de imagem". */
+function ImageSection({ clip }: { clip: Clip }) {
+  const props = animatablePropsFor(clip).filter((p) => IMAGE_KEYS.includes(p.key));
+  if (props.length === 0) return null;
+  return (
+    <div className="space-y-3 rounded-lg border border-[var(--border)] p-3">
+      <span className="text-[11px] font-bold uppercase tracking-wide text-[var(--muted-foreground)]">
+        Imagem
+      </span>
+      {props.map((p) => (
+        <AnimRow key={p.key} clip={clip} prop={p} />
+      ))}
+    </div>
+  );
+}
+
 function AnimSection({ clip }: { clip: Clip }) {
   const props = animatablePropsFor(clip).filter((p) =>
-    clip.type === "overlay" && p.key === "strength"
-      ? true
-      : clip.type === "overlay" && p.key === "position"
-        ? false
-        : true,
+    IMAGE_KEYS.includes(p.key)
+      ? false
+      : clip.type === "overlay" && p.key === "strength"
+        ? true
+        : clip.type === "overlay" && p.key === "position"
+          ? false
+          : true,
   );
   return (
     <div className="space-y-3 rounded-lg border border-[var(--border)] p-3">
@@ -255,12 +276,24 @@ function PresetSection({ clip, side }: { clip: Clip; side: "in" | "out" }) {
 export function Inspector() {
   const tracks = useEditor((s) => s.tracks);
   const selectedClipId = useEditor((s) => s.selectedClipId);
-  const currentTime = useEditor((s) => s.currentTime);
+  const selectedEffectId = useEditor((s) => s.selectedEffectId);
   const updateClip = useEditor((s) => s.updateClip);
-  const addZoomKeyframe = useEditor((s) => s.addZoomKeyframe);
-  const removeZoomKeyframe = useEditor((s) => s.removeZoomKeyframe);
   const clip = findClip(tracks, selectedClipId);
-  const [mode, setMode] = useState<"simple" | "advanced">("simple");
+  const effect = useEditor((s) => s.effects.find((e) => e.id === selectedEffectId) ?? null);
+  const effectLabel = effect ? presetById(effect.presetId)?.label ?? "Efeito" : null;
+
+  if (effect) {
+    return (
+      <aside className="flex w-72 shrink-0 flex-col border-l border-[var(--border)] bg-[var(--surface-2)]">
+        <div className="shrink-0 border-b border-[var(--border)] px-4 py-3 text-xs font-bold uppercase tracking-wide text-[var(--brand)]">
+          {`Efeito · ${effectLabel}`}
+        </div>
+        <div className="min-h-0 flex-1 overflow-y-auto p-4">
+          <EffectInspector effectId={effect.id} />
+        </div>
+      </aside>
+    );
+  }
 
   return (
     <aside className="flex w-72 shrink-0 flex-col border-l border-[var(--border)] bg-[var(--surface-2)]">
@@ -270,36 +303,18 @@ export function Inspector() {
       <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-4">
         {!clip ? (
           <p className="text-xs text-[var(--muted-foreground)]">
-            Selecione um clipe na timeline para editar suas propriedades.
+            Selecione um clipe na timeline para editar suas propriedades — ou um efeito na faixa
+            Efeitos para ajustar o efeito.
           </p>
         ) : (
           <>
-            <div className="grid grid-cols-2 gap-1 rounded-lg border border-[var(--border)] p-1">
-              {(["simple", "advanced"] as const).map((m) => (
-                <button
-                  key={m}
-                  onClick={() => setMode(m)}
-                  className={cn(
-                    "rounded-md px-2 py-1.5 text-[11px] font-bold",
-                    mode === m
-                      ? "bg-[var(--brand)] text-white"
-                      : "text-[var(--muted-foreground)] hover:text-[var(--foreground)]",
-                  )}
-                >
-                  {m === "simple" ? "Simples" : "Avançado"}
-                </button>
-              ))}
-            </div>
-            {mode === "simple" ? (
-              <EffectsSimplePanel clip={clip} />
-            ) : (
-              <>
-                <KeyframeEditor clip={clip} />
-                <AnimSection clip={clip} />
-              </>
-            )}
+            <ImageSection clip={clip} />
+            <KeyframeEditor clip={clip} />
+            <AnimSection clip={clip} />
           </>
         )}
+
+
 
 
         {clip?.type === "video" ? (
@@ -317,13 +332,16 @@ export function Inspector() {
                 }}
               />
             </Row>
+            <div className="space-y-2">
+              <span className="text-[11px] font-bold uppercase tracking-wide text-[var(--muted-foreground)]">
+                Transição de entrada
+              </span>
+              <ClipTransitionControls clip={clip} />
+            </div>
             <p className="rounded-lg border border-[var(--border)] p-3 text-[10px] leading-relaxed text-[var(--muted-foreground)]">
-              Volume, redução de ruído e fades ficam no módulo <strong>Áudio</strong>; efeitos de
-              troca entre clipes, no módulo <strong>Transições</strong> (sidebar esquerda).
-            </p>
-            <p className="rounded-lg border border-[var(--border)] p-3 text-[10px] leading-relaxed text-[var(--muted-foreground)]">
-              O <strong>Zoom</strong> agora é uma propriedade animável comum: use o losango ao lado
-              de "Zoom" acima para criar keyframes, igual a Posição, Escala e Rotação.
+              Volume, redução de ruído e fades ficam no módulo <strong>Áudio</strong>; os efeitos
+              prontos (zoom, entrada, saída, ênfase) ficam no módulo <strong>Efeitos</strong> e
+              aparecem como barras na timeline.
             </p>
           </>
         ) : null}
