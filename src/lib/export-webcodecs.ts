@@ -230,6 +230,7 @@ export async function exportWithWebCodecs(input: WebCodecsExportInput): Promise<
   await whenReady(video);
 
   const audioBuffer = await renderTimelineAudio(source, collectAudioClips(tracks), totalDuration);
+  const audioCodec = audioBuffer ? await pickAudioCodec() : null;
 
   const target = new ArrayBufferTarget();
   const muxer = new Muxer({
@@ -238,8 +239,8 @@ export async function exportWithWebCodecs(input: WebCodecsExportInput): Promise<
     // a timeline pode começar depois de 0 (ou o primeiro quadro chegar atrasado)
     firstTimestampBehavior: "offset",
     video: { codec: codec.mux, width: W, height: H },
-    ...(audioBuffer
-      ? { audio: { codec: "aac" as const, numberOfChannels: 2, sampleRate: 48000 } }
+    ...(audioBuffer && audioCodec
+      ? { audio: { codec: audioCodec.mux, numberOfChannels: 2, sampleRate: 48000 } }
       : {}),
   });
 
@@ -388,9 +389,9 @@ export async function exportWithWebCodecs(input: WebCodecsExportInput): Promise<
     encoder.close();
     if (encodeError) throw encodeError;
 
-    if (audioBuffer) {
+    if (audioBuffer && audioCodec) {
       try {
-        await encodeAudio(audioBuffer, muxer);
+        await encodeAudio(audioBuffer, muxer, audioCodec.codec);
       } catch (err) {
         console.warn("[export] falha ao codificar o áudio, exportando sem som", err);
       }
@@ -413,7 +414,31 @@ export async function exportWithWebCodecs(input: WebCodecsExportInput): Promise<
   }
 }
 
-async function encodeAudio(buffer: AudioBuffer, muxer: Muxer<ArrayBufferTarget>) {
+/** AAC é o padrão em MP4; Opus entra quando o navegador não codifica AAC. */
+async function pickAudioCodec(): Promise<{ codec: string; mux: "aac" | "opus" } | null> {
+  const AudioEncoderCtor = (window as unknown as { AudioEncoder?: typeof AudioEncoder }).AudioEncoder;
+  if (!AudioEncoderCtor) return null;
+  const candidates: { codec: string; mux: "aac" | "opus" }[] = [
+    { codec: "mp4a.40.2", mux: "aac" },
+    { codec: "opus", mux: "opus" },
+  ];
+  for (const cand of candidates) {
+    try {
+      const support = await AudioEncoderCtor.isConfigSupported({
+        codec: cand.codec,
+        sampleRate: 48000,
+        numberOfChannels: 2,
+        bitrate: 128000,
+      });
+      if (support.supported) return cand;
+    } catch {
+      /* tenta o próximo */
+    }
+  }
+  return null;
+}
+
+async function encodeAudio(buffer: AudioBuffer, muxer: Muxer<ArrayBufferTarget>, codec: string) {
   const AudioEncoderCtor = (window as unknown as { AudioEncoder?: typeof AudioEncoder }).AudioEncoder;
   if (!AudioEncoderCtor) return;
   const sampleRate = buffer.sampleRate;
@@ -425,7 +450,7 @@ async function encodeAudio(buffer: AudioBuffer, muxer: Muxer<ArrayBufferTarget>)
       err = e instanceof Error ? e : new Error(String(e));
     },
   });
-  enc.configure({ codec: "mp4a.40.2", sampleRate, numberOfChannels: channels, bitrate: 128000 });
+  enc.configure({ codec, sampleRate, numberOfChannels: channels, bitrate: 128000 });
 
   const chunkFrames = 4096;
   const left = buffer.getChannelData(0);
