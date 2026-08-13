@@ -868,13 +868,23 @@ export const useEditor = create<EditorState & EditorActions>((set, get) => {
         );
         patch = { duration: (sourceInEnd - clip.sourceInStart) / speed, sourceInEnd };
       }
+      // o par vinculado (áudio separado) é aparado junto
+      const partners = clip.linkGroupId
+        ? allClips(get().tracks).filter(
+            (c) => c.linkGroupId === clip.linkGroupId && c.id !== id,
+          )
+        : [];
       write((tracks) =>
-        mapTracks(tracks, (clips, track) => {
-          if (track.id !== clip.trackId) return clips;
-          return clips.map((c) => (c.id === id ? { ...c, ...patch } : c));
-        }),
+        mapTracks(tracks, (clips) =>
+          clips.map((c) => {
+            if (c.id === id) return { ...c, ...patch };
+            if (!partners.some((p) => p.id === c.id)) return c;
+            return { ...c, ...patch };
+          }),
+        ),
       );
     },
+
 
 
     addTextClip: (text) => {
