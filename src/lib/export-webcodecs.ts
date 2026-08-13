@@ -235,6 +235,8 @@ export async function exportWithWebCodecs(input: WebCodecsExportInput): Promise<
   const muxer = new Muxer({
     target,
     fastStart: "in-memory",
+    // a timeline pode começar depois de 0 (ou o primeiro quadro chegar atrasado)
+    firstTimestampBehavior: "offset",
     video: { codec: codec.mux, width: W, height: H },
     ...(audioBuffer
       ? { audio: { codec: "aac" as const, numberOfChannels: 2, sampleRate: 48000 } }
@@ -387,7 +389,11 @@ export async function exportWithWebCodecs(input: WebCodecsExportInput): Promise<
     if (encodeError) throw encodeError;
 
     if (audioBuffer) {
-      await encodeAudio(audioBuffer, muxer);
+      try {
+        await encodeAudio(audioBuffer, muxer);
+      } catch (err) {
+        console.warn("[export] falha ao codificar o áudio, exportando sem som", err);
+      }
     }
 
     onProgress?.(0.99);
