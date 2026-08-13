@@ -474,7 +474,7 @@ export const useEditor = create<EditorState & EditorActions>((set, get) => {
     tool: "select",
     selectedClipId: null,
     selectedClipIds: [],
-    selectedClipIds: [],
+
 
     tracks: emptyTracks(),
     past: [],
