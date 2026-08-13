@@ -499,6 +499,7 @@ export const useEditor = create<EditorState & EditorActions>((set, get) => {
 
     loadSource: (url, duration, size, name) => {
       const tracks = emptyTracks();
+      const linkGroupId = uid();
       const clip: Clip = {
         id: uid(),
         trackId: VIDEO_TRACK,
@@ -517,8 +518,26 @@ export const useEditor = create<EditorState & EditorActions>((set, get) => {
         denoise: false,
         zoomKeyframes: [],
         position: { x: 0, y: 0 },
+        // o áudio nasce em faixa própria: o vídeo fica mudo internamente
+        linkGroupId,
+        muted: true,
+      };
+      const audio: Clip = {
+        id: uid(),
+        trackId: AUDIO_TRACK,
+        type: "audio",
+        sourceUrl: url,
+        startTime: 0,
+        duration,
+        sourceInStart: 0,
+        sourceInEnd: duration,
+        speed: 1,
+        volume: 1,
+        linkGroupId,
       };
       tracks[0].clips = [clip];
+      const audioTrack = tracks.find((t) => t.id === AUDIO_TRACK);
+      if (audioTrack) audioTrack.clips = [audio];
       set({
         sourceUrl: url,
         sourceDuration: duration,
@@ -535,6 +554,7 @@ export const useEditor = create<EditorState & EditorActions>((set, get) => {
         silences: [],
         removedRanges: [],
       });
+
     },
 
     reset: () =>
