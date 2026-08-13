@@ -249,10 +249,13 @@ export function Preview({ videoRef }: Props) {
   useEffect(() => {
     const v = videoRef.current;
     if (!v) return;
+    const pool = () =>
+      [videoARef.current, videoBRef.current, videoCRef.current].filter(
+        (el): el is HTMLVideoElement => Boolean(el),
+      );
     if (!playing) {
-      videoARef.current?.pause();
-      videoBRef.current?.pause();
-      videoPrepRef.current = null;
+      pool().forEach((el) => el.pause());
+      videoPrepRef.current.clear();
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
       rafRef.current = null;
       return;
@@ -285,70 +288,63 @@ export function Preview({ videoRef }: Props) {
     void v.play().catch(() => setPlaying(false));
 
     let activeId = startClip.id;
+    const preps = videoPrepRef.current;
 
-    const jlog = (o: Record<string, unknown>) => {
-      const w = window as unknown as { __jlog?: unknown[] };
-      (w.__jlog ??= []).push({ t: Math.round(performance.now()), ...o });
+    /**
+     * Reserva um decodificador livre e o posiciona no início do corte.
+     * O preparo começa assim que o clipe atual entra em cena: o seek de um
+     * arquivo grande pode levar mais de 1 s, tempo que uma janela curta não dá.
+     */
+    const prepare = (cur: HTMLVideoElement, next: (typeof clips0)[number]) => {
+      if (preps.has(next.id)) return;
+      const busy = new Set<HTMLVideoElement>([cur, ...[...preps.values()].map((p) => p.el)]);
+      const free = pool().find((el) => !busy.has(el));
+      if (!free) return;
+      const entry = { el: free, ready: false };
+      preps.set(next.id, entry);
+      free.pause();
+      free.muted = true;
+      const onSeeked = () => {
+        free.removeEventListener("seeked", onSeeked);
+        entry.ready = true;
+      };
+      free.addEventListener("seeked", onSeeked);
+      try {
+        free.currentTime = next.sourceInStart;
+      } catch {
+        preps.delete(next.id);
+      }
     };
+
+    /** Descarta reservas de clipes que não são mais os próximos da fila. */
+    const pruneP reps = () => undefined;
 
     /** Salta para o próximo clipe da timeline sem pausar o elemento <video>. */
     const jumpTo = (cur: HTMLVideoElement, next: (typeof clips0)[number]) => {
       activeId = next.id;
       const rate = next.speed ?? 1;
-      const standby = cur === videoARef.current ? videoBRef.current : videoARef.current;
-      const prep = videoPrepRef.current;
       const contiguous = Math.abs(cur.currentTime - next.sourceInStart) <= 0.06;
+      const prep = preps.get(next.id);
 
-      if (!contiguous && standby && prep?.clipId === next.id && prep.ready) {
-        // corte descontínuo: o segundo decodificador já está no ponto certo
-        jlog({ ev: "jump", path: "standby", clip: next.id, rs: standby.readyState });
-        standby.playbackRate = rate;
-        standby.muted = Boolean(next.muted);
+      if (!contiguous && prep && prep.ready) {
+        // corte descontínuo: o decodificador reserva já está no ponto certo
+        prep.el.playbackRate = rate;
+        prep.el.muted = Boolean(next.muted);
         cur.pause();
         cur.muted = true;
-        videoRef.current = standby;
-        videoPrepRef.current = null;
+        videoRef.current = prep.el;
+        preps.delete(next.id);
         setCurrentTime(next.startTime + 0.001);
-        void standby.play().catch(() => undefined);
+        void prep.el.play().catch(() => undefined);
         return;
       }
 
-      jlog({
-        ev: "jump",
-        path: contiguous ? "contiguous" : "fallback-seek",
-        clip: next.id,
-        prep: prep ? { id: prep.clipId, ready: prep.ready } : null,
-      });
+      if (prep) preps.delete(next.id);
       if (cur.playbackRate !== rate) cur.playbackRate = rate;
       if (!contiguous) cur.currentTime = next.sourceInStart;
       setCurrentTime(next.startTime + 0.001);
       if (cur.paused) void cur.play().catch(() => undefined);
     };
-
-    /** Pré-posiciona o decodificador reserva no início do próximo corte. */
-    const prepareNext = (cur: HTMLVideoElement, next: (typeof clips0)[number]) => {
-      const standby = cur === videoARef.current ? videoBRef.current : videoARef.current;
-      if (!standby) return;
-      if (videoPrepRef.current?.clipId === next.id) return;
-      if (Math.abs(cur.currentTime - next.sourceInStart) <= 0.06) return; // contíguo: nada a fazer
-      videoPrepRef.current = { clipId: next.id, ready: false };
-      const t0 = performance.now();
-      jlog({ ev: "prep-start", clip: next.id, to: next.sourceInStart });
-      standby.pause();
-      standby.muted = true;
-      const onSeeked = () => {
-        standby.removeEventListener("seeked", onSeeked);
-        jlog({ ev: "prep-ready", clip: next.id, ms: Math.round(performance.now() - t0) });
-        if (videoPrepRef.current?.clipId === next.id) videoPrepRef.current.ready = true;
-      };
-      standby.addEventListener("seeked", onSeeked);
-      try {
-        standby.currentTime = next.sourceInStart;
-      } catch {
-        videoPrepRef.current = null;
-      }
-    };
-
 
     const tick = () => {
       rafRef.current = requestAnimationFrame(tick);
@@ -375,7 +371,9 @@ export function Preview({ videoRef }: Props) {
         void cur.play().catch(() => undefined);
       }
 
-      const next = clips.find((c) => c.startTime + 0.001 >= clip.startTime + clip.duration);
+      const idx = clips.findIndex((c) => c.id === clip.id);
+      const next = idx >= 0 ? clips[idx + 1] : undefined;
+      const next2 = idx >= 0 ? clips[idx + 2] : undefined;
       const reachedEnd = cur.currentTime >= clip.sourceInEnd - 0.02 || (cur.ended && !cur.seeking);
       if (reachedEnd) {
         if (next) {
@@ -386,10 +384,16 @@ export function Preview({ videoRef }: Props) {
         setPlaying(false);
         return;
       }
-      // ~0,6 s antes da emenda já deixa o próximo trecho decodificado
-      if (next && cur.currentTime >= clip.sourceInEnd - 0.6) prepareNext(cur, next);
+      // preparo imediato dos dois próximos cortes: o seek roda em paralelo
+      const upcoming = new Set([next?.id, next2?.id].filter(Boolean) as string[]);
+      preps.forEach((_, id) => {
+        if (!upcoming.has(id)) preps.delete(id);
+      });
+      if (next && Math.abs(cur.currentTime - next.sourceInStart) > 0.06) prepare(cur, next);
+      if (next2 && preps.get(next?.id ?? "")?.ready !== false) prepare(cur, next2);
       setCurrentTime(clip.startTime + (cur.currentTime - clip.sourceInStart) / speed);
     };
+
 
 
     rafRef.current = requestAnimationFrame(tick);
