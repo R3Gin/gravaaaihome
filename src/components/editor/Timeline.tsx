@@ -371,6 +371,7 @@ function ClipBox({ clip, track }: { clip: Clip; track: Track }) {
 
   const [ghost, setGhost] = useState<Ghost>(null);
   const [dragging, setDragging] = useState(false);
+  const [magnetized, setMagnetized] = useState(false);
   const clipRef = useRef(clip);
   clipRef.current = clip;
 
