@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AudioLines, Copy, GripVertical, Scissors, Trash2, ZoomIn, ZoomOut } from "lucide-react";
+import { AudioLines, Copy, GripVertical, Magnet, Scissors, Trash2, ZoomIn, ZoomOut } from "lucide-react";
+import { applySnap, snapTargets, snapTolerance } from "@/lib/snap";
 import { MIN_CLIP, findClip, useEditor, type Clip, type Track } from "@/state/editor-store";
 import {
   EASINGS,
@@ -380,6 +381,27 @@ function ClipBox({ clip, track }: { clip: Clip; track: Track }) {
     return Math.max(0, (clientX - box.left + lane.scrollLeft) / zoom);
   };
 
+  /** imantação: aproxima o tempo das bordas vizinhas, agulha e início/fim */
+  const snap = (start: number, dur: number | null) => {
+    const s = useEditor.getState();
+    if (!s.snapEnabled || (e2eDisableSnapRef.current ?? false)) return { start, guide: null };
+    const targets = snapTargets(s.tracks, {
+      excludeClipId: clipRef.current.id,
+      playhead: s.currentTime,
+      duration: s.duration,
+    });
+    const tol = snapTolerance(s.zoom);
+    const a = applySnap(start, targets, tol);
+    if (a.guide != null) return { start: a.time, guide: a.guide };
+    if (dur != null) {
+      const b = applySnap(start + dur, targets, tol);
+      if (b.guide != null) return { start: b.time - dur, guide: b.guide };
+    }
+    return { start, guide: null };
+  };
+
+  const e2eDisableSnapRef = useRef(false);
+
   const startTrim = (side: "start" | "end") => (e: React.PointerEvent) => {
     e.stopPropagation();
     e.preventDefault();
@@ -388,7 +410,10 @@ function ClipBox({ clip, track }: { clip: Clip; track: Track }) {
     let last = side === "start" ? clip.startTime : clip.startTime + clip.duration;
     const move = (ev: PointerEvent) => {
       const c = clipRef.current;
-      const t = timeAt(ev.clientX);
+      e2eDisableSnapRef.current = ev.altKey;
+      const snapped = snap(timeAt(ev.clientX), null);
+      useEditor.getState().setSnapGuide(snapped.guide);
+      const t = snapped.start;
       last = t;
       if (side === "start") {
         const start = Math.min(t, c.startTime + c.duration - MIN_CLIP);
@@ -402,6 +427,7 @@ function ClipBox({ clip, track }: { clip: Clip; track: Track }) {
       window.removeEventListener("pointerup", up);
       setGhost(null);
       setDragging(false);
+      useEditor.getState().setSnapGuide(null);
       trimClip(clipRef.current.id, side, Math.max(0, last));
     };
     window.addEventListener("pointermove", move);
@@ -424,7 +450,11 @@ function ClipBox({ clip, track }: { clip: Clip; track: Track }) {
     const move = (ev: PointerEvent) => {
       moved = true;
       setDragging(true);
-      const start = Math.max(0, timeAt(ev.clientX) - grabOffset);
+      e2eDisableSnapRef.current = ev.altKey;
+      const raw = Math.max(0, timeAt(ev.clientX) - grabOffset);
+      const snapped = snap(raw, clipRef.current.duration);
+      useEditor.getState().setSnapGuide(snapped.guide);
+      const start = Math.max(0, snapped.start);
       last = start;
       setGhost({ start, duration: clipRef.current.duration });
     };
@@ -433,6 +463,7 @@ function ClipBox({ clip, track }: { clip: Clip; track: Track }) {
       window.removeEventListener("pointerup", up);
       setGhost(null);
       setDragging(false);
+      useEditor.getState().setSnapGuide(null);
       if (moved) moveClip(clipRef.current.id, last);
     };
     window.addEventListener("pointermove", move);
@@ -620,6 +651,11 @@ export function Timeline() {
 
   const lanesHeight = tracks.length * LANE_H + kfRows.length * KF_H;
 
+  const snapEnabled = useEditor((s) => s.snapEnabled);
+  const snapGuide = useEditor((s) => s.snapGuide);
+  const toggleSnap = useEditor((s) => s.toggleSnap);
+  const addMediaClip = useEditor((s) => s.addMediaClip);
+
   /* --- reordenar faixas (arraste vertical nos rótulos) --- */
   const reorderTracks = useEditor((s) => s.reorderTracks);
   const labelsRef = useRef<HTMLDivElement>(null);
@@ -723,6 +759,18 @@ export function Timeline() {
         >
           <Trash2 className="h-4 w-4" /> Deletar
         </button>
+        <button
+          onClick={toggleSnap}
+          title="Imantação: gruda clipes nas bordas vizinhas e na agulha (segure Alt para ignorar)"
+          className={cn(
+            "flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-semibold",
+            snapEnabled
+              ? "border-[var(--brand)] bg-[var(--brand)]/15 text-[var(--brand)]"
+              : "border-[var(--border)] text-[var(--muted-foreground)]",
+          )}
+        >
+          <Magnet className="h-4 w-4" /> Imantar
+        </button>
         <div className="ml-auto flex items-center gap-1.5">
           <button onClick={() => setZoom(zoom / 1.4)} className="rounded-md border border-[var(--border)] p-1.5">
             <ZoomOut className="h-3.5 w-3.5" />
@@ -816,6 +864,29 @@ export function Timeline() {
                 <div key={track.id}>
                   <div
                     onPointerDown={(e) => e.target === e.currentTarget && select(null)}
+                    onDragOver={(e) => {
+                      if (!e.dataTransfer.types.includes("application/x-gravaai-media")) return;
+                      e.preventDefault();
+                      e.dataTransfer.dropEffect = "copy";
+                    }}
+                    onDrop={(e) => {
+                      const id = e.dataTransfer.getData("application/x-gravaai-media");
+                      if (!id) return;
+                      e.preventDefault();
+                      const lane = scrollRef.current;
+                      if (!lane) return;
+                      const box = lane.getBoundingClientRect();
+                      const raw = Math.max(0, (e.clientX - box.left + lane.scrollLeft) / zoom);
+                      const s = useEditor.getState();
+                      const start = s.snapEnabled
+                        ? applySnap(
+                            raw,
+                            snapTargets(s.tracks, { playhead: s.currentTime, duration: s.duration }),
+                            snapTolerance(zoom),
+                          ).time
+                        : raw;
+                      addMediaClip(id, start);
+                    }}
                     className="relative border-b border-[var(--border)]"
                     style={{ height: LANE_H }}
                   >
@@ -850,6 +921,14 @@ export function Timeline() {
               ))}
             </div>
 
+
+            {/* linha-guia da imantação */}
+            {snapGuide != null ? (
+              <div
+                className="pointer-events-none absolute top-0 z-40 w-px bg-amber-300"
+                style={{ left: snapGuide * zoom, height: 28 + lanesHeight }}
+              />
+            ) : null}
 
             {/* playhead — arrastável */}
             <div

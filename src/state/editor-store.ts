@@ -122,7 +122,9 @@ export interface Clip {
   animOut?: PresetConfig;
 
   // overlay
-  overlayKind?: "blur" | "spotlight" | "annotation";
+  overlayKind?: "blur" | "spotlight" | "annotation" | "media";
+  /** item da biblioteca de mídia associado (imagem/vídeo/áudio importado) */
+  mediaId?: string;
   /** anotação de pós-produção (caneta, seta, formas, destaque) */
   annotation?: Annotation;
   /** legenda gerada automaticamente (permite estilizar todas de uma vez) */
@@ -142,6 +144,21 @@ export interface Track {
 
 export type AspectRatio = "16:9" | "9:16" | "1:1";
 export type Tool = "select" | "blade";
+
+export type MediaKind = "video" | "image" | "audio";
+
+/** Arquivo importado durante a edição (vive só na sessão da aba). */
+export interface MediaItem {
+  id: string;
+  name: string;
+  kind: MediaKind;
+  url: string;
+  blob: Blob;
+  /** segundos (vídeo/áudio) */
+  duration: number;
+  /** data URL de miniatura (vídeo/imagem) */
+  thumbnail?: string;
+}
 
 export interface SilenceRange {
   start: number;
@@ -228,6 +245,12 @@ export interface EditorState {
   annotationFill: boolean;
   /** duração padrão (s) de cada anotação criada */
   annotationDuration: number;
+  /** imantação (snap) entre clipes — ligada por padrão */
+  snapEnabled: boolean;
+  /** linha-guia temporária exibida durante o arraste (segundos) */
+  snapGuide: number | null;
+  /** arquivos importados durante a edição (apenas em memória, nesta sessão) */
+  mediaLibrary: MediaItem[];
 }
 
 
@@ -255,6 +278,14 @@ export interface EditorActions {
   trimClip: (id: string, side: "start" | "end", newTime: number) => void;
   addTextClip: (text?: string) => void;
   addOverlayClip: (kind: "blur" | "spotlight") => void;
+  /* --- imantação --- */
+  toggleSnap: () => void;
+  setSnapGuide: (t: number | null) => void;
+  /* --- biblioteca de mídia --- */
+  addMediaItem: (item: MediaItem) => void;
+  removeMediaItem: (id: string) => void;
+  /** cria um clipe a partir de um item da biblioteca, no tempo indicado */
+  addMediaClip: (mediaId: string, startTime: number) => void;
   /** cria um clipe de anotação na faixa de efeitos, começando no playhead */
   addAnnotationClip: (annotation: Annotation) => void;
   setAnnotationTool: (tool: AnnotationTool | null) => void;
@@ -420,6 +451,9 @@ export const useEditor = create<EditorState & EditorActions>((set, get) => {
     selectedKeyframes: [],
     kfClipboard: [],
     pendingEffectPreset: null,
+    snapEnabled: true,
+    snapGuide: null,
+    mediaLibrary: [],
     annotationTool: null,
     annotationColor: "#ef4444",
     annotationSize: 6,
@@ -659,6 +693,42 @@ export const useEditor = create<EditorState & EditorActions>((set, get) => {
         ),
       );
       set({ selectedClipId: clip.id });
+    },
+
+    toggleSnap: () => set((s) => ({ snapEnabled: !s.snapEnabled, snapGuide: null })),
+    setSnapGuide: (snapGuide) => set({ snapGuide }),
+
+    addMediaItem: (item) => set((s) => ({ mediaLibrary: [...s.mediaLibrary, item] })),
+
+    removeMediaItem: (id) =>
+      set((s) => ({ mediaLibrary: s.mediaLibrary.filter((m) => m.id !== id) })),
+
+    addMediaClip: (mediaId, startTime) => {
+      const item = get().mediaLibrary.find((m) => m.id === mediaId);
+      if (!item) return;
+      const dur = item.kind === "image" ? 5 : Math.max(MIN_CLIP, item.duration || 5);
+      const isAudio = item.kind === "audio";
+      const clip: Clip = {
+        id: uid(),
+        trackId: isAudio ? AUDIO_TRACK : OVERLAY_TRACK,
+        type: isAudio ? "audio" : "overlay",
+        sourceUrl: item.url,
+        mediaId: item.id,
+        startTime: Math.max(0, startTime),
+        duration: dur,
+        sourceInStart: 0,
+        sourceInEnd: dur,
+        volume: 1,
+        ...(isAudio
+          ? {}
+          : { overlayKind: "media" as const, rect: { x: 0.1, y: 0.1, w: 0.5, h: 0.5 }, opacity: 1 }),
+      };
+      write((tracks) =>
+        mapTracks(tracks, (clips, track) =>
+          track.id === clip.trackId ? resolveOverlaps([...clips, clip], clip.id) : clips,
+        ),
+      );
+      set({ selectedClipId: clip.id, snapGuide: null });
     },
 
     addAnnotationClip: (annotation) => {
