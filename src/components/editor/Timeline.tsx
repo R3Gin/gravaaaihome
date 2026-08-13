@@ -464,11 +464,16 @@ function ClipBox({ clip, track }: { clip: Clip; track: Track }) {
       setDragging(true);
       e2eDisableSnapRef.current = ev.altKey;
       const raw = Math.max(0, timeAt(ev.clientX) - grabOffset);
-      const snapped = snap(raw, clipRef.current.duration);
-      useEditor.getState().setSnapGuide(snapped.guide);
-      const start = Math.max(0, snapped.start);
+      const dur = clipRef.current.duration;
+      const snapped = snap(raw, dur);
+      const start = place(Math.max(0, snapped.start), dur);
+      // guia só aparece quando a posição imantada sobreviveu à checagem de colisão
+      useEditor.getState().setSnapGuide(
+        snapped.guide != null && Math.abs(start - snapped.start) < 1e-6 ? snapped.guide : null,
+      );
       last = start;
-      setGhost({ start, duration: clipRef.current.duration });
+      setGhost({ start, duration: dur });
+
     };
     const up = () => {
       window.removeEventListener("pointermove", move);
