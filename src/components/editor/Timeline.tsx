@@ -344,7 +344,7 @@ function AudioWaveform({
     ctx.fillStyle = "rgba(16,185,129,0.75)";
 
     const mid = h / 2;
-    for (const clip of videoClips) {
+    for (const clip of waveClips) {
       const x0 = clip.startTime * zoom - winLeft;
       const w = clip.duration * zoom;
       if (w < 1 || x0 + w < 0 || x0 > winWidth) continue;
@@ -358,7 +358,7 @@ function AudioWaveform({
         ctx.fillRect(x, mid - amp, 1, Math.max(1, amp * 2));
       }
     }
-  }, [peaks, videoClips, winLeft, winWidth, zoom]);
+  }, [peaks, waveClips, winLeft, winWidth, zoom]);
 
   useEffect(() => {
     draw();
