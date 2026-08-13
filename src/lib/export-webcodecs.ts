@@ -55,12 +55,25 @@ function outputSize(aspect: AspectRatio, videoSize: { width: number; height: num
   return { W: even(h * ratio), H: h };
 }
 
+/** H.264 é a prioridade; VP9 em MP4 só entra se o navegador não codificar AVC. */
+const CODEC_CANDIDATES: { codec: string; mux: "avc" | "vp9" }[] = [
+  { codec: "avc1.640028", mux: "avc" },
+  { codec: "avc1.4D4028", mux: "avc" },
+  { codec: "avc1.42E01E", mux: "avc" },
+  { codec: "vp09.00.10.08", mux: "vp9" },
+];
+
 async function pickVideoCodec(width: number, height: number, bitrate: number, framerate: number) {
-  const candidates = ["avc1.640028", "avc1.4D4028", "avc1.42E01E", "vp09.00.10.08"];
-  for (const codec of candidates) {
+  for (const cand of CODEC_CANDIDATES) {
     try {
-      const support = await VideoEncoder.isConfigSupported({ codec, width, height, bitrate, framerate });
-      if (support.supported) return codec;
+      const support = await VideoEncoder.isConfigSupported({
+        codec: cand.codec,
+        width,
+        height,
+        bitrate,
+        framerate,
+      });
+      if (support.supported) return cand;
     } catch {
       /* tenta o próximo */
     }
