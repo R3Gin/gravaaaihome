@@ -84,6 +84,8 @@ export async function exportProject(
     (a, b) => a.startTime - b.startTime,
   );
   if (videoClips.length === 0) throw new Error("Nenhum clipe de vídeo na timeline.");
+  const audioClips = tracks.find((t) => t.type === "audio")?.clips ?? [];
+
 
   const W = Math.max(2, Math.round((videoSize.width || 1280) / 2) * 2);
   const H = Math.max(2, Math.round((videoSize.height || 720) / 2) * 2);
