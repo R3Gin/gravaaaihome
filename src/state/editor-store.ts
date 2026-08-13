@@ -225,6 +225,9 @@ export interface EditorState {
   aspect: AspectRatio;
   tool: Tool;
   selectedClipId: string | null;
+  /** seleção múltipla (o último item é o "âncora" = selectedClipId) */
+  selectedClipIds: string[];
+
   tracks: Track[];
   past: Track[][];
   future: Track[][];
