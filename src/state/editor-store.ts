@@ -89,6 +89,11 @@ export interface Clip {
   contrast?: number;
   saturation?: number;
   speed?: number;
+  /** clipes com o mesmo grupo se movem/cortam juntos (vídeo + áudio separado) */
+  linkGroupId?: string;
+  /** áudio do próprio clipe silenciado (usado quando o áudio foi separado) */
+  muted?: boolean;
+
   /** transição de ENTRADA deste clipe (sobrepõe o fim do clipe anterior) */
   transition?: TransitionKind;
   transitionDuration?: number;
