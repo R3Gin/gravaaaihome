@@ -166,6 +166,11 @@ export function VideoEditor() {
         lastU.current = now;
         useEditor.getState().cycleKeyframeRows(double);
       }
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "a") {
+        e.preventDefault();
+        const state = useEditor.getState();
+        state.selectMany(state.tracks.flatMap((t) => t.clips.map((c) => c.id)));
+      }
       if (e.key === "Delete" || e.key === "Backspace") {
         const state = useEditor.getState();
         if (state.selectedKeyframes.length > 0) {
@@ -173,12 +178,12 @@ export function VideoEditor() {
           state.removeSelectedKeyframes();
           return;
         }
-        const id = state.selectedClipId;
-        if (id) {
+        if (state.selectedClipIds.length > 0) {
           e.preventDefault();
-          state.removeClip(id);
+          state.removeSelected();
         }
       }
+
       // Copiar / colar keyframes
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "c") {
         const state = useEditor.getState();
