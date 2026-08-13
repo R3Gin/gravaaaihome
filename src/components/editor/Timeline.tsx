@@ -1046,7 +1046,7 @@ export function Timeline() {
               <Link2Off className="h-4 w-4" /> Desanexar
 
             </button>
-          ) : selectedClip.type === "video" ? (
+          ) : canDetachAudio(tracks, selectedClip) ? (
             <button
               onClick={() => detachAudio(selectedClip.id)}
               title="Separa o áudio em uma faixa própria, ainda colado ao vídeo"
