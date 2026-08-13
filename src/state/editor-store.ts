@@ -591,9 +591,11 @@ export const useEditor = create<EditorState & EditorActions>((set, get) => {
       if (!clip) return;
       const copy: Clip = { ...clip, id: uid(), startTime: clip.startTime + clip.duration };
       write((tracks) =>
-        mapTracks(tracks, (clips, track) =>
-          track.id === clip.trackId ? resolveOverlaps([...clips, copy], copy.id) : clips,
-        ),
+        mapTracks(tracks, (clips, track) => {
+          if (track.id !== clip.trackId) return clips;
+          copy.startTime = freeStart(clips, copy.startTime, copy.duration);
+          return [...clips, copy].sort((a, b) => a.startTime - b.startTime);
+        }),
       );
       set({ selectedClipId: copy.id });
     },
@@ -604,10 +606,11 @@ export const useEditor = create<EditorState & EditorActions>((set, get) => {
       write((tracks) =>
         mapTracks(tracks, (clips, track) => {
           if (track.id !== clip.trackId) return clips;
-          const moved = clips.map((c) =>
-            c.id === id ? { ...c, startTime: Math.max(0, newStart) } : c,
-          );
-          return resolveOverlaps(moved, id);
+          const others = clips.filter((c) => c.id !== id);
+          const start = freeStart(others, Math.max(0, newStart), clip.duration);
+          return clips
+            .map((c) => (c.id === id ? { ...c, startTime: start } : c))
+            .sort((a, b) => a.startTime - b.startTime);
         }),
       );
     },
@@ -616,10 +619,20 @@ export const useEditor = create<EditorState & EditorActions>((set, get) => {
       const clip = findClip(get().tracks, id);
       if (!clip) return;
       const speed = clip.speed ?? 1;
+      const siblings = (get().tracks.find((t) => t.id === clip.trackId)?.clips ?? []).filter(
+        (c) => c.id !== id,
+      );
+      // limites impostos pelos vizinhos: o trim nunca invade outro clipe
+      const leftBound = siblings
+        .filter((c) => c.startTime + c.duration <= clip.startTime + 1e-6)
+        .reduce((m, c) => Math.max(m, c.startTime + c.duration), 0);
+      const rightBound = siblings
+        .filter((c) => c.startTime >= clip.startTime + clip.duration - 1e-6)
+        .reduce((m, c) => Math.min(m, c.startTime), Infinity);
       let patch: Partial<Clip> = {};
       if (side === "start") {
         const maxStart = clip.startTime + clip.duration - MIN_CLIP;
-        const start = Math.max(0, Math.min(newTime, maxStart));
+        const start = Math.max(leftBound, Math.min(newTime, maxStart));
         const delta = start - clip.startTime;
         const sourceInStart = Math.max(0, clip.sourceInStart + delta * speed);
         patch = {
@@ -628,7 +641,10 @@ export const useEditor = create<EditorState & EditorActions>((set, get) => {
           sourceInStart,
         };
       } else {
-        const end = Math.max(clip.startTime + MIN_CLIP, newTime);
+        const end = Math.min(
+          rightBound,
+          Math.max(clip.startTime + MIN_CLIP, newTime),
+        );
         const duration = end - clip.startTime;
         const sourceInEnd = Math.min(
           get().sourceDuration || Infinity,
@@ -639,13 +655,11 @@ export const useEditor = create<EditorState & EditorActions>((set, get) => {
       write((tracks) =>
         mapTracks(tracks, (clips, track) => {
           if (track.id !== clip.trackId) return clips;
-          return resolveOverlaps(
-            clips.map((c) => (c.id === id ? { ...c, ...patch } : c)),
-            id,
-          );
+          return clips.map((c) => (c.id === id ? { ...c, ...patch } : c));
         }),
       );
     },
+
 
     addTextClip: (text) => {
       const { currentTime, duration } = get();
