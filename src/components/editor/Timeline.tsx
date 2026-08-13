@@ -922,6 +922,14 @@ export function Timeline() {
             </div>
 
 
+            {/* linha-guia da imantação */}
+            {snapGuide != null ? (
+              <div
+                className="pointer-events-none absolute top-0 z-40 w-px bg-amber-300"
+                style={{ left: snapGuide * zoom, height: 28 + lanesHeight }}
+              />
+            ) : null}
+
             {/* playhead — arrastável */}
             <div
               onPointerDown={startScrub}
