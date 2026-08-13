@@ -645,6 +645,48 @@ function rippleRemove(tracks: Track[], ids: Set<string>): Track[] {
   });
 }
 
+/** Reconstrói os clipes de legenda a partir da transcrição guardada na sessão. */
+function buildCaptionsFromTranscript(
+  get: () => EditorState & EditorActions,
+  write: (fn: (tracks: Track[]) => Track[]) => void,
+) {
+  const { transcript, captionStyle: style, removedRanges: removed } = get();
+  if (!transcript) return;
+  const preset = BLOCK_PRESETS[style.blockSize ?? "medio"];
+  const chunked = transcript.words.length
+    ? chunkCaptionWords(transcript.words, preset)
+    : chunkSegmentsByText(transcript.segments, preset);
+  console.info(
+    `[legendas] chunking (${style.blockSize ?? "medio"}): ${transcript.segments.length} segmentos + ${transcript.words.length} palavras → ${chunked.length} blocos`,
+  );
+  const base = chunked.length ? chunked : transcript.segments;
+  const segments = removed.length ? remapCaptionsAfterCuts(base, removed) : base;
+  const clips: Clip[] = segments
+    .filter((s) => s.text.trim() && s.end - s.start > 0.05)
+    .map((s) => ({
+      id: uid(),
+      trackId: TEXT_TRACK,
+      type: "text" as const,
+      sourceUrl: "",
+      startTime: Math.max(0, s.start),
+      duration: Math.max(0.2, s.end - s.start),
+      sourceInStart: 0,
+      sourceInEnd: Math.max(0.2, s.end - s.start),
+      textContent: s.text.trim(),
+      fontSize: style.fontSize,
+      color: style.color,
+      background: style.background,
+      position: { x: 0.5, y: captionY(style.place) },
+      isCaption: true,
+    }));
+  if (clips.length === 0) return;
+  write((tracks) =>
+    mapTracks(tracks, (existing, track) =>
+      track.id === TEXT_TRACK ? [...existing.filter((c) => !c.isCaption), ...clips] : existing,
+    ),
+  );
+}
+
 export const useEditor = create<EditorState & EditorActions>((set, get) => {
   const snapshot = () =>
     set((s) => ({ past: [...s.past.slice(-49), s.tracks], future: [] }));
