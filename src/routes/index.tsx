@@ -3,6 +3,7 @@ import { ClientOnly } from "@tanstack/react-router";
 import { Wordmark } from "@/components/Brand";
 import { ScreenRecorder } from "@/components/ScreenRecorder";
 import { Mosaicos } from "@/components/Mosaicos";
+import { InstallPwaButton } from "@/components/InstallPwaButton";
 
 export const Route = createFileRoute("/")({
   component: Index,
@@ -14,14 +15,19 @@ function Index() {
       <header className="sticky top-0 z-30 border-b border-[var(--border)] bg-black/40 backdrop-blur-md">
         <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-3 sm:px-6">
           <Wordmark />
-          <a
-            href="https://developer.mozilla.org/pt-BR/docs/Web/API/Screen_Capture_API"
-            target="_blank"
-            rel="noreferrer"
-            className="hidden text-xs text-[var(--muted-foreground)] hover:text-white sm:block"
-          >
-            100% no navegador · sem upload
-          </a>
+          <div className="flex items-center gap-3">
+            <ClientOnly fallback={null}>
+              <InstallPwaButton />
+            </ClientOnly>
+            <a
+              href="https://developer.mozilla.org/pt-BR/docs/Web/API/Screen_Capture_API"
+              target="_blank"
+              rel="noreferrer"
+              className="hidden text-xs text-[var(--muted-foreground)] hover:text-white sm:block"
+            >
+              100% no navegador · sem upload
+            </a>
+          </div>
         </div>
       </header>
 

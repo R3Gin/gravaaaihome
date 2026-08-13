@@ -209,6 +209,29 @@ export const FloatingRecorderPanel = forwardRef<
   }, [visible, pipWindow, pipSupported, openPip]);
 
 
+  // Auto Picture-in-Picture (apenas durante uma sessão de gravação ativa).
+  // Em PWAs instalados, o navegador pode acionar esta ação sozinho quando o
+  // usuário troca de aba/janela — reutilizamos a mesma lógica de abrir o PiP.
+  useEffect(() => {
+    if (!visible || !pipSupported) return;
+    if (typeof navigator === "undefined" || !("mediaSession" in navigator)) return;
+    const ms = navigator.mediaSession;
+    try {
+      ms.setActionHandler("enterpictureinpicture" as MediaSessionAction, () => {
+        openPip().catch(() => {});
+      });
+    } catch {
+      return; // navegador não suporta esta ação
+    }
+    return () => {
+      try {
+        ms.setActionHandler("enterpictureinpicture" as MediaSessionAction, null);
+      } catch {
+        /* noop */
+      }
+    };
+  }, [visible, pipSupported, openPip]);
+
 
   useEffect(() => {
     return () => {
