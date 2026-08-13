@@ -451,6 +451,8 @@ export const useEditor = create<EditorState & EditorActions>((set, get) => {
     aspect: "16:9",
     tool: "select",
     selectedClipId: null,
+    selectedClipIds: [],
+
     tracks: emptyTracks(),
     past: [],
     future: [],
