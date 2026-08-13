@@ -122,7 +122,9 @@ export interface Clip {
   animOut?: PresetConfig;
 
   // overlay
-  overlayKind?: "blur" | "spotlight" | "annotation";
+  overlayKind?: "blur" | "spotlight" | "annotation" | "media";
+  /** item da biblioteca de mídia associado (imagem/vídeo/áudio importado) */
+  mediaId?: string;
   /** anotação de pós-produção (caneta, seta, formas, destaque) */
   annotation?: Annotation;
   /** legenda gerada automaticamente (permite estilizar todas de uma vez) */
@@ -142,6 +144,21 @@ export interface Track {
 
 export type AspectRatio = "16:9" | "9:16" | "1:1";
 export type Tool = "select" | "blade";
+
+export type MediaKind = "video" | "image" | "audio";
+
+/** Arquivo importado durante a edição (vive só na sessão da aba). */
+export interface MediaItem {
+  id: string;
+  name: string;
+  kind: MediaKind;
+  url: string;
+  blob: Blob;
+  /** segundos (vídeo/áudio) */
+  duration: number;
+  /** data URL de miniatura (vídeo/imagem) */
+  thumbnail?: string;
+}
 
 export interface SilenceRange {
   start: number;
