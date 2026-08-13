@@ -158,6 +158,8 @@ export interface Clip {
   annotation?: Annotation;
   /** legenda gerada automaticamente (permite estilizar todas de uma vez) */
   isCaption?: boolean;
+  /** estilo próprio desta legenda (sobrepõe o estilo global) */
+  captionOverride?: Partial<CaptionStyle>;
   rect?: { x: number; y: number; w: number; h: number };
   strength?: number;
   /** presets de efeito aplicados no modo Simples */
@@ -261,6 +263,8 @@ export interface EditorState {
   /** trechos já removidos do vídeo (tempo original) — usados para remapear legendas */
   removedRanges: SilenceRange[];
   captionStyle: CaptionStyle;
+  /** transcrição bruta da sessão — permite reagrupar sem rodar o Whisper de novo */
+  transcript: { segments: { start: number; end: number; text: string }[]; words: WordTiming[] } | null;
   /** exibição das sub-linhas de keyframes na timeline (atalho U / UU) */
   kfExpanded: "none" | "animated" | "all";
   /** keyframes selecionados na timeline (permite mover/deletar em conjunto) */
@@ -364,7 +368,10 @@ export interface EditorActions {
     segments: { start: number; end: number; text: string }[],
     words?: WordTiming[],
   ) => void;
-  setCaptionStyle: (patch: Partial<CaptionStyle>) => void;
+  /** aplica estilo: a todas as legendas (padrão) ou só aos ids informados */
+  setCaptionStyle: (patch: Partial<CaptionStyle>, ids?: string[]) => void;
+  /** reagrupa as legendas a partir da transcrição guardada (sem retranscrever) */
+  rechunkCaptions: () => boolean;
   clearCaptions: () => void;
   /** transição de entrada de um clipe (módulo de Transições) */
   setTransition: (
@@ -672,6 +679,7 @@ export const useEditor = create<EditorState & EditorActions>((set, get) => {
     silences: [],
     removedRanges: [],
     captionStyle: DEFAULT_CAPTION_STYLE,
+    transcript: null,
     kfExpanded: "none",
     selectedKeyframes: [],
     kfClipboard: [],
