@@ -297,10 +297,14 @@ function AudioWaveform({
   const [loading, setLoading] = useState(false);
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
-  const videoClips = useMemo(
-    () => tracks.find((t) => t.type === "video")?.clips ?? [],
-    [tracks],
-  );
+  /* A onda segue os clipes da própria faixa de áudio; se ela estiver vazia
+     (projetos antigos), cai de volta para os clipes de vídeo. */
+  const waveClips = useMemo(() => {
+    const audio = tracks.find((t) => t.type === "audio")?.clips ?? [];
+    if (audio.length > 0) return audio;
+    return tracks.find((t) => t.type === "video")?.clips ?? [];
+  }, [tracks]);
+
 
   useEffect(() => {
     if (!sourceBlob) {
