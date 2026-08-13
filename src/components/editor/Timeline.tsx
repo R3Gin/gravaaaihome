@@ -754,6 +754,18 @@ export function Timeline() {
         >
           <Trash2 className="h-4 w-4" /> Deletar
         </button>
+        <button
+          onClick={toggleSnap}
+          title="Imantação: gruda clipes nas bordas vizinhas e na agulha (segure Alt para ignorar)"
+          className={cn(
+            "flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-semibold",
+            snapEnabled
+              ? "border-[var(--brand)] bg-[var(--brand)]/15 text-[var(--brand)]"
+              : "border-[var(--border)] text-[var(--muted-foreground)]",
+          )}
+        >
+          <Magnet className="h-4 w-4" /> Imantar
+        </button>
         <div className="ml-auto flex items-center gap-1.5">
           <button onClick={() => setZoom(zoom / 1.4)} className="rounded-md border border-[var(--border)] p-1.5">
             <ZoomOut className="h-3.5 w-3.5" />
@@ -847,6 +859,29 @@ export function Timeline() {
                 <div key={track.id}>
                   <div
                     onPointerDown={(e) => e.target === e.currentTarget && select(null)}
+                    onDragOver={(e) => {
+                      if (!e.dataTransfer.types.includes("application/x-gravaai-media")) return;
+                      e.preventDefault();
+                      e.dataTransfer.dropEffect = "copy";
+                    }}
+                    onDrop={(e) => {
+                      const id = e.dataTransfer.getData("application/x-gravaai-media");
+                      if (!id) return;
+                      e.preventDefault();
+                      const lane = scrollRef.current;
+                      if (!lane) return;
+                      const box = lane.getBoundingClientRect();
+                      const raw = Math.max(0, (e.clientX - box.left + lane.scrollLeft) / zoom);
+                      const s = useEditor.getState();
+                      const start = s.snapEnabled
+                        ? applySnap(
+                            raw,
+                            snapTargets(s.tracks, { playhead: s.currentTime, duration: s.duration }),
+                            snapTolerance(zoom),
+                          ).time
+                        : raw;
+                      addMediaClip(id, start);
+                    }}
                     className="relative border-b border-[var(--border)]"
                     style={{ height: LANE_H }}
                   >
