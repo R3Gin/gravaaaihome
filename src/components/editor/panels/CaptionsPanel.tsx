@@ -113,19 +113,32 @@ export function CaptionsPanel() {
     setBusy(true);
     setError(null);
     setDownload(0);
+    const events = {
+      onStage: (s: "audio" | "model" | "transcribe" | "finalize") =>
+        setStage(
+          s === "audio"
+            ? "Montando o áudio já cortado…"
+            : s === "model"
+              ? "Carregando modelo (só na primeira vez)…"
+              : "Transcrevendo…",
+        ),
+      onDownload: setDownload,
+    };
     try {
-      const res = await transcribe(sourceBlob, lang, {
-        onStage: (s) =>
-          setStage(
-            s === "audio"
-              ? "Extraindo áudio…"
-              : s === "model"
-                ? "Carregando modelo (só na primeira vez)…"
-                : "Transcrevendo…",
-          ),
-        onDownload: setDownload,
-      });
-      addCaptionClips(res.segments, res.words);
+      setStage("Montando o áudio já cortado…");
+      // sempre transcreve o áudio FINAL da timeline (com os cortes aplicados)
+      const clips = useEditor.getState().tracks.flatMap((t) => t.clips) as AudioClipRef[];
+      const composed = await composeTimelineAudio(clips, sourceBlob);
+      const sig = useEditor.getState().audioSignature();
+      console.info(
+        composed
+          ? `[legendas] áudio composto da timeline: ${composed.duration.toFixed(2)}s · ${composed.covered.length} trecho(s)`
+          : "[legendas] não consegui compor o áudio da timeline — usando o arquivo original",
+      );
+      const res = composed
+        ? await transcribeSamples(composed.audio, lang, events)
+        : await transcribe(sourceBlob, lang, events);
+      addCaptionClips(res.segments, res.words, { timeline: !!composed, sig });
       setTab("lista");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Não consegui gerar as legendas.");
@@ -134,6 +147,7 @@ export function CaptionsPanel() {
       setStage("");
     }
   };
+
 
   const runBlocks = async () => {
     if (!sourceBlob) return;
