@@ -225,38 +225,34 @@ export const FloatingRecorderPanel = forwardRef<
     }
   }, [visible, destroyPip, closedByUserRef2]);
 
-  // ÚNICO controlador de visibilidade: saiu da aba → barra aparece;
-  // voltou para a aba → barra some. Como o navegador não deixa mover a
-  // janela, "sumir" significa fechá-la e "aparecer" significa abri-la — que é
-  // exatamente o ciclo que o próprio Auto-PiP do Chrome executa.
+  // Quem ABRE a janela é sempre o navegador, via Auto-PiP (Media Session).
+  // Aqui só garantimos que ela não fique órfã caso o Chrome não a feche ao
+  // voltar para a aba. Nenhum moveTo()/moveBy(): a spec proíbe reposicionar.
   useEffect(() => {
     if (!visible || !pipSupported) return;
     const sync = () => {
-      const hidden = document.visibilityState === "hidden";
-      console.log("[pip] visibilitychange →", document.visibilityState);
-      if (hidden) {
-        if (closedByUserRef2.current) return;
-        openPip("saiu da aba").catch((err) => {
-          console.warn("[pip] navegador recusou abrir automaticamente:", err);
-        });
-      } else {
-        destroyPip("voltou para a aba");
-      }
+      if (document.visibilityState === "visible") destroyPip("voltou para a aba");
     };
     document.addEventListener("visibilitychange", sync);
     return () => document.removeEventListener("visibilitychange", sync);
-  }, [visible, pipSupported, openPip, destroyPip, closedByUserRef2]);
+  }, [visible, pipSupported, destroyPip]);
 
-  // Auto Picture-in-Picture: é ESTE caminho que o Chrome usa para abrir a
-  // janela sem gesto do usuário quando a aba deixa de estar em foco durante
-  // uma captura de tela. Sem ele, o requestWindow() acima é bloqueado.
+  // Auto Picture-in-Picture (Chrome 120+): com o app instalado como PWA e este
+  // handler registrado, o navegador abre a janela sozinho quando o usuário sai
+  // da aba e a fecha quando ele volta. Sem PWA instalado, o Chrome ignora.
   useEffect(() => {
     if (!visible || !pipSupported) return;
     if (typeof navigator === "undefined" || !("mediaSession" in navigator)) return;
     const ms = navigator.mediaSession;
     try {
+      ms.metadata = new MediaMetadata({
+        title: "Gravaai — gravação em andamento",
+        artist: "Controles de gravação",
+      });
+      ms.playbackState = "playing";
       ms.setActionHandler("enterpictureinpicture" as MediaSessionAction, () => {
         console.log("[pip] Auto-PiP acionado pelo navegador");
+        if (closedByUserRef2.current) return;
         openPip("auto-pip").catch((err) => console.warn("[pip] auto-pip falhou:", err));
       });
       console.log("[pip] Auto-PiP registrado");
@@ -267,11 +263,14 @@ export const FloatingRecorderPanel = forwardRef<
     return () => {
       try {
         ms.setActionHandler("enterpictureinpicture" as MediaSessionAction, null);
+        ms.playbackState = "none";
+        ms.metadata = null;
       } catch {
         /* noop */
       }
     };
-  }, [visible, pipSupported, openPip]);
+  }, [visible, pipSupported, openPip, closedByUserRef2]);
+
 
   useEffect(() => {
     return () => {
