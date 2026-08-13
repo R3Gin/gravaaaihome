@@ -364,12 +364,10 @@ export async function exportWithWebCodecs(input: WebCodecsExportInput): Promise<
 
   try {
     for (const clip of videoClips) {
-      // A captura por reprodução ainda exige um seek por quadro para garantir
-      // que o canvas contenha exatamente aquele quadro, então usamos o caminho
-      // determinístico por padrão e mantemos o outro como diagnóstico.
-      await captureBySeek(clip);
+      const ok = await captureByPlayback(clip);
+      if (!ok) await captureBySeek(clip);
     }
-    void captureByPlayback;
+
 
     await encoder.flush();
     encoder.close();
