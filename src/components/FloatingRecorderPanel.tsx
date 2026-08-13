@@ -63,6 +63,36 @@ function fmt(sec: number) {
 
 type PipWindow = Window & { document: Document };
 
+const PIP_W = 340;
+const PIP_H = 64;
+const OFFSCREEN = -9999;
+
+/** Move a janela PiP para fora da área visível da tela (sem fechá-la). */
+function hidePipWindow(w: PipWindow) {
+  try {
+    w.resizeTo(PIP_W, PIP_H);
+    w.moveTo(OFFSCREEN, OFFSCREEN);
+  } catch {
+    /* noop */
+  }
+}
+
+/** Traz a janela PiP de volta para o canto inferior direito da tela. */
+function showPipWindow(w: PipWindow) {
+  try {
+    const margin = 20;
+    const sw = window.screen?.availWidth ?? window.screen?.width ?? 1280;
+    const sh = window.screen?.availHeight ?? window.screen?.height ?? 720;
+    w.resizeTo(PIP_W, PIP_H);
+    w.moveTo(
+      Math.max(0, sw - PIP_W - margin),
+      Math.max(0, sh - PIP_H - margin * 3),
+    );
+  } catch {
+    /* noop */
+  }
+}
+
 function supportsDocumentPip() {
   return (
     typeof window !== "undefined" &&
