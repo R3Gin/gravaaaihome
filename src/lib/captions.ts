@@ -60,7 +60,7 @@ export async function transcribe(
   );
   if (peak < 0.005 || rms < 0.0008) {
     throw new Error(
-      "Não foi possível transcrever este áudio — tente novamente ou verifique se há fala audível no vídeo.",
+      "O áudio deste vídeo está praticamente mudo — não há fala audível para transcrever.",
     );
   }
 
@@ -81,7 +81,8 @@ export async function transcribe(
         if (msg.type === "done") resolve({ segments: msg.segments, words: msg.words ?? [] });
         if (msg.type === "error") reject(new Error(msg.message));
       };
-      worker.onerror = () => reject(new Error("O modelo de transcrição não pôde ser carregado."));
+          worker.onerror = () =>
+        reject(new Error("O modelo de transcrição não pôde ser carregado neste navegador."));
       worker.postMessage({ type: "transcribe", audio, language: lang }, [audio.buffer]);
     });
     return validateTranscript(result, duration);

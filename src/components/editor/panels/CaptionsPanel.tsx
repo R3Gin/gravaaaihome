@@ -263,6 +263,11 @@ export function CaptionsPanel() {
 
       {tab === "estilo" ? (
         <div className="space-y-4 animate-fade-in">
+          <p className="text-[10px] text-[var(--muted-foreground)]">
+            {selectedCaptionIds.length
+              ? `Aplicando em ${selectedCaptionIds.length} legenda(s) selecionada(s).`
+              : "Aplicando em todas as legendas. Selecione algumas na aba Legendas para mudar só elas."}
+          </p>
           {/* galeria de estilos */}
           {(
             [
