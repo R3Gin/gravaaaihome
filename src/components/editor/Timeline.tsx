@@ -772,7 +772,7 @@ export function Timeline() {
     return () => window.removeEventListener("pointerdown", close);
   }, [menu]);
 
-  const lanesHeight = tracks.length * LANE_H + kfRows.length * KF_H;
+  const lanesHeight = visibleTracks.length * LANE_H + kfRows.length * KF_H;
 
   const snapEnabled = useEditor((s) => s.snapEnabled);
   const snapGuide = useEditor((s) => s.snapGuide);
@@ -786,13 +786,53 @@ export function Timeline() {
     null,
   );
 
+  /* --- laço de seleção (marquee) sobre as faixas --- */
+  const [marquee, setMarquee] = useState<{ x1: number; y1: number; x2: number; y2: number } | null>(
+    null,
+  );
+
+  const startMarquee = (e: React.PointerEvent) => {
+    if (e.button !== 0 || e.target !== e.currentTarget) return;
+    const additive = e.shiftKey || e.metaKey || e.ctrlKey;
+    if (!additive) select(null);
+    const x1 = e.clientX;
+    const y1 = e.clientY;
+    let box = { x1, y1, x2: x1, y2: y1 };
+    setMarquee(box);
+    const move = (ev: PointerEvent) => {
+      box = { x1, y1, x2: ev.clientX, y2: ev.clientY };
+      setMarquee(box);
+    };
+    const up = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      setMarquee(null);
+      const left = Math.min(box.x1, box.x2);
+      const right = Math.max(box.x1, box.x2);
+      const top = Math.min(box.y1, box.y2);
+      const bottom = Math.max(box.y1, box.y2);
+      if (right - left < 4 && bottom - top < 4) return;
+      const ids: string[] = [];
+      document.querySelectorAll<HTMLElement>("[data-clip-id]").forEach((el) => {
+        const r = el.getBoundingClientRect();
+        if (r.right < left || r.left > right || r.bottom < top || r.top > bottom) return;
+        const id = el.dataset.clipId;
+        if (id) ids.push(id);
+      });
+      if (ids.length) selectMany(ids, additive);
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+  };
+
   const rowHeights = useMemo(
     () =>
-      tracks.map(
+      visibleTracks.map(
         (t) => LANE_H + (selectedClip?.trackId === t.id ? kfRows.length * KF_H : 0),
       ),
-    [tracks, selectedClip, kfRows.length],
+    [visibleTracks, selectedClip, kfRows.length],
   );
+
 
   const indexFromY = useCallback(
     (clientY: number) => {
