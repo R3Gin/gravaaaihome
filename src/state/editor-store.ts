@@ -245,6 +245,12 @@ export interface EditorState {
   annotationFill: boolean;
   /** duração padrão (s) de cada anotação criada */
   annotationDuration: number;
+  /** imantação (snap) entre clipes — ligada por padrão */
+  snapEnabled: boolean;
+  /** linha-guia temporária exibida durante o arraste (segundos) */
+  snapGuide: number | null;
+  /** arquivos importados durante a edição (apenas em memória, nesta sessão) */
+  mediaLibrary: MediaItem[];
 }
 
 
@@ -272,6 +278,14 @@ export interface EditorActions {
   trimClip: (id: string, side: "start" | "end", newTime: number) => void;
   addTextClip: (text?: string) => void;
   addOverlayClip: (kind: "blur" | "spotlight") => void;
+  /* --- imantação --- */
+  toggleSnap: () => void;
+  setSnapGuide: (t: number | null) => void;
+  /* --- biblioteca de mídia --- */
+  addMediaItem: (item: MediaItem) => void;
+  removeMediaItem: (id: string) => void;
+  /** cria um clipe a partir de um item da biblioteca, no tempo indicado */
+  addMediaClip: (mediaId: string, startTime: number) => void;
   /** cria um clipe de anotação na faixa de efeitos, começando no playhead */
   addAnnotationClip: (annotation: Annotation) => void;
   setAnnotationTool: (tool: AnnotationTool | null) => void;
