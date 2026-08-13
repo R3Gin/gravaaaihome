@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { freeStart } from "@/lib/snap";
+import { applySnap, freeStart, snapReleaseTolerance, snapTargets } from "@/lib/snap";
 import {
   applyContinuity,
   KF_EPS,
