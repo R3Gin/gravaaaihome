@@ -583,15 +583,26 @@ export function Preview({ videoRef }: Props) {
                 className="pointer-events-none absolute h-px w-px opacity-0"
                 style={{ left: 0, top: 0 }}
               />
-              {/* segundo decodificador: pré-posiciona o próximo corte (sem micro-pausas) */}
+              {/* decodificadores reserva: pré-posicionam os próximos cortes */}
               <video
                 ref={videoBRef}
                 src={sourceUrl}
                 playsInline
                 muted
+                preload="auto"
                 className="pointer-events-none absolute h-px w-px opacity-0"
                 style={{ left: 0, top: 0 }}
               />
+              <video
+                ref={videoCRef}
+                src={sourceUrl}
+                playsInline
+                muted
+                preload="auto"
+                className="pointer-events-none absolute h-px w-px opacity-0"
+                style={{ left: 0, top: 0 }}
+              />
+
               {/* faixa de áudio separada do vídeo (quando o usuário desanexa) */}
               <audio ref={audioARef} src={sourceUrl} className="hidden" />
               <audio ref={audioBRef} src={sourceUrl} className="hidden" />
