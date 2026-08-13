@@ -151,6 +151,8 @@ export const FloatingRecorderPanel = forwardRef<
       w.document.body.style.margin = "0";
       w.document.body.style.overflow = "hidden";
       w.addEventListener("pagehide", () => setPipWindow(null));
+      // Nasce fora da área visível: só aparece quando o usuário sai da aba.
+      hidePipWindow(w);
       setPipWindow(w);
     } catch (err) {
       console.warn("[recorder-panel] Document PiP recusado:", err);
