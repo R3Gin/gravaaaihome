@@ -1066,25 +1066,25 @@ export const useEditor = create<EditorState & EditorActions>((set, get) => {
       const generated = def.build(clip, merged, anchor);
 
 
-      // remove presets anteriores da mesma categoria (e seus keyframes)
-      const previous = (clip.effectPresets ?? []).filter((p) => p.category === def.category);
-      const drop = new Set(previous.map((p) => p.id));
+      // presets são cumulativos: nada é removido ao aplicar um novo.
+      // Só evitamos keyframes duplicados exatamente no mesmo instante/propriedade.
       const map: KeyframeMap = {};
       for (const [prop, keys] of Object.entries(clip.keyframes ?? {})) {
-        const rest = keys.filter((k) => !k.origin || !drop.has(k.origin));
-        if (rest.length) map[prop] = rest;
+        if (keys.length) map[prop] = [...keys];
       }
-      // aplica os novos: substitui keyframes automáticos das mesmas props
       for (const [prop, keys] of Object.entries(generated)) {
         const tagged = keys.map((k) => ({ ...k, origin: instanceId }));
-        const manual = (map[prop] ?? []).filter((k) => !k.origin);
-        map[prop] = sortKeys([...manual, ...tagged]);
+        const existing = (map[prop] ?? []).filter(
+          (k) => !tagged.some((t) => Math.abs(t.time - k.time) < 0.005),
+        );
+        map[prop] = sortKeys([...existing, ...tagged]);
       }
 
       const presets: AppliedPreset[] = [
-        ...(clip.effectPresets ?? []).filter((p) => p.category !== def.category),
+        ...(clip.effectPresets ?? []),
         { id: instanceId, presetId, category: def.category, params: merged, anchor },
       ];
+
       get().updateClip(clipId, { keyframes: map, effectPresets: presets });
       set({ pendingEffectPreset: null, selectedKeyframes: [] });
     },
@@ -1103,8 +1103,13 @@ export const useEditor = create<EditorState & EditorActions>((set, get) => {
       }
       for (const [prop, keys] of Object.entries(generated)) {
         const tagged = keys.map((k) => ({ ...k, origin: instanceId }));
-        map[prop] = sortKeys([...(map[prop] ?? []).filter((k) => !k.origin), ...tagged]);
+        // preserva keyframes manuais e de outros presets
+        const existing = (map[prop] ?? []).filter(
+          (k) => !tagged.some((t) => Math.abs(t.time - k.time) < 0.005),
+        );
+        map[prop] = sortKeys([...existing, ...tagged]);
       }
+
       get().updateClip(clipId, {
         keyframes: map,
         effectPresets: (clip.effectPresets ?? []).map((p) =>

@@ -10,7 +10,7 @@
  * e ênfase começam ali; saída continua ancorada no fim do clipe.
  * ------------------------------------------------------------------ */
 
-import { newKeyframe, type Easing, type Keyframe, type KeyValue } from "@/lib/keyframes";
+import { newKeyframe, valueAt, type Easing, type Keyframe, type KeyValue } from "@/lib/keyframes";
 import type { Clip } from "@/state/editor-store";
 
 export type EffectCategory = "zoom" | "in" | "out" | "emphasis";
@@ -184,8 +184,53 @@ export const EFFECT_PRESETS: EffectPresetDef[] = [
       };
     },
   },
+  {
+    id: "zoom-reset",
+    label: "Reverter zoom",
+    category: "zoom",
+    controls: ["speed"],
+    types: ["video"],
+    build: (clip, p, anchor) => {
+      const a = anchorOf(clip, anchor);
+      const d = Math.min(SPEED_SECONDS[p.speed ?? "medium"], remaining(clip, a) * 0.9);
+      const base = basePosition(clip);
+      const curZoom = valueAt(clip.keyframes?.["zoom"], a);
+      const curPos = valueAt(clip.keyframes?.["position"], a);
+      const from = typeof curZoom === "number" ? curZoom : (clip.zoom ?? 1);
+      const fromPos =
+        curPos && typeof curPos === "object" ? curPos : (clip.position ?? base);
+      return {
+        zoom: [k(a, from, "ease-in-out"), k(a + d, 1, "ease-in-out")],
+        position: [k(a, fromPos, "ease-in-out"), k(a + d, base, "ease-in-out")],
+      };
+    },
+  },
+  {
+    id: "zoom-drift",
+    label: "Zoom contínuo (Ken Burns)",
+    category: "zoom",
+    needsPoint: true,
+    controls: ["zoomLevel", "duration"],
+    types: ["video"],
+    build: (clip, p, anchor) => {
+      const a = anchorOf(clip, anchor);
+      const avail = remaining(clip, a);
+      const scale = p.zoomLevel ?? 1.5;
+      const pan = panForPoint(p.point, scale);
+      const base = basePosition(clip);
+      const d = Math.max(0.6, Math.min((p.duration ?? 2) * 2, avail));
+      return {
+        zoom: [k(a, 1, "linear"), k(a + d, scale, "linear")],
+        position: [
+          k(a, base, "linear"),
+          k(a + d, { x: base.x + pan.x, y: base.y + pan.y }, "linear"),
+        ],
+      };
+    },
+  },
 
   /* --------------------------- Entrada --------------------------- */
+
   {
     id: "in-fade",
     label: "Aparecer com fade",
@@ -349,7 +394,73 @@ export const EFFECT_PRESETS: EffectPresetDef[] = [
       return { opacity: keys };
     },
   },
+  {
+    id: "emph-bounce",
+    label: "Quicar",
+    category: "emphasis",
+    controls: ["intensity"],
+    build: (clip, p, anchor) => {
+      const a = anchorOf(clip, anchor);
+      const amp = (clip.type === "text" ? 0.06 : 0.12) * AMPLITUDE[p.intensity ?? "medium"];
+      const base = basePosition(clip);
+      const period = 0.45;
+      const n = cycles(remaining(clip, a), period, 3);
+      const keys: Keyframe[] = [k(a, base, "ease-out")];
+      for (let i = 0; i < n; i++) {
+        keys.push(k(a + i * period + period / 2, { x: base.x, y: base.y - amp }, "ease-out"));
+        keys.push(k(a + (i + 1) * period, base, "ease-in"));
+      }
+      return { position: keys };
+    },
+  },
+  {
+    id: "emph-swing",
+    label: "Balançar",
+    category: "emphasis",
+    controls: ["intensity"],
+    build: (clip, p, anchor) => {
+      const a = anchorOf(clip, anchor);
+      const amp = 3 * AMPLITUDE[p.intensity ?? "medium"];
+      const step = 0.18;
+      const n = Math.min(8, Math.max(2, Math.floor(remaining(clip, a) / step)));
+      const rot: Keyframe[] = [k(a, 0)];
+      for (let i = 1; i <= n; i++) rot.push(k(a + i * step, (i % 2 === 0 ? 1 : -1) * amp));
+      rot.push(k(a + (n + 1) * step, 0));
+      return { rotation: rot };
+    },
+  },
+  {
+    id: "in-zoom",
+    label: "Entrar com zoom",
+    category: "in",
+    controls: ["speed"],
+    types: ["video"],
+    build: (clip, p, anchor) => {
+      const a = anchorOf(clip, anchor);
+      const d = Math.min(SPEED_SECONDS[p.speed ?? "medium"] * 1.5, remaining(clip, a) * 0.8);
+      return {
+        zoom: [k(a, 1.35, "ease-out"), k(a + d, 1, "ease-out")],
+        opacity: [k(a, 0, "ease-out"), k(a + Math.min(d, 0.4), 1, "ease-out")],
+      };
+    },
+  },
+  {
+    id: "out-spin",
+    label: "Sumir girando",
+    category: "out",
+    controls: ["speed"],
+    build: (clip, p) => {
+      const d = Math.min(SPEED_SECONDS[p.speed ?? "medium"] * 1.4, dur(clip) * 0.6);
+      const end = dur(clip);
+      return {
+        rotation: [k(end - d, 0, "ease-in"), k(end, 25, "ease-in")],
+        scale: [k(end - d, 1, "ease-in"), k(end, 0.6, "ease-in")],
+        opacity: [k(end - d, 1, "ease-in"), k(end, 0, "ease-in")],
+      };
+    },
+  },
 ];
+
 
 export const CATEGORY_LABEL: Record<EffectCategory, string> = {
   zoom: "Zoom",

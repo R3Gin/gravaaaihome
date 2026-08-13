@@ -26,7 +26,11 @@ function Chips({ clip }: { clip: Clip }) {
 
   return (
     <div className="space-y-2">
+      <span className="text-[11px] font-bold uppercase tracking-wide text-[var(--muted-foreground)]">
+        Efeitos aplicados ({applied.length})
+      </span>
       <div className="flex flex-wrap gap-1.5">
+
         {applied.map((inst) => {
           const def = presetById(inst.presetId);
           return (
@@ -41,8 +45,12 @@ function Chips({ clip }: { clip: Clip }) {
             >
               <button onClick={() => setOpen(open === inst.id ? null : inst.id)}>
                 {def?.label ?? inst.presetId}
+                <span className="ml-1 font-normal text-[10px] text-[var(--muted-foreground)]">
+                  {fmt(clip.startTime + (inst.anchor ?? 0))}
+                </span>
                 {inst.edited ? " (editado)" : ""}
               </button>
+
               <button
                 onClick={() => remove(clip.id, inst.id)}
                 aria-label={`Remover ${def?.label ?? "efeito"}`}
@@ -239,8 +247,10 @@ export function EffectsSimplePanel({ clip }: { clip: Clip }) {
       })}
 
       <p className="text-[10px] leading-relaxed text-[var(--muted-foreground)]">
-        O efeito começa na posição da agulha. Nos efeitos de zoom, clique no efeito e depois no
-        ponto do vídeo que deve ficar em destaque. Para ajustes finos, use a aba Avançado.
+        O efeito começa na posição da agulha. Você pode aplicar quantos efeitos quiser, inclusive o
+        mesmo efeito em tempos diferentes — cada aplicação vira um chip que pode ser ajustado ou
+        removido individualmente. Nos efeitos de zoom, clique no efeito e depois no ponto do vídeo
+        que deve ficar em destaque. Use “Reverter zoom” para voltar ao enquadramento normal.
       </p>
 
     </div>
