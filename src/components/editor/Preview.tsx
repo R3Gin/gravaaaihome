@@ -417,14 +417,19 @@ export function Preview({ videoRef }: Props) {
         >
           {/* elemento de mídia: só decodifica áudio/vídeo, nunca é exibido */}
           {sourceUrl ? (
-            <video
-              ref={videoRef}
-              src={sourceUrl}
-              playsInline
-              className="pointer-events-none absolute h-px w-px opacity-0"
-              style={{ left: 0, top: 0 }}
-            />
+            <>
+              <video
+                ref={videoRef}
+                src={sourceUrl}
+                playsInline
+                className="pointer-events-none absolute h-px w-px opacity-0"
+                style={{ left: 0, top: 0 }}
+              />
+              {/* faixa de áudio separada do vídeo (quando o usuário desanexa) */}
+              <audio ref={audioRef} src={sourceUrl} className="hidden" />
+            </>
           ) : null}
+
 
           <canvas ref={canvasRef} className="absolute inset-0 h-full w-full" />
 
