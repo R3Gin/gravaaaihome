@@ -270,27 +270,46 @@ export function Preview({ videoRef }: Props) {
 
     const state = useEditor.getState();
     const clips0 = videoClips();
-    const startClip =
-      clipAt(state.tracks, "video", state.currentTime) ??
-      clips0.find((c) => c.startTime + c.duration > state.currentTime) ??
-      null;
-    if (!startClip) {
-      setPlaying(false);
-      return;
-    }
-    if (state.currentTime < startClip.startTime) setCurrentTime(startClip.startTime + 0.001);
-    v.playbackRate = startClip.speed ?? 1;
-    // sempre parte do ponto correto dentro do arquivo de origem
-    const startSource =
-      startClip.sourceInStart +
-      Math.max(0, state.currentTime - startClip.startTime) * (startClip.speed ?? 1);
-    if (Math.abs(v.currentTime - startSource) > 0.05) {
-      v.currentTime = startSource;
-    }
-    void v.play().catch(() => setPlaying(false));
-
-    let activeId = startClip.id;
     const preps = videoPrepRef.current;
+
+    /** fim real do projeto: maior fim entre TODOS os clipes de todas as faixas */
+    const projectEnd = () => {
+      let end = 0;
+      for (const t of useEditor.getState().tracks)
+        for (const c of t.clips) end = Math.max(end, c.startTime + c.duration);
+      return end;
+    };
+
+    /** modo "clock": trechos sem vídeo (só áudio/texto) — a agulha anda pelo relógio */
+    let mode: "video" | "clock" = "clock";
+    let activeId: string | null = null;
+    let last = performance.now();
+
+    const enterVideo = (clip: (typeof clips0)[number], t: number) => {
+      const el = videoRef.current;
+      if (!el) return;
+      mode = "video";
+      activeId = clip.id;
+      const rate = clip.speed ?? 1;
+      el.playbackRate = rate;
+      el.muted = Boolean(clip.muted);
+      const src = clip.sourceInStart + Math.max(0, t - clip.startTime) * rate;
+      if (Math.abs(el.currentTime - src) > 0.05) el.currentTime = src;
+      void el.play().catch(() => setPlaying(false));
+    };
+
+    const enterClock = () => {
+      mode = "clock";
+      activeId = null;
+      pool().forEach((el) => el.pause());
+      preps.clear();
+      last = performance.now();
+    };
+
+    const startClip = clipAt(state.tracks, "video", state.currentTime);
+    if (startClip) enterVideo(startClip, state.currentTime);
+    else enterClock();
+
 
     /**
      * Reserva um decodificador livre e o posiciona no início do corte.
