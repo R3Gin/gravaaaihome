@@ -796,7 +796,16 @@ export function Timeline() {
   );
 
   const startMarquee = (e: React.PointerEvent) => {
-    if (e.button !== 0 || e.target !== e.currentTarget) return;
+    if (e.button !== 0) return;
+    const target = e.target as HTMLElement;
+    // pode começar em qualquer área vazia da timeline (inclusive fora das faixas),
+    // mas nunca por cima de clipes, botões, régua/agulha ou rótulos.
+    if (
+      target.closest(
+        "[data-clip-id],button,input,select,textarea,[data-no-marquee],.cursor-ew-resize,.cursor-grab,.cursor-grabbing",
+      )
+    )
+      return;
     const additive = e.shiftKey || e.metaKey || e.ctrlKey;
     if (!additive) select(null);
     const x1 = e.clientX;
@@ -828,6 +837,7 @@ export function Timeline() {
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerup", up);
   };
+
 
   const rowHeights = useMemo(
     () =>
