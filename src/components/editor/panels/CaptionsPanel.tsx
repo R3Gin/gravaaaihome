@@ -1,5 +1,5 @@
-import { useMemo, useState } from "react";
-import { Loader2, Play, Sparkles, Trash2 } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Loader2, Sparkles, Trash2, X } from "lucide-react";
 import { speechPlaceholders, transcribe } from "@/lib/captions";
 import { CAPTION_ANIMS } from "@/lib/caption-styles";
 import { useEditor } from "@/state/editor-store";
@@ -56,6 +56,12 @@ export function CaptionsPanel() {
   const updateClip = useEditor((s) => s.updateClip);
   const setCurrentTime = useEditor((s) => s.setCurrentTime);
   const select = useEditor((s) => s.select);
+  const selectMany = useEditor((s) => s.selectMany);
+  const toggleSelect = useEditor((s) => s.toggleSelect);
+  const removeClip = useEditor((s) => s.removeClip);
+  const rechunkCaptions = useEditor((s) => s.rechunkCaptions);
+  const currentTime = useEditor((s) => s.currentTime);
+  const selectedClipIds = useEditor((s) => s.selectedClipIds);
 
   const [busy, setBusy] = useState(false);
   const [stage, setStage] = useState<string>("");
@@ -72,6 +78,29 @@ export function CaptionsPanel() {
         .sort((a, b) => a.startTime - b.startTime),
     [tracks],
   );
+
+  const selectedCaptionIds = useMemo(
+    () => captions.filter((c) => selectedClipIds.includes(c.id)).map((c) => c.id),
+    [captions, selectedClipIds],
+  );
+
+  /** aplica estilo só nas legendas selecionadas; sem seleção, aplica em todas */
+  const applyStyle = (patch: Parameters<typeof setCaptionStyle>[0]) =>
+    setCaptionStyle(patch, selectedCaptionIds.length ? selectedCaptionIds : undefined);
+
+  const activeId = useMemo(() => {
+    const hit = captions.find(
+      (c) => currentTime >= c.startTime && currentTime <= c.startTime + c.duration,
+    );
+    return hit?.id ?? null;
+  }, [captions, currentTime]);
+
+  const listRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    if (!activeId || !listRef.current) return;
+    const el = listRef.current.querySelector<HTMLElement>(`[data-cap="${activeId}"]`);
+    el?.scrollIntoView({ block: "nearest" });
+  }, [activeId]);
 
   const run = async () => {
     if (!sourceBlob) return;
@@ -153,7 +182,10 @@ export function CaptionsPanel() {
             <button
               key={b.id}
               title={b.hint}
-              onClick={() => setCaptionStyle({ blockSize: b.id })}
+              onClick={() => {
+                setCaptionStyle({ blockSize: b.id });
+                rechunkCaptions();
+              }}
               className={cn(
                 "flex-1 rounded-md border px-2 py-1.5 text-[11px] font-semibold transition-colors",
                 (style.blockSize ?? "medio") === b.id
@@ -242,7 +274,7 @@ export function CaptionsPanel() {
                   <button
                     key={a.id}
                     title={a.hint}
-                    onClick={() => setCaptionStyle({ anim: a.id })}
+                    onClick={() => applyStyle({ anim: a.id })}
                     className={cn(
                       "w-[104px] shrink-0 rounded-lg border p-2 text-left transition-colors",
                       style.anim === a.id
@@ -268,7 +300,7 @@ export function CaptionsPanel() {
               <span className="text-[11px] text-[var(--muted-foreground)]">Fonte</span>
               <select
                 value={style.fontFamily}
-                onChange={(e) => setCaptionStyle({ fontFamily: e.target.value })}
+                onChange={(e) => applyStyle({ fontFamily: e.target.value })}
                 className="w-full rounded-md border border-[var(--border)] bg-transparent px-2 py-1.5 text-[11px]"
               >
                 {FONTS.map((f) => (
@@ -289,7 +321,7 @@ export function CaptionsPanel() {
                 max={72}
                 step={1}
                 value={style.fontSize}
-                onChange={(e) => setCaptionStyle({ fontSize: Number(e.target.value) })}
+                onChange={(e) => applyStyle({ fontSize: Number(e.target.value) })}
                 className="w-full accent-[var(--brand)]"
               />
             </label>
@@ -300,7 +332,7 @@ export function CaptionsPanel() {
                 <input
                   type="color"
                   value={style.color}
-                  onChange={(e) => setCaptionStyle({ color: e.target.value })}
+                  onChange={(e) => applyStyle({ color: e.target.value })}
                   className="h-8 w-full rounded-lg border border-[var(--border)] bg-transparent"
                 />
               </label>
@@ -309,7 +341,7 @@ export function CaptionsPanel() {
                 <input
                   type="color"
                   value={style.highlight}
-                  onChange={(e) => setCaptionStyle({ highlight: e.target.value })}
+                  onChange={(e) => applyStyle({ highlight: e.target.value })}
                   className="h-8 w-full rounded-lg border border-[var(--border)] bg-transparent"
                 />
               </label>
@@ -324,7 +356,7 @@ export function CaptionsPanel() {
                 min={0}
                 max={100}
                 value={Math.round(style.bgOpacity * 100)}
-                onChange={(e) => setCaptionStyle({ bgOpacity: Number(e.target.value) / 100 })}
+                onChange={(e) => applyStyle({ bgOpacity: Number(e.target.value) / 100 })}
                 className="w-full accent-[var(--brand)]"
               />
             </label>
@@ -333,7 +365,7 @@ export function CaptionsPanel() {
               {(["bottom", "middle", "top"] as const).map((p) => (
                 <button
                   key={p}
-                  onClick={() => setCaptionStyle({ place: p })}
+                  onClick={() => applyStyle({ place: p })}
                   className={cn(
                     "flex-1 rounded-md border px-2 py-1.5 text-[11px] font-semibold",
                     style.place === p
@@ -350,7 +382,7 @@ export function CaptionsPanel() {
               {(["left", "center", "right"] as const).map((a) => (
                 <button
                   key={a}
-                  onClick={() => setCaptionStyle({ align: a })}
+                  onClick={() => applyStyle({ align: a })}
                   className={cn(
                     "flex-1 rounded-md border px-2 py-1.5 text-[11px] font-semibold",
                     style.align === a
@@ -373,7 +405,7 @@ export function CaptionsPanel() {
               ).map(([key, label]) => (
                 <button
                   key={key}
-                  onClick={() => setCaptionStyle({ [key]: !style[key] } as never)}
+                  onClick={() => applyStyle({ [key]: !style[key] } as never)}
                   className={cn(
                     "flex-1 rounded-md border px-2 py-1.5 text-[11px]",
                     key === "bold" && "font-black",
@@ -393,7 +425,7 @@ export function CaptionsPanel() {
               {([true, false] as const).map((v) => (
                 <button
                   key={String(v)}
-                  onClick={() => setCaptionStyle({ wordByWord: v })}
+                  onClick={() => applyStyle({ wordByWord: v })}
                   className={cn(
                     "flex-1 rounded-md border px-2 py-1.5 text-[11px] font-semibold",
                     style.wordByWord === v
@@ -410,7 +442,7 @@ export function CaptionsPanel() {
               <input
                 type="checkbox"
                 checked={style.background}
-                onChange={(e) => setCaptionStyle({ background: e.target.checked })}
+                onChange={(e) => applyStyle({ background: e.target.checked })}
                 className="accent-[var(--brand)]"
               />
               Fundo atrás do texto
