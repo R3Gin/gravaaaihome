@@ -86,6 +86,14 @@ export function CaptionsPanel() {
     [captions, selectedClipIds],
   );
 
+  /** legenda desatualizada: houve corte/divisão depois que ela foi gerada */
+  const captionsSig = useEditor((s) => s.captionsSig);
+  const stale = useMemo(() => {
+    if (!captionsSig || captions.length === 0) return false;
+    return timelineAudioSignature(tracks.flatMap((t) => t.clips) as AudioClipRef[]) !== captionsSig;
+  }, [captionsSig, captions.length, tracks]);
+
+
   /** estilo mostrado nos controles: o da 1ª legenda selecionada, se houver */
   const view = useMemo(() => {
     const first = captions.find((c) => selectedClipIds.includes(c.id));
