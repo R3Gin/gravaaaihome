@@ -1,5 +1,21 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AudioLines, Copy, GripVertical, Magnet, Scissors, Trash2, ZoomIn, ZoomOut } from "lucide-react";
+import {
+  AudioLines,
+  Copy,
+  GripVertical,
+  Link2,
+  Link2Off,
+  Magnet,
+  Music,
+  Scissors,
+  Sparkles,
+  Trash2,
+  Type,
+  Video,
+  ZoomIn,
+  ZoomOut,
+} from "lucide-react";
+
 import { applySnap, freeStart, snapReleaseTolerance, snapTargets, snapTolerance } from "@/lib/snap";
 import {
   MIN_CLIP,
