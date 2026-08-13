@@ -84,6 +84,12 @@ export function CaptionsPanel() {
     [captions, selectedClipIds],
   );
 
+  /** estilo mostrado nos controles: o da 1ª legenda selecionada, se houver */
+  const view = useMemo(() => {
+    const first = captions.find((c) => selectedClipIds.includes(c.id));
+    return first?.captionOverride ? { ...style, ...first.captionOverride } : style;
+  }, [captions, selectedClipIds, style]);
+
   /** aplica estilo só nas legendas selecionadas; sem seleção, aplica em todas */
   const applyStyle = (patch: Parameters<typeof setCaptionStyle>[0]) =>
     setCaptionStyle(patch, selectedCaptionIds.length ? selectedCaptionIds : undefined);
@@ -277,7 +283,7 @@ export function CaptionsPanel() {
                     onClick={() => applyStyle({ anim: a.id })}
                     className={cn(
                       "w-[104px] shrink-0 rounded-lg border p-2 text-left transition-colors",
-                      style.anim === a.id
+                      view.anim === a.id
                         ? "border-[var(--brand)] bg-[var(--brand)]/10"
                         : "border-[var(--border)] hover:border-white/25",
                     )}
@@ -299,7 +305,7 @@ export function CaptionsPanel() {
             <label className="block space-y-1">
               <span className="text-[11px] text-[var(--muted-foreground)]">Fonte</span>
               <select
-                value={style.fontFamily}
+                value={view.fontFamily}
                 onChange={(e) => applyStyle({ fontFamily: e.target.value })}
                 className="w-full rounded-md border border-[var(--border)] bg-transparent px-2 py-1.5 text-[11px]"
               >
@@ -313,14 +319,14 @@ export function CaptionsPanel() {
 
             <label className="block space-y-1">
               <span className="text-[11px] text-[var(--muted-foreground)]">
-                Tamanho · {style.fontSize}px
+                Tamanho · {view.fontSize}px
               </span>
               <input
                 type="range"
                 min={12}
                 max={72}
                 step={1}
-                value={style.fontSize}
+                value={view.fontSize}
                 onChange={(e) => applyStyle({ fontSize: Number(e.target.value) })}
                 className="w-full accent-[var(--brand)]"
               />
@@ -331,7 +337,7 @@ export function CaptionsPanel() {
                 <span className="text-[11px] text-[var(--muted-foreground)]">Cor do texto</span>
                 <input
                   type="color"
-                  value={style.color}
+                  value={view.color}
                   onChange={(e) => applyStyle({ color: e.target.value })}
                   className="h-8 w-full rounded-lg border border-[var(--border)] bg-transparent"
                 />
@@ -340,7 +346,7 @@ export function CaptionsPanel() {
                 <span className="text-[11px] text-[var(--muted-foreground)]">Realce / fundo</span>
                 <input
                   type="color"
-                  value={style.highlight}
+                  value={view.highlight}
                   onChange={(e) => applyStyle({ highlight: e.target.value })}
                   className="h-8 w-full rounded-lg border border-[var(--border)] bg-transparent"
                 />
@@ -349,13 +355,13 @@ export function CaptionsPanel() {
 
             <label className="block space-y-1">
               <span className="text-[11px] text-[var(--muted-foreground)]">
-                Opacidade do fundo · {Math.round(style.bgOpacity * 100)}%
+                Opacidade do fundo · {Math.round(view.bgOpacity * 100)}%
               </span>
               <input
                 type="range"
                 min={0}
                 max={100}
-                value={Math.round(style.bgOpacity * 100)}
+                value={Math.round(view.bgOpacity * 100)}
                 onChange={(e) => applyStyle({ bgOpacity: Number(e.target.value) / 100 })}
                 className="w-full accent-[var(--brand)]"
               />
@@ -368,7 +374,7 @@ export function CaptionsPanel() {
                   onClick={() => applyStyle({ place: p })}
                   className={cn(
                     "flex-1 rounded-md border px-2 py-1.5 text-[11px] font-semibold",
-                    style.place === p
+                    view.place === p
                       ? "border-[var(--brand)] bg-[var(--brand)]/15 text-[var(--brand)]"
                       : "border-[var(--border)] text-[var(--muted-foreground)]",
                   )}
@@ -385,7 +391,7 @@ export function CaptionsPanel() {
                   onClick={() => applyStyle({ align: a })}
                   className={cn(
                     "flex-1 rounded-md border px-2 py-1.5 text-[11px] font-semibold",
-                    style.align === a
+                    view.align === a
                       ? "border-[var(--brand)] bg-[var(--brand)]/15 text-[var(--brand)]"
                       : "border-[var(--border)] text-[var(--muted-foreground)]",
                   )}
@@ -405,13 +411,13 @@ export function CaptionsPanel() {
               ).map(([key, label]) => (
                 <button
                   key={key}
-                  onClick={() => applyStyle({ [key]: !style[key] } as never)}
+                  onClick={() => applyStyle({ [key]: !view[key] } as never)}
                   className={cn(
                     "flex-1 rounded-md border px-2 py-1.5 text-[11px]",
                     key === "bold" && "font-black",
                     key === "italic" && "italic font-semibold",
                     key === "outline" && "font-semibold",
-                    style[key]
+                    view[key]
                       ? "border-[var(--brand)] bg-[var(--brand)]/15 text-[var(--brand)]"
                       : "border-[var(--border)] text-[var(--muted-foreground)]",
                   )}
@@ -428,7 +434,7 @@ export function CaptionsPanel() {
                   onClick={() => applyStyle({ wordByWord: v })}
                   className={cn(
                     "flex-1 rounded-md border px-2 py-1.5 text-[11px] font-semibold",
-                    style.wordByWord === v
+                    view.wordByWord === v
                       ? "border-[var(--brand)] bg-[var(--brand)]/15 text-[var(--brand)]"
                       : "border-[var(--border)] text-[var(--muted-foreground)]",
                   )}
@@ -441,7 +447,7 @@ export function CaptionsPanel() {
             <label className="flex items-center gap-2 text-[11px]">
               <input
                 type="checkbox"
-                checked={style.background}
+                checked={view.background}
                 onChange={(e) => applyStyle({ background: e.target.checked })}
                 className="accent-[var(--brand)]"
               />
