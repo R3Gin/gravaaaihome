@@ -809,6 +809,9 @@ export const useEditor = create<EditorState & EditorActions>((set, get) => {
         future: [],
         silences: [],
         removedRanges: [],
+        transcript: null,
+        captionsSig: null,
+
       });
 
     },
