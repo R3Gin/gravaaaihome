@@ -666,11 +666,11 @@ export function ScreenRecorder() {
         clearInterval(timerRef.current);
         timerRef.current = null;
       }
-      const showReady = (mp4Blob: Blob) => {
-        downloadBlobRef.current = mp4Blob;
-        const url = URL.createObjectURL(mp4Blob);
+      const showReady = (finalBlob: Blob, ext: "mp4" | "webm" = "mp4") => {
+        downloadBlobRef.current = finalBlob;
+        const url = URL.createObjectURL(finalBlob);
         setDownloadUrl(url);
-        setDownloadExt("mp4");
+        setDownloadExt(ext);
         if (previewRef.current) {
           previewRef.current.srcObject = null;
           previewRef.current.src = url;
@@ -689,10 +689,21 @@ export function ScreenRecorder() {
         showReady(mp4);
       } catch (err) {
         console.error("[gravaai] processamento MP4 falhou:", err);
-        downloadBlobRef.current = null;
-        setDownloadUrl(null);
-        setError("Não foi possível gerar um MP4 válido para download. Tente gravar novamente.");
-        setStatus("idle");
+        // A gravação existe e é reproduzível — nunca descartamos o vídeo por
+        // causa de uma falha do conversor. Entregamos o arquivo original:
+        // MP4 nativo continua .mp4; o resto sai como .webm (abre em qualquer
+        // navegador e pode ser convertido depois no Editor).
+        if (isNativeMp4) {
+          showReady(blob, "mp4");
+          setError(
+            "Não deu para otimizar o MP4 (metadados), mas sua gravação está pronta para baixar.",
+          );
+        } else {
+          showReady(blob, "webm");
+          setError(
+            "A conversão para MP4 falhou (o processador de vídeo não carregou). Sua gravação está salva em WebM — dá para baixar, editar e exportar em MP4 pelo Editor.",
+          );
+        }
       }
     };
     recorderRef.current = rec;

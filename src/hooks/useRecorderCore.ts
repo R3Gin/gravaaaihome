@@ -197,12 +197,19 @@ export function useRecorderCore(opts: UseRecorderCoreOptions = {}) {
           finalize(mp4, "mp4", "video/mp4");
         } catch (err) {
           console.error("[recorder-core] processamento MP4 falhou:", err);
-          reportError(
-            "Não foi possível gerar um MP4 válido para download. Tente gravar novamente.",
-          );
-          downloadBlobRef.current = null;
-          setDownloadUrl(null);
-          setStatus("idle");
+          // Fallback: entregamos o arquivo gravado como está em vez de perder
+          // a gravação por causa de uma falha do conversor.
+          if (isNativeMp4) {
+            finalize(blob, "mp4", "video/mp4");
+            reportError(
+              "Não deu para otimizar o MP4 (metadados), mas sua gravação está pronta para baixar.",
+            );
+          } else {
+            finalize(blob, "webm", "video/webm");
+            reportError(
+              "A conversão para MP4 falhou (o processador de vídeo não carregou). Sua gravação está salva em WebM — dá para baixar e exportar em MP4 pelo Editor.",
+            );
+          }
         }
       };
       recorderRef.current = rec;
