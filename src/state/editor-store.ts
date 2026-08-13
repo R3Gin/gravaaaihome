@@ -267,7 +267,15 @@ export interface EditorState {
   removedRanges: SilenceRange[];
   captionStyle: CaptionStyle;
   /** transcrição bruta da sessão — permite reagrupar sem rodar o Whisper de novo */
-  transcript: { segments: { start: number; end: number; text: string }[]; words: WordTiming[] } | null;
+  transcript: {
+    segments: { start: number; end: number; text: string }[];
+    words: WordTiming[];
+    /** true quando os tempos já estão na linha do tempo editada (áudio composto) */
+    timeline?: boolean;
+  } | null;
+  /** assinatura do áudio da timeline no momento em que a legenda foi gerada */
+  captionsSig: string | null;
+
   /** exibição das sub-linhas de keyframes na timeline (atalho U / UU) */
   kfExpanded: "none" | "animated" | "all";
   /** keyframes selecionados na timeline (permite mover/deletar em conjunto) */
