@@ -142,29 +142,83 @@ export function Preview({ videoRef }: Props) {
     }
   }, [currentTime, playing, videoRef]);
 
-  /* --- áudio separado do vídeo: um <audio> segue o clipe da faixa de áudio --- */
-  const audioRef = useRef<HTMLAudioElement>(null);
+  /* --- duplo buffer de vídeo: evita seek (e congelamento) nas emendas --- */
+  const videoARef = useRef<HTMLVideoElement | null>(null);
+  const videoBRef = useRef<HTMLVideoElement | null>(null);
+  const videoPrepRef = useRef<{ clipId: string; ready: boolean } | null>(null);
+
+  /* --- áudio separado do vídeo: dois <audio> alternados (sem pausa na emenda) --- */
+
+  const audioARef = useRef<HTMLAudioElement>(null);
+  const audioBRef = useRef<HTMLAudioElement>(null);
+  const audioActiveRef = useRef<HTMLAudioElement | null>(null);
+  const audioPrepRef = useRef<{ clipId: string; ready: boolean } | null>(null);
+  const audioClipRef = useRef<string | null>(null);
   useEffect(() => {
     const sync = () => {
-      const a = audioRef.current;
+      const a = audioActiveRef.current ?? audioARef.current;
+      audioActiveRef.current = a;
       const v = videoRef.current;
       const s = useEditor.getState();
       const videoClip = clipAt(s.tracks, "video", s.currentTime);
       if (v) v.muted = Boolean(videoClip?.muted);
       if (!a) return;
+      const audioClips = [...(s.tracks.find((t) => t.type === "audio")?.clips ?? [])].sort(
+        (x, y) => x.startTime - y.startTime,
+      );
       const audioClip = clipAt(s.tracks, "audio", s.currentTime);
+      const standby = a === audioARef.current ? audioBRef.current : audioARef.current;
+
       if (!audioClip || !audioClip.sourceUrl) {
         if (!a.paused) a.pause();
+        if (standby && !standby.paused) standby.pause();
+        audioClipRef.current = null;
         return;
       }
-      a.volume = Math.max(0, Math.min(1, audioClip.volume ?? 1));
-      a.playbackRate = audioClip.speed ?? 1;
+
+      // troca de clipe: usa o elemento de reserva já posicionado, se houver
+      if (audioClipRef.current !== audioClip.id) {
+        if (standby && audioPrepRef.current?.clipId === audioClip.id && audioPrepRef.current.ready) {
+          a.pause();
+          audioActiveRef.current = standby;
+          audioPrepRef.current = null;
+        }
+        audioClipRef.current = audioClip.id;
+      }
+
+      const act = audioActiveRef.current!;
+      const other = act === audioARef.current ? audioBRef.current : audioARef.current;
+      if (other && !other.paused) other.pause();
+      act.volume = Math.max(0, Math.min(1, audioClip.volume ?? 1));
+      act.playbackRate = audioClip.speed ?? 1;
       const target =
-        audioClip.sourceInStart +
-        (s.currentTime - audioClip.startTime) * (audioClip.speed ?? 1);
-      if (Math.abs(a.currentTime - target) > 0.12) a.currentTime = target;
-      if (s.playing && a.paused) void a.play().catch(() => undefined);
-      if (!s.playing && !a.paused) a.pause();
+        audioClip.sourceInStart + (s.currentTime - audioClip.startTime) * (audioClip.speed ?? 1);
+      if (Math.abs(act.currentTime - target) > 0.12) act.currentTime = target;
+      if (s.playing && act.paused) void act.play().catch(() => undefined);
+      if (!s.playing && !act.paused) act.pause();
+
+      // pré-posiciona o próximo clipe de áudio (descontínuo) antes da emenda
+      if (!s.playing || !other) return;
+      const idx = audioClips.findIndex((c) => c.id === audioClip.id);
+      const next = idx >= 0 ? audioClips[idx + 1] : undefined;
+      if (!next) return;
+      const remaining = audioClip.startTime + audioClip.duration - s.currentTime;
+      if (remaining > 0.8 || remaining < 0) return;
+      if (audioPrepRef.current?.clipId === next.id) return;
+      audioPrepRef.current = { clipId: next.id, ready: false };
+      other.pause();
+      other.volume = Math.max(0, Math.min(1, next.volume ?? 1));
+      other.playbackRate = next.speed ?? 1;
+      const onSeeked = () => {
+        other.removeEventListener("seeked", onSeeked);
+        if (audioPrepRef.current?.clipId === next.id) audioPrepRef.current.ready = true;
+      };
+      other.addEventListener("seeked", onSeeked);
+      try {
+        other.currentTime = next.sourceInStart;
+      } catch {
+        audioPrepRef.current = null;
+      }
     };
     sync();
     const unsub = useEditor.subscribe(sync);
@@ -172,9 +226,11 @@ export function Preview({ videoRef }: Props) {
     return () => {
       unsub();
       window.clearInterval(id);
-      audioRef.current?.pause();
+      audioARef.current?.pause();
+      audioBRef.current?.pause();
     };
   }, [videoRef, sourceUrl]);
+
 
   /* --- trocar de aba apenas pausa: o estado do editor é preservado --- */
   useEffect(() => {
@@ -191,11 +247,14 @@ export function Preview({ videoRef }: Props) {
     const v = videoRef.current;
     if (!v) return;
     if (!playing) {
-      v.pause();
+      videoARef.current?.pause();
+      videoBRef.current?.pause();
+      videoPrepRef.current = null;
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
       rafRef.current = null;
       return;
     }
+
     const videoClips = () =>
       [...(useEditor.getState().tracks.find((t) => t.type === "video")?.clips ?? [])].sort(
         (a, b) => a.startTime - b.startTime,
@@ -225,24 +284,58 @@ export function Preview({ videoRef }: Props) {
     let activeId = startClip.id;
 
     /** Salta para o próximo clipe da timeline sem pausar o elemento <video>. */
-    const jumpTo = (next: (typeof clips0)[number]) => {
+    const jumpTo = (cur: HTMLVideoElement, next: (typeof clips0)[number]) => {
       activeId = next.id;
       const rate = next.speed ?? 1;
-      if (v.playbackRate !== rate) v.playbackRate = rate;
-      // Só reposiciona o arquivo quando o próximo clipe NÃO é contíguo:
-      // trechos contíguos continuam tocando sem seek algum.
-      if (Math.abs(v.currentTime - next.sourceInStart) > 0.06) {
-        v.currentTime = next.sourceInStart;
+      const standby = cur === videoARef.current ? videoBRef.current : videoARef.current;
+      const prep = videoPrepRef.current;
+      const contiguous = Math.abs(cur.currentTime - next.sourceInStart) <= 0.06;
+
+      if (!contiguous && standby && prep?.clipId === next.id && prep.ready) {
+        // corte descontínuo: o segundo decodificador já está no ponto certo
+        standby.playbackRate = rate;
+        standby.muted = Boolean(next.muted);
+        cur.pause();
+        cur.muted = true;
+        videoRef.current = standby;
+        videoPrepRef.current = null;
+        setCurrentTime(next.startTime + 0.001);
+        void standby.play().catch(() => undefined);
+        return;
       }
+
+      if (cur.playbackRate !== rate) cur.playbackRate = rate;
+      if (!contiguous) cur.currentTime = next.sourceInStart;
       setCurrentTime(next.startTime + 0.001);
-      if (v.paused) {
-        void v.play().catch(() => undefined);
+      if (cur.paused) void cur.play().catch(() => undefined);
+    };
+
+    /** Pré-posiciona o decodificador reserva no início do próximo corte. */
+    const prepareNext = (cur: HTMLVideoElement, next: (typeof clips0)[number]) => {
+      const standby = cur === videoARef.current ? videoBRef.current : videoARef.current;
+      if (!standby) return;
+      if (videoPrepRef.current?.clipId === next.id) return;
+      if (Math.abs(cur.currentTime - next.sourceInStart) <= 0.06) return; // contíguo: nada a fazer
+      videoPrepRef.current = { clipId: next.id, ready: false };
+      standby.pause();
+      standby.muted = true;
+      const onSeeked = () => {
+        standby.removeEventListener("seeked", onSeeked);
+        if (videoPrepRef.current?.clipId === next.id) videoPrepRef.current.ready = true;
+      };
+      standby.addEventListener("seeked", onSeeked);
+      try {
+        standby.currentTime = next.sourceInStart;
+      } catch {
+        videoPrepRef.current = null;
       }
     };
 
     const tick = () => {
       rafRef.current = requestAnimationFrame(tick);
       const s = useEditor.getState();
+      const cur = videoRef.current;
+      if (!cur) return;
       const clips = videoClips();
       if (clips.length === 0) {
         setPlaying(false);
@@ -256,25 +349,29 @@ export function Preview({ videoRef }: Props) {
         clips[clips.length - 1]!;
       activeId = clip.id;
       const speed = clip.speed ?? 1;
-      if (v.playbackRate !== speed) v.playbackRate = speed;
+      if (cur.playbackRate !== speed) cur.playbackRate = speed;
+      cur.muted = Boolean(clip.muted);
       // o navegador pode pausar por buffering/seek: retomamos sempre
-      if (v.paused && !v.seeking) {
-        void v.play().catch(() => undefined);
+      if (cur.paused && !cur.seeking) {
+        void cur.play().catch(() => undefined);
       }
 
-      const reachedEnd = v.currentTime >= clip.sourceInEnd - 0.02 || (v.ended && !v.seeking);
+      const next = clips.find((c) => c.startTime + 0.001 >= clip.startTime + clip.duration);
+      const reachedEnd = cur.currentTime >= clip.sourceInEnd - 0.02 || (cur.ended && !cur.seeking);
       if (reachedEnd) {
-        const next = clips.find((c) => c.startTime + 0.001 >= clip.startTime + clip.duration);
         if (next) {
-          jumpTo(next);
+          jumpTo(cur, next);
           return;
         }
         setCurrentTime(clip.startTime + clip.duration);
         setPlaying(false);
         return;
       }
-      setCurrentTime(clip.startTime + (v.currentTime - clip.sourceInStart) / speed);
+      // ~0,6 s antes da emenda já deixa o próximo trecho decodificado
+      if (next && cur.currentTime >= clip.sourceInEnd - 0.6) prepareNext(cur, next);
+      setCurrentTime(clip.startTime + (cur.currentTime - clip.sourceInStart) / speed);
     };
+
 
     rafRef.current = requestAnimationFrame(tick);
     return () => {
@@ -454,16 +551,30 @@ export function Preview({ videoRef }: Props) {
           {sourceUrl ? (
             <>
               <video
-                ref={videoRef}
+                ref={(el) => {
+                  videoARef.current = el;
+                  if (el && !videoRef.current) videoRef.current = el;
+                }}
                 src={sourceUrl}
                 playsInline
                 className="pointer-events-none absolute h-px w-px opacity-0"
                 style={{ left: 0, top: 0 }}
               />
+              {/* segundo decodificador: pré-posiciona o próximo corte (sem micro-pausas) */}
+              <video
+                ref={videoBRef}
+                src={sourceUrl}
+                playsInline
+                muted
+                className="pointer-events-none absolute h-px w-px opacity-0"
+                style={{ left: 0, top: 0 }}
+              />
               {/* faixa de áudio separada do vídeo (quando o usuário desanexa) */}
-              <audio ref={audioRef} src={sourceUrl} className="hidden" />
+              <audio ref={audioARef} src={sourceUrl} className="hidden" />
+              <audio ref={audioBRef} src={sourceUrl} className="hidden" />
             </>
           ) : null}
+
 
 
           <canvas ref={canvasRef} className="absolute inset-0 h-full w-full" />

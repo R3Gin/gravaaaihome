@@ -15,10 +15,12 @@ import {
 } from "@/state/editor-store";
 import { drawAnnotation } from "@/lib/annotations";
 import {
+  ExportAbortedError,
   exportWithWebCodecs,
   webcodecsAvailable,
   type ExportQuality,
 } from "@/lib/export-webcodecs";
+
 
 function frameSize(aspect: AspectRatio, base: { width: number; height: number }): OutputFrame {
   const h = Math.max(360, Math.min(1080, base.height || 720));
@@ -88,6 +90,9 @@ export interface ExportProjectOptions {
   mediaLibrary?: MediaItem[];
   /** força o motor lento (ffmpeg.wasm) — só para diagnóstico */
   forceFfmpeg?: boolean;
+  /** cancela a exportação em andamento */
+  signal?: AbortSignal;
+
 }
 
 /** Projeto sem nenhuma edição: dá para entregar o arquivo original direto. */
@@ -165,12 +170,17 @@ export async function exportProject(
         mediaLibrary: opts.mediaLibrary ?? [],
         quality: opts.quality ?? "rapida",
         onProgress,
+        signal: opts.signal,
       });
     } catch (err) {
+      if (err instanceof ExportAbortedError || opts.signal?.aborted) throw err;
       console.warn("[export] motor rápido falhou, usando ffmpeg", err);
       onProgress?.(0);
     }
   }
+
+  if (opts.signal?.aborted) throw new ExportAbortedError();
+
 
   const W = Math.max(2, Math.round((videoSize.width || 1280) / 2) * 2);
   const H = Math.max(2, Math.round((videoSize.height || 720) / 2) * 2);
