@@ -74,7 +74,7 @@ async function getFFmpeg(onLog?: (msg: string) => void): Promise<FFmpeg> {
           coreURL: `${base}/ffmpeg-core.js`,
           wasmURL: `${base}/ffmpeg-core.wasm`,
         }),
-        15000,
+        60000,
         base,
       );
     };
@@ -86,7 +86,7 @@ async function getFFmpeg(onLog?: (msg: string) => void): Promise<FFmpeg> {
             wasmURL: await toBlobURL(`${base}/ffmpeg-core.wasm`, "application/wasm"),
           });
         })(),
-        20000,
+        60000,
         `${base} (blob)`,
       );
     };
@@ -103,11 +103,16 @@ async function getFFmpeg(onLog?: (msg: string) => void): Promise<FFmpeg> {
         console.warn("[ffmpeg] jsdelivr direto falhou, tentando via blob", err2);
         try {
           await tryLoadBlob(CORE_BASE_CDN);
-        } catch (err3) {
-          console.error("[ffmpeg] todas as tentativas de carregar o core falharam", err3);
-          throw new Error(
-            "Não foi possível carregar o processador de vídeo — tente recarregar a página.",
-          );
+        } catch (err3a) {
+          console.warn("[ffmpeg] blob unpkg falhou, tentando blob jsdelivr", err3a);
+          try {
+            await tryLoadBlob(CORE_BASE_CDN_FALLBACK);
+          } catch (err3) {
+            console.error("[ffmpeg] todas as tentativas de carregar o core falharam", err3);
+            throw new Error(
+              "Não foi possível carregar o processador de vídeo — verifique a conexão e recarregue a página.",
+            );
+          }
         }
       }
     }
