@@ -832,7 +832,9 @@ export function ScreenRecorder() {
 
   return (
     <div className="space-y-6">
+      <AutoPipNotice />
       <FloatingRecorderPanel
+
         ref={panelRef}
         visible={panelVisible}
         recording={isRecording}
