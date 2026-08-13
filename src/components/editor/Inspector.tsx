@@ -1,6 +1,7 @@
-import { useState } from "react";
 import { ChevronLeft, ChevronRight, Diamond, Plus } from "lucide-react";
-import { EffectsSimplePanel } from "@/components/editor/panels/EffectsSimplePanel";
+import { EffectInspector } from "@/components/editor/panels/EffectInspector";
+import { ClipTransitionControls } from "@/components/editor/panels/ClipTransitionControls";
+import { presetById } from "@/lib/effect-presets";
 import { findClip, useEditor, type Clip } from "@/state/editor-store";
 import {
   animatablePropsFor,
