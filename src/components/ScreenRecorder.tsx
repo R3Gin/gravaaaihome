@@ -30,6 +30,8 @@ import {
   FloatingRecorderPanel,
   type FloatingRecorderPanelHandle,
 } from "./FloatingRecorderPanel";
+import { AutoPipNotice } from "./AutoPipNotice";
+
 
 type Status = "idle" | "capturing" | "recording" | "converting" | "ready";
 
@@ -832,7 +834,9 @@ export function ScreenRecorder() {
 
   return (
     <div className="space-y-6">
+      <AutoPipNotice />
       <FloatingRecorderPanel
+
         ref={panelRef}
         visible={panelVisible}
         recording={isRecording}
