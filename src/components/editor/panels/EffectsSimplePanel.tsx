@@ -247,8 +247,10 @@ export function EffectsSimplePanel({ clip }: { clip: Clip }) {
       })}
 
       <p className="text-[10px] leading-relaxed text-[var(--muted-foreground)]">
-        O efeito começa na posição da agulha. Nos efeitos de zoom, clique no efeito e depois no
-        ponto do vídeo que deve ficar em destaque. Para ajustes finos, use a aba Avançado.
+        O efeito começa na posição da agulha. Você pode aplicar quantos efeitos quiser, inclusive o
+        mesmo efeito em tempos diferentes — cada aplicação vira um chip que pode ser ajustado ou
+        removido individualmente. Nos efeitos de zoom, clique no efeito e depois no ponto do vídeo
+        que deve ficar em destaque. Use “Reverter zoom” para voltar ao enquadramento normal.
       </p>
 
     </div>
