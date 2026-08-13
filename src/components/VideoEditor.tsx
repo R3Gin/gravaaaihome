@@ -380,19 +380,22 @@ export function VideoEditor() {
               ) : null}
 
               {panel === "effects" ? (
-                <div className="space-y-2">
-                  <button
-                    onClick={() => addOverlayClip("blur")}
-                    className="w-full rounded-lg border border-[var(--border)] px-3 py-2 text-xs font-semibold"
-                  >
-                    Área desfocada
-                  </button>
-                  <button
-                    onClick={() => addOverlayClip("spotlight")}
-                    className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-[var(--border)] px-3 py-2 text-xs font-semibold"
-                  >
-                    <Sparkles className="h-3.5 w-3.5" /> Destaque (spotlight)
-                  </button>
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    <button
+                      onClick={() => addOverlayClip("blur")}
+                      className="w-full rounded-lg border border-[var(--border)] px-3 py-2 text-xs font-semibold"
+                    >
+                      Área desfocada
+                    </button>
+                    <button
+                      onClick={() => addOverlayClip("spotlight")}
+                      className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-[var(--border)] px-3 py-2 text-xs font-semibold"
+                    >
+                      <Sparkles className="h-3.5 w-3.5" /> Destaque (spotlight)
+                    </button>
+                  </div>
+                  <EffectsLibraryPanel />
                 </div>
               ) : null}
 
