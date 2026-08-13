@@ -165,13 +165,33 @@ function AnimRow({ clip, prop }: { clip: Clip; prop: AnimProp }) {
   );
 }
 
+const IMAGE_KEYS = ["brightness", "contrast", "saturation"];
+
+/** Brilho / contraste / saturação — "coisa de imagem". */
+function ImageSection({ clip }: { clip: Clip }) {
+  const props = animatablePropsFor(clip).filter((p) => IMAGE_KEYS.includes(p.key));
+  if (props.length === 0) return null;
+  return (
+    <div className="space-y-3 rounded-lg border border-[var(--border)] p-3">
+      <span className="text-[11px] font-bold uppercase tracking-wide text-[var(--muted-foreground)]">
+        Imagem
+      </span>
+      {props.map((p) => (
+        <AnimRow key={p.key} clip={clip} prop={p} />
+      ))}
+    </div>
+  );
+}
+
 function AnimSection({ clip }: { clip: Clip }) {
   const props = animatablePropsFor(clip).filter((p) =>
-    clip.type === "overlay" && p.key === "strength"
-      ? true
-      : clip.type === "overlay" && p.key === "position"
-        ? false
-        : true,
+    IMAGE_KEYS.includes(p.key)
+      ? false
+      : clip.type === "overlay" && p.key === "strength"
+        ? true
+        : clip.type === "overlay" && p.key === "position"
+          ? false
+          : true,
   );
   return (
     <div className="space-y-3 rounded-lg border border-[var(--border)] p-3">
