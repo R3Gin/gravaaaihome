@@ -225,17 +225,37 @@ export const FloatingRecorderPanel = forwardRef<
     }
   }, [visible, destroyPip, closedByUserRef2]);
 
-  // Quem ABRE a janela é sempre o navegador, via Auto-PiP (Media Session).
-  // Aqui só garantimos que ela não fique órfã caso o Chrome não a feche ao
-  // voltar para a aba. Nenhum moveTo()/moveBy(): a spec proíbe reposicionar.
+  // Ciclo de vida da janela conforme a visibilidade da aba.
+  // - Instalado como PWA (standalone): o Chrome abre/fecha sozinho (Auto-PiP);
+  //   aqui só garantimos que ela não fique órfã ao voltar.
+  // - Em aba comum: tentamos abrir na saída da aba. Durante uma captura de
+  //   tela o Chrome costuma permitir sem gesto; se recusar, deixamos a janela
+  //   aberta o tempo todo (melhor visível do que ausente).
+  const fallbackAlwaysOpenRef = useRef(false);
   useEffect(() => {
     if (!visible || !pipSupported) return;
+    const isStandalone =
+      typeof window !== "undefined" &&
+      (window.matchMedia?.("(display-mode: standalone)").matches ||
+        // @ts-expect-error - iOS
+        window.navigator.standalone === true);
     const sync = () => {
-      if (document.visibilityState === "visible") destroyPip("voltou para a aba");
+      if (document.visibilityState === "hidden") {
+        if (closedByUserRef2.current) return;
+        openPip("aba oculta").catch(() => {
+          console.warn("[pip] navegador recusou abrir sem gesto — mantendo janela aberta");
+          fallbackAlwaysOpenRef.current = true;
+        });
+        return;
+      }
+      if (isStandalone && !fallbackAlwaysOpenRef.current) {
+        destroyPip("voltou para a aba");
+      }
     };
     document.addEventListener("visibilitychange", sync);
     return () => document.removeEventListener("visibilitychange", sync);
-  }, [visible, pipSupported, destroyPip]);
+  }, [visible, pipSupported, destroyPip, openPip, closedByUserRef2]);
+
 
   // Auto Picture-in-Picture (Chrome 120+): com o app instalado como PWA e este
   // handler registrado, o navegador abre a janela sozinho quando o usuário sai
