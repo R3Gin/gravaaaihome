@@ -608,6 +608,10 @@ export function ScreenRecorder() {
       console.log("[gravaai] MediaRecorder onstart");
       setStatus("recording");
       setPaused(false);
+      // Abre a janela flutuante já no início (o clique em "Gravar" conta como
+      // gesto do usuário). Sem isso, em aba comum ela nunca aparecia.
+      void panelRef.current?.openPip().catch(() => {});
+
       setScreenAudioEnabled(true);
       setMicEnabled(true);
       pausedAccumRef.current = 0;
