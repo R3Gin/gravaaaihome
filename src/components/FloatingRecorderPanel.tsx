@@ -444,8 +444,8 @@ export const FloatingRecorderPanel = forwardRef<
           disabled={!props.hasScreenAudio}
           activeTitle="Áudio da tela ativo — clique para mutar"
           mutedTitle="Áudio da tela mutado — clique para ativar"
-          ActiveIcon={Monitor}
-          MutedIcon={MonitorOff}
+          ActiveIcon={Volume2}
+          MutedIcon={VolumeX}
           onClick={props.onToggleScreenAudio}
         />
         <ToggleButton
