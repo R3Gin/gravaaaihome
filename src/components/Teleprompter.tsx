@@ -97,6 +97,9 @@ export function Teleprompter() {
   const [opacity, setOpacity] = useState(70);
   const [position, setPosition] = useState<Position>("center");
   const [scrolling, setScrolling] = useState(true);
+  const [followMode, setFollowMode] = useState<FollowMode>("scroll");
+  const [voiceSupported, setVoiceSupported] = useState(true);
+
 
   const scrollerRef = useRef<HTMLDivElement | null>(null);
   const displayStreamRef = useRef<MediaStream | null>(null);
