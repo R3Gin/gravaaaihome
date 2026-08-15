@@ -118,7 +118,33 @@ export function Teleprompter() {
 
   const recording = status === "recording";
 
-  useEffect(() => setPipSupported(supportsDocumentPip()), []);
+  useEffect(() => {
+    setPipSupported(supportsDocumentPip());
+    setVoiceSupported(supportsSpeechRecognition());
+  }, []);
+
+  // Modelo de segmentos do roteiro (memoizado — só recalcula ao mudar o texto).
+  const scriptModel = useMemo(() => buildScriptModel(script), [script]);
+  const voiceActive = mode === "live" && followMode === "voice" && recording;
+  const {
+    segmentIndex,
+    listenState,
+    unsupported: voiceBlocked,
+    stepSegment,
+    resetFollow,
+  } = useSpeechFollow(scriptModel, voiceActive);
+  const segmentRefs = useRef<Array<HTMLSpanElement | null>>([]);
+
+  // Mantém o segmento atual na zona confortável de leitura, sem saltos bruscos.
+  useEffect(() => {
+    if (followMode !== "voice" || mode !== "live") return;
+    const el = scrollerRef.current;
+    const target = segmentRefs.current[segmentIndex];
+    if (!el || !target) return;
+    const top = target.offsetTop - el.clientHeight * 0.35;
+    el.scrollTo({ top: Math.max(0, top), behavior: "smooth" });
+  }, [segmentIndex, followMode, mode]);
+
 
   const closePip = useCallback(() => {
     setPipWindow((w) => {
