@@ -442,6 +442,9 @@ export function ScreenRecorder() {
         }
       }
       setStatus("capturing");
+      // Abre a janela flutuante assim que a fonte é escolhida — o clique em
+      // "Compartilhar tela" ainda conta como gesto do usuário aqui.
+      void panelRef.current?.openPip().catch(() => {});
       // Devolve o foco para a janela/aba do Gravaai assim que o usuário
       // confirma a fonte no picker. O navegador pode ter trocado o foco do
       // SO para a janela escolhida ao compartilhar "janela"; window.focus()
