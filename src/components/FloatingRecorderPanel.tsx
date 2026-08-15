@@ -16,13 +16,14 @@ import {
   Pause,
   Play,
   Square,
-  Monitor,
-  MonitorOff,
+  Volume2,
+  VolumeX,
   Mic,
   MicOff,
   Camera,
   CameraOff,
   X,
+
 
 } from "lucide-react";
 import { cn } from "@/lib/utils";
