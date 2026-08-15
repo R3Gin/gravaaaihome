@@ -1,33 +1,56 @@
-// Hook de acompanhamento de fala do Teleprompter.
-// Usa SpeechRecognition nativo (pt-BR) e devolve apenas o índice do segmento
-// atual + um estado de escuta — nada de rerender por palavra.
+// Acompanhamento de fala do Teleprompter.
+//
+// Arquitetura (auditada):
+//  - o SpeechRecognition vive SEMPRE na janela principal (este hook), nunca na
+//    janela Document PiP. A PiP só renderiza o estado via portal do React, ou
+//    seja, há uma única fonte de verdade (segmentIndex/wordCursor).
+//  - a instância é criada UMA vez por ativação, guardada em ref, e os callbacks
+//    leem tudo por ref (sem stale closure) — nenhum start/stop por render.
+//  - onend reinicia sozinho enquanto o modo por voz estiver ligado (Chrome
+//    encerra o reconhecimento por conta própria, inclusive quando o foco vai
+//    para a janela PiP), com backoff e sem loop em erro de permissão.
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
-  advanceCursor,
-  normalizeWord,
+  alignCursor,
+  normalizeText,
   segmentAtCursor,
   supportsSpeechRecognition,
   type ScriptModel,
 } from "@/lib/speech-follow";
 
-export type ListenState = "idle" | "listening" | "following" | "waiting";
+export type ListenState =
+  | "idle"
+  | "starting"
+  | "listening"
+  | "hearing"
+  | "following"
+  | "waiting"
+  | "error";
 
-const SILENCE_MS = 1800;
+export type VoiceErrorCode = "unsupported" | "not-allowed" | "audio-capture" | "unknown";
+
+const SILENCE_MS = 2500;
+/** Palavras recentes consideradas para o matching. */
+const RECENT_WORDS = 40;
+const LOG = "[Teleprompter Voice]";
 
 export function useSpeechFollow(model: ScriptModel, enabled: boolean) {
   const [segmentIndex, setSegmentIndex] = useState(0);
+  const [wordCursor, setWordCursor] = useState(0);
   const [listenState, setListenState] = useState<ListenState>("idle");
-  const [unsupported, setUnsupported] = useState(false);
+  const [errorCode, setErrorCode] = useState<VoiceErrorCode | null>(null);
 
   const cursorRef = useRef(0);
   const recRef = useRef<any>(null);
-  const stoppedRef = useRef(true);
-  const modelRef = useRef(model);
+  const manualStopRef = useRef(true);
+  const restartTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const silenceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  // Quantas palavras já consumimos de cada resultado interino em andamento.
-  const consumedRef = useRef(0);
-  const resultIndexRef = useRef(-1);
+  const modelRef = useRef(model);
+  /** Palavras já finalizadas pelo reconhecedor (acumuladas). */
+  const finalWordsRef = useRef<string[]>([]);
+  /** Índice do primeiro result ainda não consolidado como final. */
+  const finalizedUpToRef = useRef(0);
 
   useEffect(() => {
     modelRef.current = model;
@@ -35,25 +58,31 @@ export function useSpeechFollow(model: ScriptModel, enabled: boolean) {
 
   const applyCursor = useCallback((next: number) => {
     cursorRef.current = next;
+    setWordCursor(next);
     const seg = segmentAtCursor(modelRef.current.segments, next);
-    setSegmentIndex((prev) => (prev === seg ? prev : seg));
+    setSegmentIndex((prev) => {
+      if (prev !== seg) console.log(`${LOG} current segment:`, seg, "(word cursor", next + ")");
+      return prev === seg ? prev : seg;
+    });
   }, []);
 
-  /** Permite avanço/retrocesso manual mesmo com a voz ativa. */
+  /** Avanço/retrocesso manual, mesmo com a voz ativa. */
   const stepSegment = useCallback((dir: 1 | -1) => {
     const segments = modelRef.current.segments;
     if (!segments.length) return;
     setSegmentIndex((prev) => {
       const next = Math.max(0, Math.min(segments.length - 1, prev + dir));
       cursorRef.current = segments[next]!.start;
+      setWordCursor(segments[next]!.start);
       return next;
     });
   }, []);
 
   const resetFollow = useCallback(() => {
     cursorRef.current = 0;
-    consumedRef.current = 0;
-    resultIndexRef.current = -1;
+    finalWordsRef.current = [];
+    finalizedUpToRef.current = 0;
+    setWordCursor(0);
     setSegmentIndex(0);
   }, []);
 
@@ -63,10 +92,14 @@ export function useSpeechFollow(model: ScriptModel, enabled: boolean) {
       return;
     }
     if (!supportsSpeechRecognition()) {
-      setUnsupported(true);
+      console.warn(`${LOG} SpeechRecognition indisponível neste navegador`);
+      setErrorCode("unsupported");
+      setListenState("error");
       return;
     }
-    setUnsupported(false);
+
+    setErrorCode(null);
+    setListenState("starting");
 
     const Ctor =
       (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
@@ -74,68 +107,115 @@ export function useSpeechFollow(model: ScriptModel, enabled: boolean) {
     rec.lang = "pt-BR";
     rec.continuous = true;
     rec.interimResults = true;
+    rec.maxAlternatives = 1;
     recRef.current = rec;
-    stoppedRef.current = false;
+    manualStopRef.current = false;
+    finalWordsRef.current = [];
+    finalizedUpToRef.current = 0;
 
-    const markWaiting = () => setListenState("waiting");
     const bumpSilence = () => {
       if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
-      silenceTimerRef.current = setTimeout(markWaiting, SILENCE_MS);
+      silenceTimerRef.current = setTimeout(() => setListenState("waiting"), SILENCE_MS);
     };
 
-    rec.onstart = () => setListenState("listening");
-    rec.onerror = (e: any) => {
-      if (e?.error === "not-allowed" || e?.error === "service-not-allowed") {
-        stoppedRef.current = true;
-        setUnsupported(true);
-      }
-    };
-    rec.onend = () => {
-      if (!stoppedRef.current) {
-        try {
-          rec.start();
-        } catch {
-          /* já reiniciando */
+    const safeStart = () => {
+      if (manualStopRef.current) return;
+      try {
+        rec.start();
+      } catch (err) {
+        // InvalidStateError = já está rodando; qualquer outro caso, tenta de novo.
+        if ((err as Error)?.name !== "InvalidStateError") {
+          console.warn(`${LOG} start falhou, tentando de novo:`, err);
+          restartTimerRef.current = setTimeout(safeStart, 400);
         }
-      } else {
-        setListenState("idle");
       }
     };
+
+    rec.onstart = () => {
+      console.log(`${LOG} recognition started`);
+      setListenState("listening");
+    };
+    rec.onaudiostart = () => console.log(`${LOG} audio start`);
+    rec.onspeechstart = () => {
+      console.log(`${LOG} speech start`);
+      setListenState((s) => (s === "following" ? s : "hearing"));
+    };
+    rec.onspeechend = () => console.log(`${LOG} speech end`);
+
+    rec.onerror = (e: any) => {
+      const code = String(e?.error ?? "unknown");
+      console.warn(`${LOG} recognition error:`, code);
+      if (code === "not-allowed" || code === "service-not-allowed") {
+        manualStopRef.current = true;
+        setErrorCode("not-allowed");
+        setListenState("error");
+      } else if (code === "audio-capture") {
+        manualStopRef.current = true;
+        setErrorCode("audio-capture");
+        setListenState("error");
+      }
+      // no-speech / aborted / network: onend cuida do restart.
+    };
+
+    rec.onend = () => {
+      console.log(`${LOG} recognition ended (manual:`, manualStopRef.current + ")");
+      if (manualStopRef.current) {
+        setListenState((s) => (s === "error" ? s : "idle"));
+        return;
+      }
+      // O Chrome encerra sozinho (silêncio, perda de foco para a janela PiP…).
+      restartTimerRef.current = setTimeout(safeStart, 250);
+    };
+
     rec.onresult = (event: any) => {
-      const last = event.results[event.results.length - 1];
-      const idx = event.results.length - 1;
-      if (idx !== resultIndexRef.current) {
-        resultIndexRef.current = idx;
-        consumedRef.current = 0;
+      // Reconstrói final + interim corretamente, sem sobrescrever o histórico.
+      let interim = "";
+      let newFinal = "";
+      for (let i = finalizedUpToRef.current; i < event.results.length; i++) {
+        const res = event.results[i];
+        const text = String(res[0]?.transcript ?? "");
+        if (res.isFinal) {
+          newFinal += " " + text;
+          finalizedUpToRef.current = i + 1;
+        } else {
+          interim += " " + text;
+        }
       }
-      const words = String(last[0]?.transcript ?? "")
-        .split(/\s+/)
-        .map(normalizeWord)
-        .filter(Boolean);
-      const fresh = words.slice(consumedRef.current);
-      if (last.isFinal) {
-        consumedRef.current = 0;
-        resultIndexRef.current = -1;
-      } else {
-        consumedRef.current = words.length;
-      }
-      if (fresh.length) {
-        applyCursor(advanceCursor(modelRef.current.words, cursorRef.current, fresh));
+      if (newFinal.trim()) finalWordsRef.current.push(...normalizeText(newFinal));
+      const spoken = [...finalWordsRef.current, ...normalizeText(interim)];
+      const recent = spoken.slice(-RECENT_WORDS);
+      if (!recent.length) return;
+
+      console.log(`${LOG} result:`, recent.slice(-8).join(" "));
+
+      const { cursor, score, matched } = alignCursor(
+        modelRef.current.words,
+        cursorRef.current,
+        recent,
+      );
+      console.log(`${LOG} match score:`, score.toFixed(2), "→ cursor", cursor);
+      if (matched && cursor > cursorRef.current) {
+        console.log(`${LOG} advancing:`, cursorRef.current, "→", cursor);
+        applyCursor(cursor);
         setListenState("following");
+      } else {
+        setListenState((s) => (s === "following" ? s : "hearing"));
       }
       bumpSilence();
     };
 
-    try {
-      rec.start();
-    } catch {
-      /* já ativo */
-    }
+    safeStart();
 
     return () => {
-      stoppedRef.current = true;
+      manualStopRef.current = true;
       if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
+      if (restartTimerRef.current) clearTimeout(restartTimerRef.current);
+      rec.onresult = null;
+      rec.onend = null;
+      rec.onerror = null;
+      rec.onstart = null;
       try {
+        rec.abort?.();
         rec.stop();
       } catch {
         /* noop */
@@ -145,5 +225,5 @@ export function useSpeechFollow(model: ScriptModel, enabled: boolean) {
     };
   }, [enabled, applyCursor]);
 
-  return { segmentIndex, listenState, unsupported, stepSegment, resetFollow };
+  return { segmentIndex, wordCursor, listenState, errorCode, stepSegment, resetFollow };
 }
