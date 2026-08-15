@@ -147,6 +147,24 @@ export function normalizeText(text: string): string[] {
     .filter(Boolean);
 }
 
+/** Razão de subsequência comum (0..1) entre fala e trecho do roteiro. */
+function lcsRatio(a: string[], b: string[]): number {
+  if (!a.length || !b.length) return 0;
+  const dp: number[] = new Array(b.length + 1).fill(0);
+  for (let i = 1; i <= a.length; i++) {
+    let prev = 0;
+    for (let j = 1; j <= b.length; j++) {
+      const tmp = dp[j]!;
+      dp[j] =
+        a[i - 1] === b[j - 1] || closeEnough(a[i - 1]!, b[j - 1]!)
+          ? prev + 1
+          : Math.max(dp[j]!, dp[j - 1]!);
+      prev = tmp;
+    }
+  }
+  return dp[b.length]! / Math.min(a.length, b.length);
+}
+
 export interface AlignResult {
   cursor: number;
   score: number;
@@ -181,14 +199,10 @@ export function alignCursor(
     const tail = spokenTail.slice(-w);
     if (!tail.length) continue;
     for (let end = from; end <= to; end++) {
-      const n = Math.min(tail.length, end);
-      let matched = 0;
-      for (let k = 1; k <= n; k++) {
-        const s = scriptWords[end - k]!;
-        const t = tail[tail.length - k]!;
-        if (s === t || closeEnough(s, t)) matched++;
-      }
-      const score = matched / n;
+      const n = Math.min(tail.length + 2, end);
+      const slice = scriptWords.slice(end - n, end);
+      // LCS tolera palavras a mais/a menos do reconhecedor (inserções e omissões).
+      const score = lcsRatio(tail, slice);
       if (score < threshold) continue;
       // Prefere maior score; em empate, a posição mais à frente.
       if (score > best.score + 0.001 || (Math.abs(score - best.score) <= 0.001 && end > best.cursor)) {
