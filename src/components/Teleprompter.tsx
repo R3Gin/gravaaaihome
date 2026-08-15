@@ -654,11 +654,14 @@ export function Teleprompter() {
               <ActionButton
                 onClick={() => {
                   reset();
+                  resetFollow();
+                  closePip();
                   setMode("prep");
                 }}
               >
                 Nova gravação
               </ActionButton>
+
             </>
           )}
         </div>
