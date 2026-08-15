@@ -182,7 +182,7 @@ export function Teleprompter() {
 
   // Rolagem automática baseada em palavras por minuto.
   useEffect(() => {
-    if (mode !== "live" || !scrolling || !recording) return;
+    if (mode !== "live" || !scrolling || !recording || followMode !== "scroll") return;
     const el = scrollerRef.current;
     if (!el) return;
     let last = performance.now();
@@ -197,16 +197,25 @@ export function Teleprompter() {
     };
     rafRef.current = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(rafRef.current);
-  }, [mode, scrolling, recording, wpm, fontSize, pipWindow]);
+  }, [mode, scrolling, recording, wpm, fontSize, pipWindow, followMode]);
 
-  const nudge = useCallback((dir: 1 | -1) => {
-    const el = scrollerRef.current;
-    if (el) el.scrollTop += dir * fontSize * 3;
-  }, [fontSize]);
+  const nudge = useCallback(
+    (dir: 1 | -1) => {
+      if (followMode === "voice") {
+        stepSegment(dir);
+        return;
+      }
+      const el = scrollerRef.current;
+      if (el) el.scrollTop += dir * fontSize * 3;
+    },
+    [fontSize, followMode, stepSegment],
+  );
 
   const restart = useCallback(() => {
+    resetFollow();
     if (scrollerRef.current) scrollerRef.current.scrollTop = 0;
-  }, []);
+  }, [resetFollow]);
+
 
   // Atalhos de teclado (na página e também dentro da janela PiP)
   useEffect(() => {
