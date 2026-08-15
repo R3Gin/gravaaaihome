@@ -394,6 +394,37 @@ export function Teleprompter() {
             <span>Limite de gravação: 30 minutos</span>
           </div>
 
+          <div className="mt-6">
+            <p className="text-xs font-semibold uppercase tracking-wide text-[var(--muted-foreground)]">
+              Como o roteiro deve avançar
+            </p>
+            <div className="mt-2 flex flex-wrap gap-2">
+              {(["scroll", "voice"] as FollowMode[]).map((m) => (
+                <button
+                  key={m}
+                  type="button"
+                  onClick={() => setFollowMode(m)}
+                  disabled={m === "voice" && !voiceSupported}
+                  className={cn(
+                    "rounded-lg border px-3 py-2 text-sm transition-colors disabled:opacity-40",
+                    followMode === m
+                      ? "border-[var(--brand)] bg-[var(--brand)]/15 text-[var(--brand)]"
+                      : "border-[var(--border)] bg-[var(--surface)] text-[var(--muted-foreground)] hover:text-white",
+                  )}
+                >
+                  {m === "scroll" ? "Rolagem automática" : "Acompanhar minha fala"}
+                </button>
+              ))}
+            </div>
+            {!voiceSupported && (
+              <p className="mt-2 text-xs text-[var(--muted-foreground)]">
+                Seu navegador não oferece suporte ao acompanhamento por voz. Use a rolagem
+                automática.
+              </p>
+            )}
+          </div>
+
+
           {pipSupported ? (
             <p className="mt-4 rounded-lg border border-[var(--border)] bg-[var(--surface)] p-3 text-xs text-[var(--muted-foreground)]">
               Dica: se você compartilhar a <strong>tela inteira</strong>, posicione a janela do
