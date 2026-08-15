@@ -685,17 +685,31 @@ export function Teleprompter() {
       {pipWindow ? (
         <>
           {createPortal(
-            <div className="flex h-full w-full flex-col bg-[var(--background)] p-4 text-[var(--foreground)]">
-              <p className="mb-2 shrink-0 text-[11px] font-semibold text-[var(--muted-foreground)]">
-                Teleprompter · janela separada (não entra na gravação)
-              </p>
-              {scroller}
-              <div className="mt-3 shrink-0 border-t border-[var(--border)] pt-3">{controls}</div>
+            <div className="flex h-full w-full flex-col bg-[var(--background)] text-[var(--foreground)]">
+              {finished ? (
+                previewPanel
+              ) : status === "converting" ? (
+                <div className="flex h-full flex-col items-center justify-center gap-2 p-4 text-center">
+                  <p className="text-sm font-semibold text-white">Gravação encerrada</p>
+                  <p className="text-xs text-[var(--muted-foreground)]">
+                    Preparando o MP4… {Math.round(recorder.convertProgress * 100)}%
+                  </p>
+                </div>
+              ) : (
+                <div className="flex h-full w-full flex-col p-4">
+                  <p className="mb-2 shrink-0 text-[11px] font-semibold text-[var(--muted-foreground)]">
+                    Teleprompter · janela separada (não entra na gravação)
+                  </p>
+                  {scroller}
+                  <div className="mt-3 shrink-0 border-t border-[var(--border)] pt-3">{controls}</div>
+                </div>
+              )}
             </div>,
             pipWindow.document.body,
           )}
           <main className="flex flex-1 items-center justify-center px-6 text-center">
             <div className="max-w-md text-sm text-[var(--muted-foreground)]">
+
               <p className="font-semibold text-[var(--foreground)]">
                 O roteiro está rolando na janela do teleprompter.
               </p>
