@@ -36,9 +36,11 @@ export function buildScriptModel(script: string): ScriptModel {
   const words: string[] = [];
 
   const push = (text: string) => {
-    const tokens = text.trim().split(/\s+/).filter(Boolean);
-    const normalized = tokens.map(normalizeWord).filter(Boolean);
+    // Mesma normalização usada na fala reconhecida: hífens viram separadores,
+    // então "bem-vindo" casa com "bem vindo".
+    const normalized = normalizeText(text);
     if (!normalized.length) return;
+
     const start = words.length;
     words.push(...normalized);
     segments.push({
@@ -134,4 +136,82 @@ export function supportsSpeechRecognition() {
     (window as unknown as Record<string, unknown>)["SpeechRecognition"] ||
       (window as unknown as Record<string, unknown>)["webkitSpeechRecognition"],
   );
+}
+
+/** Normaliza um texto inteiro em palavras comparáveis. */
+export function normalizeText(text: string): string[] {
+  return text
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^\p{L}\p{N}\s]/gu, " ")
+    .split(/\s+/)
+    .filter(Boolean);
+}
+
+/** Razão de subsequência comum (0..1) entre fala e trecho do roteiro. */
+function lcsRatio(a: string[], b: string[]): number {
+  if (!a.length || !b.length) return 0;
+  const dp: number[] = new Array(b.length + 1).fill(0);
+  for (let i = 1; i <= a.length; i++) {
+    let prev = 0;
+    for (let j = 1; j <= b.length; j++) {
+      const tmp = dp[j]!;
+      dp[j] =
+        a[i - 1] === b[j - 1] || closeEnough(a[i - 1]!, b[j - 1]!)
+          ? prev + 1
+          : Math.max(dp[j]!, dp[j - 1]!);
+      prev = tmp;
+    }
+  }
+  return dp[b.length]! / Math.min(a.length, b.length);
+}
+
+export interface AlignResult {
+  cursor: number;
+  score: number;
+  matched: boolean;
+}
+
+/** Janela de busca à frente do cursor (em palavras). */
+const FORWARD_WINDOW = 30;
+/** Quanto podemos voltar (o usuário pode repetir uma palavra). */
+const BACK_WINDOW = 6;
+
+/**
+ * Ancora a fala recente no roteiro comparando o SUFIXO do que foi falado com
+ * as palavras que terminam em cada posição candidata, dentro de uma janela
+ * curta ao redor do cursor. Isso permite avançar vários segmentos de uma vez
+ * sem nunca saltar para uma frase repetida distante.
+ */
+export function alignCursor(
+  scriptWords: string[],
+  cursor: number,
+  spokenTail: string[],
+  threshold = 0.6,
+): AlignResult {
+  if (!scriptWords.length || !spokenTail.length) {
+    return { cursor, score: 0, matched: false };
+  }
+  const from = Math.max(1, cursor - BACK_WINDOW);
+  const to = Math.min(scriptWords.length, cursor + FORWARD_WINDOW);
+  let best: AlignResult = { cursor, score: 0, matched: false };
+
+  for (const w of [8, 5, 3]) {
+    const tail = spokenTail.slice(-w);
+    if (!tail.length) continue;
+    for (let end = from; end <= to; end++) {
+      const n = Math.min(tail.length + 2, end);
+      const slice = scriptWords.slice(end - n, end);
+      // LCS tolera palavras a mais/a menos do reconhecedor (inserções e omissões).
+      const score = lcsRatio(tail, slice);
+      if (score < threshold) continue;
+      // Prefere maior score; em empate, a posição mais à frente.
+      if (score > best.score + 0.001 || (Math.abs(score - best.score) <= 0.001 && end > best.cursor)) {
+        best = { cursor: end, score, matched: true };
+      }
+    }
+    if (best.matched) break;
+  }
+  return best;
 }
