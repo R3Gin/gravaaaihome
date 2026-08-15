@@ -14,6 +14,7 @@ import {
   AlertTriangle,
   ArrowLeft,
   Download,
+  Mic,
   Pause,
   Play,
   RotateCcw,
@@ -22,7 +23,10 @@ import {
 } from "lucide-react";
 import { ActionButton } from "@/components/ActionButton";
 import { Wordmark } from "@/components/Brand";
+import { VideoPreviewPlayer } from "@/components/VideoPreviewPlayer";
 import { useRecorderCore } from "@/hooks/useRecorderCore";
+import { useSpeechFollow } from "@/hooks/useSpeechFollow";
+import { buildScriptModel, supportsSpeechRecognition } from "@/lib/speech-follow";
 import { setEditorHandoff } from "@/lib/editor-handoff";
 import { openPipWindow, supportsDocumentPip, type PipWindow } from "@/lib/document-pip";
 import { cn } from "@/lib/utils";
@@ -31,6 +35,8 @@ const MAX_SECONDS = 30 * 60;
 const WARN_SECONDS = MAX_SECONDS - 3 * 60;
 
 type Position = "top" | "center" | "bottom";
+type FollowMode = "scroll" | "voice";
+
 
 function formatTime(sec: number) {
   const m = Math.floor(sec / 60).toString().padStart(2, "0");
