@@ -341,10 +341,11 @@ export function Teleprompter() {
   }, [closePip, restart, startRecording, stopRecording]);
 
   const stop = useCallback(() => {
+    // A janela PiP permanece aberta: ela passa a exibir o preview do vídeo.
     stopRecording();
     stopTracks();
-    closePip();
-  }, [closePip, stopRecording, stopTracks]);
+  }, [stopRecording, stopTracks]);
+
 
   // Limite de 30 minutos
   useEffect(() => {
