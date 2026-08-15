@@ -468,11 +468,18 @@ export function Teleprompter() {
   }
 
   const listenLabel =
-    listenState === "following"
-      ? "Acompanhando sua fala"
-      : listenState === "waiting"
-        ? "Aguardando você continuar"
-        : "Ouvindo";
+    listenState === "error"
+      ? "Microfone indisponível"
+      : listenState === "following"
+        ? "Reconhecendo sua fala"
+        : listenState === "hearing"
+          ? "Reconhecendo sua fala"
+          : listenState === "waiting"
+            ? "Aguardando você falar"
+            : listenState === "listening"
+              ? "Ouvindo"
+              : "Iniciando o microfone…";
+
 
   const controls = (
     <div className={cn("flex flex-wrap items-end gap-4", pipWindow ? "px-3 pb-3" : "mx-auto max-w-5xl")}>
