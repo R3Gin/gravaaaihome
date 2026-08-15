@@ -36,9 +36,11 @@ export function buildScriptModel(script: string): ScriptModel {
   const words: string[] = [];
 
   const push = (text: string) => {
-    const tokens = text.trim().split(/\s+/).filter(Boolean);
-    const normalized = tokens.map(normalizeWord).filter(Boolean);
+    // Mesma normalização usada na fala reconhecida: hífens viram separadores,
+    // então "bem-vindo" casa com "bem vindo".
+    const normalized = normalizeText(text);
     if (!normalized.length) return;
+
     const start = words.length;
     words.push(...normalized);
     segments.push({
