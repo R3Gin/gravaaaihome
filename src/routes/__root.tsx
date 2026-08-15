@@ -82,6 +82,8 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       { title: "Gravaai — Gravador de tela no navegador" },
       { name: "description", content: "Grave sua tela e áudio direto do navegador e baixe em MP4. Sem instalação, 100% no seu dispositivo." },
       { name: "theme-color", content: "#e84c3d" },
+      { name: "google-site-verification", content: "iZi1P2ATK34NW1ygqHOoejvKB4dT85q5WbUQcPRnXgI" },
+
       { property: "og:title", content: "Gravaai — Gravador de tela no navegador" },
       { property: "og:description", content: "Grave sua tela e áudio direto do navegador e baixe em MP4. Sem instalação, 100% no seu dispositivo." },
       { property: "og:type", content: "website" },
