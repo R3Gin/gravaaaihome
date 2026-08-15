@@ -557,9 +557,13 @@ export function Teleprompter() {
           </label>
         </>
       )}
-      {followMode === "voice" && voiceBlocked && (
-        <span className="w-full text-[11px] text-[var(--muted-foreground)]">
-          Não foi possível ouvir o microfone neste navegador. Use a rolagem automática.
+      {followMode === "voice" && voiceError && (
+        <span className="w-full text-[11px] text-[var(--brand)]">
+          {voiceError === "unsupported"
+            ? "Este navegador não tem reconhecimento de voz. Use a rolagem automática."
+            : voiceError === "audio-capture"
+              ? "Nenhum microfone disponível para o reconhecimento de voz."
+              : "Não foi possível usar o reconhecimento de voz. Verifique a permissão do microfone."}
         </span>
       )}
       <span className="w-full text-[11px] text-[var(--muted-foreground)]">
@@ -579,25 +583,53 @@ export function Teleprompter() {
     >
       {followMode === "voice" && scriptModel.segments.length ? (
         <p className="whitespace-pre-wrap">
-          {scriptModel.segments.map((seg, i) => (
-            <span
-              key={seg.index}
-              ref={(el) => {
-                segmentRefs.current[i] = el;
-              }}
-              className={cn(
-                "transition-opacity duration-300",
-                i < segmentIndex
-                  ? "text-[var(--muted-foreground)] opacity-45"
-                  : i === segmentIndex
-                    ? "font-semibold text-white"
-                    : "text-white/70",
-              )}
-            >
-              {seg.text}{" "}
-            </span>
-          ))}
+          {scriptModel.segments.map((seg, i) => {
+            const done = i < segmentIndex;
+            const current = i === segmentIndex;
+            // Progresso dentro da frase atual: palavras já reconhecidas ficam
+            // esmaecidas, as próximas continuam brancas.
+            if (current) {
+              const tokens = seg.text.trim().split(/\s+/);
+              const readCount = Math.max(0, Math.min(tokens.length, wordCursor - seg.start));
+              return (
+                <span
+                  key={seg.index}
+                  ref={(el) => {
+                    segmentRefs.current[i] = el;
+                  }}
+                  className="font-semibold"
+                >
+                  {tokens.map((t, k) => (
+                    <span
+                      key={k}
+                      className={cn(
+                        "transition-opacity duration-200",
+                        k < readCount ? "text-[var(--muted-foreground)] opacity-50" : "text-white",
+                      )}
+                    >
+                      {t}{" "}
+                    </span>
+                  ))}
+                </span>
+              );
+            }
+            return (
+              <span
+                key={seg.index}
+                ref={(el) => {
+                  segmentRefs.current[i] = el;
+                }}
+                className={cn(
+                  "transition-opacity duration-300",
+                  done ? "text-[var(--muted-foreground)] opacity-45" : "text-white/70",
+                )}
+              >
+                {seg.text}{" "}
+              </span>
+            );
+          })}
         </p>
+
       ) : (
         script
       )}
