@@ -720,6 +720,11 @@ export function Teleprompter() {
             </div>
           </main>
         </>
+      ) : finished ? (
+        <main className="mx-auto w-full max-w-2xl flex-1 px-4 py-6">
+          <p className="mb-3 text-sm font-semibold">Gravação concluída</p>
+          <VideoPreviewPlayer src={recorder.downloadUrl!} />
+        </main>
       ) : (
         <>
           <div className="flex items-start gap-2 bg-[var(--brand)]/15 px-4 py-2 text-xs text-[var(--brand)]">
@@ -739,6 +744,7 @@ export function Teleprompter() {
           <footer className="border-t border-[var(--border)] bg-[var(--surface)] px-4 py-3">{controls}</footer>
         </>
       )}
+
     </div>
   );
 }
