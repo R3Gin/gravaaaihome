@@ -10,6 +10,7 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as SlidesCameraRouteImport } from './routes/slides-camera'
+import { Route as SitemapDotxmlRouteImport } from './routes/sitemap[.]xml'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as MosaicosVideoParaGifRouteImport } from './routes/mosaicos.video-para-gif'
 import { Route as MosaicosTranscricaoRouteImport } from './routes/mosaicos.transcricao'
@@ -20,6 +21,11 @@ import { Route as MosaicosEditorRouteImport } from './routes/mosaicos.editor'
 const SlidesCameraRoute = SlidesCameraRouteImport.update({
   id: '/slides-camera',
   path: '/slides-camera',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SitemapDotxmlRoute = SitemapDotxmlRouteImport.update({
+  id: '/sitemap.xml',
+  path: '/sitemap.xml',
   getParentRoute: () => rootRouteImport,
 } as any)
 const IndexRoute = IndexRouteImport.update({
@@ -56,6 +62,7 @@ const MosaicosEditorRoute = MosaicosEditorRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/sitemap.xml': typeof SitemapDotxmlRoute
   '/slides-camera': typeof SlidesCameraRoute
   '/mosaicos/editor': typeof MosaicosEditorRoute
   '/mosaicos/gdocs-presentation': typeof MosaicosGdocsPresentationRoute
@@ -65,6 +72,7 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/sitemap.xml': typeof SitemapDotxmlRoute
   '/slides-camera': typeof SlidesCameraRoute
   '/mosaicos/editor': typeof MosaicosEditorRoute
   '/mosaicos/gdocs-presentation': typeof MosaicosGdocsPresentationRoute
@@ -75,6 +83,7 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/sitemap.xml': typeof SitemapDotxmlRoute
   '/slides-camera': typeof SlidesCameraRoute
   '/mosaicos/editor': typeof MosaicosEditorRoute
   '/mosaicos/gdocs-presentation': typeof MosaicosGdocsPresentationRoute
@@ -86,6 +95,7 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/sitemap.xml'
     | '/slides-camera'
     | '/mosaicos/editor'
     | '/mosaicos/gdocs-presentation'
@@ -95,6 +105,7 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/sitemap.xml'
     | '/slides-camera'
     | '/mosaicos/editor'
     | '/mosaicos/gdocs-presentation'
@@ -104,6 +115,7 @@ export interface FileRouteTypes {
   id:
     | '__root__'
     | '/'
+    | '/sitemap.xml'
     | '/slides-camera'
     | '/mosaicos/editor'
     | '/mosaicos/gdocs-presentation'
@@ -114,6 +126,7 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  SitemapDotxmlRoute: typeof SitemapDotxmlRoute
   SlidesCameraRoute: typeof SlidesCameraRoute
   MosaicosEditorRoute: typeof MosaicosEditorRoute
   MosaicosGdocsPresentationRoute: typeof MosaicosGdocsPresentationRoute
@@ -129,6 +142,13 @@ declare module '@tanstack/react-router' {
       path: '/slides-camera'
       fullPath: '/slides-camera'
       preLoaderRoute: typeof SlidesCameraRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/sitemap.xml': {
+      id: '/sitemap.xml'
+      path: '/sitemap.xml'
+      fullPath: '/sitemap.xml'
+      preLoaderRoute: typeof SitemapDotxmlRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/': {
@@ -178,6 +198,7 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  SitemapDotxmlRoute: SitemapDotxmlRoute,
   SlidesCameraRoute: SlidesCameraRoute,
   MosaicosEditorRoute: MosaicosEditorRoute,
   MosaicosGdocsPresentationRoute: MosaicosGdocsPresentationRoute,
