@@ -14,6 +14,7 @@ import {
   AlertTriangle,
   ArrowLeft,
   Download,
+  Mic,
   Pause,
   Play,
   RotateCcw,
@@ -22,7 +23,10 @@ import {
 } from "lucide-react";
 import { ActionButton } from "@/components/ActionButton";
 import { Wordmark } from "@/components/Brand";
+import { VideoPreviewPlayer } from "@/components/VideoPreviewPlayer";
 import { useRecorderCore } from "@/hooks/useRecorderCore";
+import { useSpeechFollow } from "@/hooks/useSpeechFollow";
+import { buildScriptModel, supportsSpeechRecognition } from "@/lib/speech-follow";
 import { setEditorHandoff } from "@/lib/editor-handoff";
 import { openPipWindow, supportsDocumentPip, type PipWindow } from "@/lib/document-pip";
 import { cn } from "@/lib/utils";
@@ -31,6 +35,8 @@ const MAX_SECONDS = 30 * 60;
 const WARN_SECONDS = MAX_SECONDS - 3 * 60;
 
 type Position = "top" | "center" | "bottom";
+type FollowMode = "scroll" | "voice";
+
 
 function formatTime(sec: number) {
   const m = Math.floor(sec / 60).toString().padStart(2, "0");
@@ -91,6 +97,9 @@ export function Teleprompter() {
   const [opacity, setOpacity] = useState(70);
   const [position, setPosition] = useState<Position>("center");
   const [scrolling, setScrolling] = useState(true);
+  const [followMode, setFollowMode] = useState<FollowMode>("scroll");
+  const [voiceSupported, setVoiceSupported] = useState(true);
+
 
   const scrollerRef = useRef<HTMLDivElement | null>(null);
   const displayStreamRef = useRef<MediaStream | null>(null);
@@ -109,7 +118,33 @@ export function Teleprompter() {
 
   const recording = status === "recording";
 
-  useEffect(() => setPipSupported(supportsDocumentPip()), []);
+  useEffect(() => {
+    setPipSupported(supportsDocumentPip());
+    setVoiceSupported(supportsSpeechRecognition());
+  }, []);
+
+  // Modelo de segmentos do roteiro (memoizado — só recalcula ao mudar o texto).
+  const scriptModel = useMemo(() => buildScriptModel(script), [script]);
+  const voiceActive = mode === "live" && followMode === "voice" && recording;
+  const {
+    segmentIndex,
+    listenState,
+    unsupported: voiceBlocked,
+    stepSegment,
+    resetFollow,
+  } = useSpeechFollow(scriptModel, voiceActive);
+  const segmentRefs = useRef<Array<HTMLSpanElement | null>>([]);
+
+  // Mantém o segmento atual na zona confortável de leitura, sem saltos bruscos.
+  useEffect(() => {
+    if (followMode !== "voice" || mode !== "live") return;
+    const el = scrollerRef.current;
+    const target = segmentRefs.current[segmentIndex];
+    if (!el || !target) return;
+    const top = target.offsetTop - el.clientHeight * 0.35;
+    el.scrollTo({ top: Math.max(0, top), behavior: "smooth" });
+  }, [segmentIndex, followMode, mode]);
+
 
   const closePip = useCallback(() => {
     setPipWindow((w) => {
@@ -147,7 +182,7 @@ export function Teleprompter() {
 
   // Rolagem automática baseada em palavras por minuto.
   useEffect(() => {
-    if (mode !== "live" || !scrolling || !recording) return;
+    if (mode !== "live" || !scrolling || !recording || followMode !== "scroll") return;
     const el = scrollerRef.current;
     if (!el) return;
     let last = performance.now();
@@ -162,16 +197,25 @@ export function Teleprompter() {
     };
     rafRef.current = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(rafRef.current);
-  }, [mode, scrolling, recording, wpm, fontSize, pipWindow]);
+  }, [mode, scrolling, recording, wpm, fontSize, pipWindow, followMode]);
 
-  const nudge = useCallback((dir: 1 | -1) => {
-    const el = scrollerRef.current;
-    if (el) el.scrollTop += dir * fontSize * 3;
-  }, [fontSize]);
+  const nudge = useCallback(
+    (dir: 1 | -1) => {
+      if (followMode === "voice") {
+        stepSegment(dir);
+        return;
+      }
+      const el = scrollerRef.current;
+      if (el) el.scrollTop += dir * fontSize * 3;
+    },
+    [fontSize, followMode, stepSegment],
+  );
 
   const restart = useCallback(() => {
+    resetFollow();
     if (scrollerRef.current) scrollerRef.current.scrollTop = 0;
-  }, []);
+  }, [resetFollow]);
+
 
   // Atalhos de teclado (na página e também dentro da janela PiP)
   useEffect(() => {
@@ -297,10 +341,11 @@ export function Teleprompter() {
   }, [closePip, restart, startRecording, stopRecording]);
 
   const stop = useCallback(() => {
+    // A janela PiP permanece aberta: ela passa a exibir o preview do vídeo.
     stopRecording();
     stopTracks();
-    closePip();
-  }, [closePip, stopRecording, stopTracks]);
+  }, [stopRecording, stopTracks]);
+
 
   // Limite de 30 minutos
   useEffect(() => {
@@ -349,6 +394,37 @@ export function Teleprompter() {
             <span>Limite de gravação: 30 minutos</span>
           </div>
 
+          <div className="mt-6">
+            <p className="text-xs font-semibold uppercase tracking-wide text-[var(--muted-foreground)]">
+              Como o roteiro deve avançar
+            </p>
+            <div className="mt-2 flex flex-wrap gap-2">
+              {(["scroll", "voice"] as FollowMode[]).map((m) => (
+                <button
+                  key={m}
+                  type="button"
+                  onClick={() => setFollowMode(m)}
+                  disabled={m === "voice" && !voiceSupported}
+                  className={cn(
+                    "rounded-lg border px-3 py-2 text-sm transition-colors disabled:opacity-40",
+                    followMode === m
+                      ? "border-[var(--brand)] bg-[var(--brand)]/15 text-[var(--brand)]"
+                      : "border-[var(--border)] bg-[var(--surface)] text-[var(--muted-foreground)] hover:text-white",
+                  )}
+                >
+                  {m === "scroll" ? "Rolagem automática" : "Acompanhar minha fala"}
+                </button>
+              ))}
+            </div>
+            {!voiceSupported && (
+              <p className="mt-2 text-xs text-[var(--muted-foreground)]">
+                Seu navegador não oferece suporte ao acompanhamento por voz. Use a rolagem
+                automática.
+              </p>
+            )}
+          </div>
+
+
           {pipSupported ? (
             <p className="mt-4 rounded-lg border border-[var(--border)] bg-[var(--surface)] p-3 text-xs text-[var(--muted-foreground)]">
               Dica: se você compartilhar a <strong>tela inteira</strong>, posicione a janela do
@@ -386,21 +462,71 @@ export function Teleprompter() {
     );
   }
 
+  const listenLabel =
+    listenState === "following"
+      ? "Acompanhando sua fala"
+      : listenState === "waiting"
+        ? "Aguardando você continuar"
+        : "Ouvindo";
+
   const controls = (
     <div className={cn("flex flex-wrap items-end gap-4", pipWindow ? "px-3 pb-3" : "mx-auto max-w-5xl")}>
-      <div className="flex gap-2">
-        <ActionButton
-          tone={scrolling ? "neutral" : "record"}
-          icon={scrolling ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
-          onClick={() => setScrolling((s) => !s)}
-        >
-          {scrolling ? "Pausar" : "Rolar"}
-        </ActionButton>
+      <div className="flex flex-wrap gap-2">
+        {followMode === "scroll" ? (
+          <ActionButton
+            tone={scrolling ? "neutral" : "record"}
+            icon={scrolling ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
+            onClick={() => setScrolling((s) => !s)}
+          >
+            {scrolling ? "Pausar" : "Rolar"}
+          </ActionButton>
+        ) : (
+          <span
+            className={cn(
+              "inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-medium",
+              listenState === "following"
+                ? "bg-[var(--brand)]/15 text-[var(--brand)]"
+                : "bg-white/5 text-[var(--muted-foreground)]",
+            )}
+          >
+            <Mic className="h-3.5 w-3.5" />
+            {listenLabel}
+          </span>
+        )}
         <ActionButton icon={<RotateCcw className="h-4 w-4" />} onClick={restart}>
           Reiniciar
         </ActionButton>
       </div>
-      <Slider label="Velocidade" value={wpm} min={60} max={300} step={10} suffix=" ppm" onChange={setWpm} />
+      <div className="flex gap-2">
+        <button
+          type="button"
+          onClick={() => setFollowMode("scroll")}
+          className={cn(
+            "rounded-md border px-2 py-1 text-[11px]",
+            followMode === "scroll"
+              ? "border-[var(--brand)] text-[var(--brand)]"
+              : "border-[var(--border)] text-[var(--muted-foreground)]",
+          )}
+        >
+          Rolagem
+        </button>
+        <button
+          type="button"
+          disabled={!voiceSupported}
+          onClick={() => setFollowMode("voice")}
+          className={cn(
+            "rounded-md border px-2 py-1 text-[11px] disabled:opacity-40",
+            followMode === "voice"
+              ? "border-[var(--brand)] text-[var(--brand)]"
+              : "border-[var(--border)] text-[var(--muted-foreground)]",
+          )}
+        >
+          Acompanhar minha fala
+        </button>
+      </div>
+      {followMode === "scroll" && (
+        <Slider label="Velocidade" value={wpm} min={60} max={300} step={10} suffix=" ppm" onChange={setWpm} />
+      )}
       <Slider label="Fonte" value={fontSize} min={18} max={72} suffix="px" onChange={setFontSize} />
       {!pipWindow && (
         <>
@@ -419,6 +545,11 @@ export function Teleprompter() {
           </label>
         </>
       )}
+      {followMode === "voice" && voiceBlocked && (
+        <span className="w-full text-[11px] text-[var(--muted-foreground)]">
+          Não foi possível ouvir o microfone neste navegador. Use a rolagem automática.
+        </span>
+      )}
       <span className="w-full text-[11px] text-[var(--muted-foreground)]">
         Atalhos: espaço = play/pause da rolagem · setas = avançar/retroceder
       </span>
@@ -434,10 +565,61 @@ export function Teleprompter() {
       )}
       style={{ fontSize, lineHeight: 1.5 }}
     >
-      {script}
+      {followMode === "voice" && scriptModel.segments.length ? (
+        <p className="whitespace-pre-wrap">
+          {scriptModel.segments.map((seg, i) => (
+            <span
+              key={seg.index}
+              ref={(el) => {
+                segmentRefs.current[i] = el;
+              }}
+              className={cn(
+                "transition-opacity duration-300",
+                i < segmentIndex
+                  ? "text-[var(--muted-foreground)] opacity-45"
+                  : i === segmentIndex
+                    ? "font-semibold text-white"
+                    : "text-white/70",
+              )}
+            >
+              {seg.text}{" "}
+            </span>
+          ))}
+        </p>
+      ) : (
+        script
+      )}
       <div style={{ height: pipWindow ? "60%" : "40vh" }} />
     </div>
   );
+
+  const finished = status === "ready" && recorder.downloadUrl;
+
+  const previewPanel = finished ? (
+    <div className="flex h-full w-full flex-col gap-3 overflow-y-auto p-3">
+      <p className="text-sm font-semibold text-white">Gravação concluída</p>
+      <VideoPreviewPlayer
+        src={recorder.downloadUrl!}
+        ownerDocument={pipWindow?.document}
+      />
+      <div className="flex flex-wrap gap-2">
+        <ActionButton tone="download" icon={<Download className="h-4 w-4" />} onClick={download}>
+          Baixar MP4
+        </ActionButton>
+        <ActionButton
+          onClick={() => {
+            reset();
+            resetFollow();
+            closePip();
+            setMode("prep");
+          }}
+        >
+          Nova gravação
+        </ActionButton>
+      </div>
+    </div>
+  ) : null;
+
 
   return (
     <div className="flex min-h-screen flex-col bg-[var(--background)] text-[var(--foreground)]">
@@ -472,11 +654,14 @@ export function Teleprompter() {
               <ActionButton
                 onClick={() => {
                   reset();
+                  resetFollow();
+                  closePip();
                   setMode("prep");
                 }}
               >
                 Nova gravação
               </ActionButton>
+
             </>
           )}
         </div>
@@ -500,17 +685,31 @@ export function Teleprompter() {
       {pipWindow ? (
         <>
           {createPortal(
-            <div className="flex h-full w-full flex-col bg-[var(--background)] p-4 text-[var(--foreground)]">
-              <p className="mb-2 shrink-0 text-[11px] font-semibold text-[var(--muted-foreground)]">
-                Teleprompter · janela separada (não entra na gravação)
-              </p>
-              {scroller}
-              <div className="mt-3 shrink-0 border-t border-[var(--border)] pt-3">{controls}</div>
+            <div className="flex h-full w-full flex-col bg-[var(--background)] text-[var(--foreground)]">
+              {finished ? (
+                previewPanel
+              ) : status === "converting" ? (
+                <div className="flex h-full flex-col items-center justify-center gap-2 p-4 text-center">
+                  <p className="text-sm font-semibold text-white">Gravação encerrada</p>
+                  <p className="text-xs text-[var(--muted-foreground)]">
+                    Preparando o MP4… {Math.round(recorder.convertProgress * 100)}%
+                  </p>
+                </div>
+              ) : (
+                <div className="flex h-full w-full flex-col p-4">
+                  <p className="mb-2 shrink-0 text-[11px] font-semibold text-[var(--muted-foreground)]">
+                    Teleprompter · janela separada (não entra na gravação)
+                  </p>
+                  {scroller}
+                  <div className="mt-3 shrink-0 border-t border-[var(--border)] pt-3">{controls}</div>
+                </div>
+              )}
             </div>,
             pipWindow.document.body,
           )}
           <main className="flex flex-1 items-center justify-center px-6 text-center">
             <div className="max-w-md text-sm text-[var(--muted-foreground)]">
+
               <p className="font-semibold text-[var(--foreground)]">
                 O roteiro está rolando na janela do teleprompter.
               </p>
@@ -521,6 +720,11 @@ export function Teleprompter() {
             </div>
           </main>
         </>
+      ) : finished ? (
+        <main className="mx-auto w-full max-w-2xl flex-1 px-4 py-6">
+          <p className="mb-3 text-sm font-semibold">Gravação concluída</p>
+          <VideoPreviewPlayer src={recorder.downloadUrl!} />
+        </main>
       ) : (
         <>
           <div className="flex items-start gap-2 bg-[var(--brand)]/15 px-4 py-2 text-xs text-[var(--brand)]">
@@ -540,6 +744,7 @@ export function Teleprompter() {
           <footer className="border-t border-[var(--border)] bg-[var(--surface)] px-4 py-3">{controls}</footer>
         </>
       )}
+
     </div>
   );
 }
