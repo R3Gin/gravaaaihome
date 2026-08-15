@@ -125,11 +125,15 @@ export function Teleprompter() {
 
   // Modelo de segmentos do roteiro (memoizado — só recalcula ao mudar o texto).
   const scriptModel = useMemo(() => buildScriptModel(script), [script]);
-  const voiceActive = mode === "live" && followMode === "voice" && recording;
+  // O reconhecimento roda na janela principal e começa assim que entramos no
+  // modo ao vivo com "acompanhar minha fala" — não depende da gravação nem da
+  // janela PiP (que apenas renderiza este mesmo estado via portal).
+  const voiceActive = mode === "live" && followMode === "voice" && status !== "ready";
   const {
     segmentIndex,
+    wordCursor,
     listenState,
-    unsupported: voiceBlocked,
+    errorCode: voiceError,
     stepSegment,
     resetFollow,
   } = useSpeechFollow(scriptModel, voiceActive);
@@ -143,7 +147,8 @@ export function Teleprompter() {
     if (!el || !target) return;
     const top = target.offsetTop - el.clientHeight * 0.35;
     el.scrollTo({ top: Math.max(0, top), behavior: "smooth" });
-  }, [segmentIndex, followMode, mode]);
+  }, [segmentIndex, followMode, mode, pipWindow]);
+
 
 
   const closePip = useCallback(() => {
