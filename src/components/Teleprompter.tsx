@@ -627,10 +627,10 @@ export function Teleprompter() {
       {followMode === "voice" && scriptModel.segments.length ? (
         <p className="whitespace-pre-wrap">
           {scriptModel.segments.map((seg, i) => {
-            const done = i < segmentIndex;
             const current = i === segmentIndex;
-            // Progresso dentro da frase atual: palavras já reconhecidas ficam
-            // esmaecidas, as próximas continuam brancas.
+            const ahead = i - segmentIndex;
+            // Gradiente de leitura: lido → esmaecido, próximas frases com
+            // opacidade crescente conforme se aproximam do ponto de leitura.
             if (current) {
               const tokens = seg.text.trim().split(/\s+/);
               const readCount = Math.max(0, Math.min(tokens.length, wordCursor - seg.start));
@@ -645,10 +645,11 @@ export function Teleprompter() {
                   {tokens.map((t, k) => (
                     <span
                       key={k}
-                      className={cn(
-                        "transition-opacity duration-200",
-                        k < readCount ? "text-[var(--muted-foreground)] opacity-50" : "text-white",
-                      )}
+                      className="text-white"
+                      style={{
+                        opacity: k < readCount ? 0.4 : k === readCount ? 1 : 0.92,
+                        transition: "opacity 180ms cubic-bezier(0.2, 0, 0, 1)",
+                      }}
                     >
                       {t}{" "}
                     </span>
@@ -656,21 +657,25 @@ export function Teleprompter() {
                 </span>
               );
             }
+            const opacity =
+              ahead < 0 ? 0.35 : ahead === 1 ? 0.75 : ahead === 2 ? 0.6 : 0.45;
             return (
               <span
                 key={seg.index}
                 ref={(el) => {
                   segmentRefs.current[i] = el;
                 }}
-                className={cn(
-                  "transition-opacity duration-300",
-                  done ? "text-[var(--muted-foreground)] opacity-45" : "text-white/70",
-                )}
+                className="text-white"
+                style={{
+                  opacity,
+                  transition: "opacity 180ms cubic-bezier(0.2, 0, 0, 1)",
+                }}
               >
                 {seg.text}{" "}
               </span>
             );
           })}
+
         </p>
 
       ) : (
