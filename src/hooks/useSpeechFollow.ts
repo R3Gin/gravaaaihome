@@ -33,7 +33,14 @@ export type VoiceErrorCode = "unsupported" | "not-allowed" | "audio-capture" | "
 const SILENCE_MS = 2500;
 /** Palavras recentes consideradas para o matching. */
 const RECENT_WORDS = 40;
+/** Avanço máximo aceito sem confirmação (em palavras). */
+const MAX_JUMP = 8;
+/** Sem casamento por este tempo → amplia a janela de busca (anti-travamento). */
+const STALL_MS = 4000;
+/** Janela ampliada usada no resgate. */
+const RESCUE_REACH = 45;
 const LOG = "[Teleprompter Voice]";
+
 
 export function useSpeechFollow(model: ScriptModel, enabled: boolean) {
   const [segmentIndex, setSegmentIndex] = useState(0);
@@ -51,6 +58,13 @@ export function useSpeechFollow(model: ScriptModel, enabled: boolean) {
   const finalWordsRef = useRef<string[]>([]);
   /** Índice do primeiro result ainda não consolidado como final. */
   const finalizedUpToRef = useRef(0);
+  /** Última posição confirmada por um resultado final. */
+  const committedCursorRef = useRef(0);
+  /** Salto grande aguardando confirmação. */
+  const pendingJumpRef = useRef<number | null>(null);
+  /** Momento do último casamento aceito. */
+  const lastMatchAtRef = useRef(0);
+
 
   useEffect(() => {
     modelRef.current = model;
@@ -82,9 +96,13 @@ export function useSpeechFollow(model: ScriptModel, enabled: boolean) {
     cursorRef.current = 0;
     finalWordsRef.current = [];
     finalizedUpToRef.current = 0;
+    committedCursorRef.current = 0;
+    pendingJumpRef.current = null;
+    lastMatchAtRef.current = performance.now();
     setWordCursor(0);
     setSegmentIndex(0);
   }, []);
+
 
   useEffect(() => {
     if (!enabled) {
@@ -112,6 +130,10 @@ export function useSpeechFollow(model: ScriptModel, enabled: boolean) {
     manualStopRef.current = false;
     finalWordsRef.current = [];
     finalizedUpToRef.current = 0;
+    committedCursorRef.current = cursorRef.current;
+    pendingJumpRef.current = null;
+    lastMatchAtRef.current = performance.now();
+
 
     const bumpSilence = () => {
       if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
@@ -171,12 +193,20 @@ export function useSpeechFollow(model: ScriptModel, enabled: boolean) {
       // Reconstrói final + interim corretamente, sem sobrescrever o histórico.
       let interim = "";
       let newFinal = "";
+      let sawFinal = false;
       for (let i = finalizedUpToRef.current; i < event.results.length; i++) {
         const res = event.results[i];
-        const text = String(res[0]?.transcript ?? "");
+        const alt = res[0];
+        const text = String(alt?.transcript ?? "");
         if (res.isFinal) {
+          // Filtro de ruído: alternativa de confiança muito baixa é descartada.
+          if (typeof alt?.confidence === "number" && alt.confidence > 0 && alt.confidence < 0.25) {
+            finalizedUpToRef.current = i + 1;
+            continue;
+          }
           newFinal += " " + text;
           finalizedUpToRef.current = i + 1;
+          sawFinal = true;
         } else {
           interim += " " + text;
         }
@@ -185,24 +215,53 @@ export function useSpeechFollow(model: ScriptModel, enabled: boolean) {
       const spoken = [...finalWordsRef.current, ...normalizeText(interim)];
       const recent = spoken.slice(-RECENT_WORDS);
       if (!recent.length) return;
+      // Ruído: uma única palavra curta não move nada.
+      if (recent.length === 1 && recent[0]!.length < 4) return;
 
       console.log(`${LOG} result:`, recent.slice(-8).join(" "));
 
+      const stalled = performance.now() - lastMatchAtRef.current > STALL_MS;
+      const reach = stalled ? RESCUE_REACH : undefined;
       const { cursor, score, matched } = alignCursor(
         modelRef.current.words,
         cursorRef.current,
         recent,
+        0.6,
+        reach,
       );
       console.log(`${LOG} match score:`, score.toFixed(2), "→ cursor", cursor);
+
       if (matched && cursor > cursorRef.current) {
-        console.log(`${LOG} advancing:`, cursorRef.current, "→", cursor);
+        const jump = cursor - cursorRef.current;
+        const bigJump = jump > MAX_JUMP;
+        if (bigJump && !stalled) {
+          // Salto grande precisa de confirmação em duas leituras seguidas.
+          const pending = pendingJumpRef.current;
+          if (!pending || Math.abs(pending - cursor) > 2) {
+            pendingJumpRef.current = cursor;
+            setListenState((s) => (s === "following" ? s : "hearing"));
+            bumpSilence();
+            return;
+          }
+        }
+        pendingJumpRef.current = null;
+        lastMatchAtRef.current = performance.now();
+        // O interino move de forma provisória; o final consolida a posição.
+        if (sawFinal) committedCursorRef.current = cursor;
+        console.log(`${LOG} advancing:`, cursorRef.current, "→", cursor, sawFinal ? "(final)" : "(interim)");
         applyCursor(cursor);
         setListenState("following");
       } else {
+        // Interino que "desfez" a fala não deve puxar o texto para trás abaixo
+        // do que já foi confirmado por um resultado final.
+        if (cursorRef.current < committedCursorRef.current) {
+          applyCursor(committedCursorRef.current);
+        }
         setListenState((s) => (s === "following" ? s : "hearing"));
       }
       bumpSilence();
     };
+
 
     safeStart();
 

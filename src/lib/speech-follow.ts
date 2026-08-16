@@ -173,39 +173,51 @@ export interface AlignResult {
   matched: boolean;
 }
 
-/** Janela de busca à frente do cursor (em palavras). */
-const FORWARD_WINDOW = 30;
+/** Janela de busca à frente do cursor (em palavras). Curta = sem saltos. */
+const FORWARD_WINDOW = 14;
 /** Quanto podemos voltar (o usuário pode repetir uma palavra). */
-const BACK_WINDOW = 6;
+const BACK_WINDOW = 5;
+
+/** Limiar por tamanho da cauda: amostra curta precisa de casamento mais forte. */
+function thresholdFor(tailLength: number, base: number) {
+  if (tailLength <= 3) return Math.max(base, 0.8);
+  if (tailLength <= 5) return Math.max(base, 0.7);
+  return base;
+}
 
 /**
  * Ancora a fala recente no roteiro comparando o SUFIXO do que foi falado com
  * as palavras que terminam em cada posição candidata, dentro de uma janela
- * curta ao redor do cursor. Isso permite avançar vários segmentos de uma vez
- * sem nunca saltar para uma frase repetida distante.
+ * curta ao redor do cursor. Isso permite avançar sem nunca saltar para uma
+ * frase repetida distante.
+ *
+ * `reach` amplia temporariamente a janela à frente quando o acompanhamento
+ * perdeu o engate (anti-travamento).
  */
 export function alignCursor(
   scriptWords: string[],
   cursor: number,
   spokenTail: string[],
   threshold = 0.6,
+  reach = FORWARD_WINDOW,
 ): AlignResult {
   if (!scriptWords.length || !spokenTail.length) {
     return { cursor, score: 0, matched: false };
   }
   const from = Math.max(1, cursor - BACK_WINDOW);
-  const to = Math.min(scriptWords.length, cursor + FORWARD_WINDOW);
+  const to = Math.min(scriptWords.length, cursor + reach);
   let best: AlignResult = { cursor, score: 0, matched: false };
 
   for (const w of [8, 5, 3]) {
     const tail = spokenTail.slice(-w);
     if (!tail.length) continue;
+    const limit = thresholdFor(tail.length, threshold);
     for (let end = from; end <= to; end++) {
       const n = Math.min(tail.length + 2, end);
       const slice = scriptWords.slice(end - n, end);
       // LCS tolera palavras a mais/a menos do reconhecedor (inserções e omissões).
       const score = lcsRatio(tail, slice);
-      if (score < threshold) continue;
+      if (score < limit) continue;
       // Prefere maior score; em empate, a posição mais à frente.
       if (score > best.score + 0.001 || (Math.abs(score - best.score) <= 0.001 && end > best.cursor)) {
         best = { cursor: end, score, matched: true };
@@ -215,3 +227,4 @@ export function alignCursor(
   }
   return best;
 }
+

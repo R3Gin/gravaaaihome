@@ -139,15 +139,58 @@ export function Teleprompter() {
   } = useSpeechFollow(scriptModel, voiceActive);
   const segmentRefs = useRef<Array<HTMLSpanElement | null>>([]);
 
-  // Mantém o segmento atual na zona confortável de leitura, sem saltos bruscos.
+  const scrollTargetRef = useRef(0);
+  const scrollAnimRef = useRef(0);
+
+  // Rolagem contínua e suave: o alvo é calculado por PALAVRA (interpolando
+  // entre o topo do segmento atual e o do próximo) e a posição atual persegue
+  // esse alvo quadro a quadro — nada de saltos a cada frase.
   useEffect(() => {
     if (followMode !== "voice" || mode !== "live") return;
     const el = scrollerRef.current;
-    const target = segmentRefs.current[segmentIndex];
-    if (!el || !target) return;
-    const top = target.offsetTop - el.clientHeight * 0.35;
-    el.scrollTo({ top: Math.max(0, top), behavior: "smooth" });
-  }, [segmentIndex, followMode, mode, pipWindow]);
+    const cur = segmentRefs.current[segmentIndex];
+    if (!el || !cur) return;
+
+    const seg = scriptModel.segments[segmentIndex];
+    const next = segmentRefs.current[segmentIndex + 1];
+    const span = seg ? Math.max(1, seg.end - seg.start) : 1;
+    const progress = seg
+      ? Math.max(0, Math.min(1, (wordCursor - seg.start) / span))
+      : 0;
+    const curTop = cur.offsetTop;
+    const nextTop = next ? next.offsetTop : curTop + cur.offsetHeight;
+    const anchor = curTop + (nextTop - curTop) * progress;
+    const max = Math.max(0, el.scrollHeight - el.clientHeight);
+    const target = Math.max(0, Math.min(max, anchor - el.clientHeight * 0.35));
+
+    const delta = target - el.scrollTop;
+    // Faixa morta: não micro-mexe. Recuos pequenos são absorvidos.
+    if (Math.abs(delta) < 6) return;
+    if (delta < 0 && -delta < el.clientHeight * 0.5) return;
+
+    const view = el.ownerDocument?.defaultView ?? window;
+    if (view.matchMedia?.("(prefers-reduced-motion: reduce)").matches) {
+      el.scrollTop = target;
+      return;
+    }
+
+    scrollTargetRef.current = target;
+    view.cancelAnimationFrame(scrollAnimRef.current);
+    const step = () => {
+      const node = scrollerRef.current;
+      if (!node) return;
+      const diff = scrollTargetRef.current - node.scrollTop;
+      if (Math.abs(diff) < 0.5) {
+        node.scrollTop = scrollTargetRef.current;
+        return;
+      }
+      node.scrollTop = node.scrollTop + diff * 0.12;
+      scrollAnimRef.current = view.requestAnimationFrame(step);
+    };
+    scrollAnimRef.current = view.requestAnimationFrame(step);
+    return () => view.cancelAnimationFrame(scrollAnimRef.current);
+  }, [segmentIndex, wordCursor, followMode, mode, pipWindow, scriptModel]);
+
 
 
 
@@ -584,10 +627,10 @@ export function Teleprompter() {
       {followMode === "voice" && scriptModel.segments.length ? (
         <p className="whitespace-pre-wrap">
           {scriptModel.segments.map((seg, i) => {
-            const done = i < segmentIndex;
             const current = i === segmentIndex;
-            // Progresso dentro da frase atual: palavras já reconhecidas ficam
-            // esmaecidas, as próximas continuam brancas.
+            const ahead = i - segmentIndex;
+            // Gradiente de leitura: lido → esmaecido, próximas frases com
+            // opacidade crescente conforme se aproximam do ponto de leitura.
             if (current) {
               const tokens = seg.text.trim().split(/\s+/);
               const readCount = Math.max(0, Math.min(tokens.length, wordCursor - seg.start));
@@ -602,10 +645,11 @@ export function Teleprompter() {
                   {tokens.map((t, k) => (
                     <span
                       key={k}
-                      className={cn(
-                        "transition-opacity duration-200",
-                        k < readCount ? "text-[var(--muted-foreground)] opacity-50" : "text-white",
-                      )}
+                      className="text-white"
+                      style={{
+                        opacity: k < readCount ? 0.4 : k === readCount ? 1 : 0.92,
+                        transition: "opacity 180ms cubic-bezier(0.2, 0, 0, 1)",
+                      }}
                     >
                       {t}{" "}
                     </span>
@@ -613,21 +657,25 @@ export function Teleprompter() {
                 </span>
               );
             }
+            const opacity =
+              ahead < 0 ? 0.35 : ahead === 1 ? 0.75 : ahead === 2 ? 0.6 : 0.45;
             return (
               <span
                 key={seg.index}
                 ref={(el) => {
                   segmentRefs.current[i] = el;
                 }}
-                className={cn(
-                  "transition-opacity duration-300",
-                  done ? "text-[var(--muted-foreground)] opacity-45" : "text-white/70",
-                )}
+                className="text-white"
+                style={{
+                  opacity,
+                  transition: "opacity 180ms cubic-bezier(0.2, 0, 0, 1)",
+                }}
               >
                 {seg.text}{" "}
               </span>
             );
           })}
+
         </p>
 
       ) : (
