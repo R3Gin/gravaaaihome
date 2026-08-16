@@ -33,7 +33,14 @@ export type VoiceErrorCode = "unsupported" | "not-allowed" | "audio-capture" | "
 const SILENCE_MS = 2500;
 /** Palavras recentes consideradas para o matching. */
 const RECENT_WORDS = 40;
+/** Avanço máximo aceito sem confirmação (em palavras). */
+const MAX_JUMP = 8;
+/** Sem casamento por este tempo → amplia a janela de busca (anti-travamento). */
+const STALL_MS = 4000;
+/** Janela ampliada usada no resgate. */
+const RESCUE_REACH = 45;
 const LOG = "[Teleprompter Voice]";
+
 
 export function useSpeechFollow(model: ScriptModel, enabled: boolean) {
   const [segmentIndex, setSegmentIndex] = useState(0);
