@@ -139,15 +139,58 @@ export function Teleprompter() {
   } = useSpeechFollow(scriptModel, voiceActive);
   const segmentRefs = useRef<Array<HTMLSpanElement | null>>([]);
 
-  // Mantém o segmento atual na zona confortável de leitura, sem saltos bruscos.
+  const scrollTargetRef = useRef(0);
+  const scrollAnimRef = useRef(0);
+
+  // Rolagem contínua e suave: o alvo é calculado por PALAVRA (interpolando
+  // entre o topo do segmento atual e o do próximo) e a posição atual persegue
+  // esse alvo quadro a quadro — nada de saltos a cada frase.
   useEffect(() => {
     if (followMode !== "voice" || mode !== "live") return;
     const el = scrollerRef.current;
-    const target = segmentRefs.current[segmentIndex];
-    if (!el || !target) return;
-    const top = target.offsetTop - el.clientHeight * 0.35;
-    el.scrollTo({ top: Math.max(0, top), behavior: "smooth" });
-  }, [segmentIndex, followMode, mode, pipWindow]);
+    const cur = segmentRefs.current[segmentIndex];
+    if (!el || !cur) return;
+
+    const seg = scriptModel.segments[segmentIndex];
+    const next = segmentRefs.current[segmentIndex + 1];
+    const span = seg ? Math.max(1, seg.end - seg.start) : 1;
+    const progress = seg
+      ? Math.max(0, Math.min(1, (wordCursor - seg.start) / span))
+      : 0;
+    const curTop = cur.offsetTop;
+    const nextTop = next ? next.offsetTop : curTop + cur.offsetHeight;
+    const anchor = curTop + (nextTop - curTop) * progress;
+    const max = Math.max(0, el.scrollHeight - el.clientHeight);
+    const target = Math.max(0, Math.min(max, anchor - el.clientHeight * 0.35));
+
+    const delta = target - el.scrollTop;
+    // Faixa morta: não micro-mexe. Recuos pequenos são absorvidos.
+    if (Math.abs(delta) < 6) return;
+    if (delta < 0 && -delta < el.clientHeight * 0.5) return;
+
+    const view = el.ownerDocument?.defaultView ?? window;
+    if (view.matchMedia?.("(prefers-reduced-motion: reduce)").matches) {
+      el.scrollTop = target;
+      return;
+    }
+
+    scrollTargetRef.current = target;
+    view.cancelAnimationFrame(scrollAnimRef.current);
+    const step = () => {
+      const node = scrollerRef.current;
+      if (!node) return;
+      const diff = scrollTargetRef.current - node.scrollTop;
+      if (Math.abs(diff) < 0.5) {
+        node.scrollTop = scrollTargetRef.current;
+        return;
+      }
+      node.scrollTop = node.scrollTop + diff * 0.12;
+      scrollAnimRef.current = view.requestAnimationFrame(step);
+    };
+    scrollAnimRef.current = view.requestAnimationFrame(step);
+    return () => view.cancelAnimationFrame(scrollAnimRef.current);
+  }, [segmentIndex, wordCursor, followMode, mode, pipWindow, scriptModel]);
+
 
 
 
