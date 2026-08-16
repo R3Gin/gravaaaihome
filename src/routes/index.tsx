@@ -53,6 +53,10 @@ function Index() {
       </header>
 
       <main className="mx-auto max-w-5xl px-4 pb-24 pt-8 sm:px-6 sm:pt-12">
+        <h1 className="sr-only">
+          Gravaai — Gravador de tela e editor de vídeo online no navegador
+        </h1>
+
 
         <ClientOnly fallback={<div className="aspect-video w-full rounded-2xl border border-[var(--border)] bg-[var(--surface)]" />}>
           <ScreenRecorder />
