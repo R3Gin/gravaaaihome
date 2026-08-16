@@ -58,6 +58,13 @@ export function useSpeechFollow(model: ScriptModel, enabled: boolean) {
   const finalWordsRef = useRef<string[]>([]);
   /** Índice do primeiro result ainda não consolidado como final. */
   const finalizedUpToRef = useRef(0);
+  /** Última posição confirmada por um resultado final. */
+  const committedCursorRef = useRef(0);
+  /** Salto grande aguardando confirmação. */
+  const pendingJumpRef = useRef<number | null>(null);
+  /** Momento do último casamento aceito. */
+  const lastMatchAtRef = useRef(0);
+
 
   useEffect(() => {
     modelRef.current = model;
