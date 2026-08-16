@@ -299,12 +299,23 @@ export function VideoEditor() {
               {short(currentTime)} / {short(duration)}
             </span>
           </div>
-          <button onClick={undo} className="rounded-lg border border-[var(--border)] p-2" title="Desfazer">
+          <button
+            onClick={undo}
+            aria-label="Desfazer"
+            className="rounded-lg border border-[var(--border)] p-2"
+            title="Desfazer"
+          >
             <Undo2 className="h-4 w-4" />
           </button>
-          <button onClick={redo} className="rounded-lg border border-[var(--border)] p-2" title="Refazer">
+          <button
+            onClick={redo}
+            aria-label="Refazer"
+            className="rounded-lg border border-[var(--border)] p-2"
+            title="Refazer"
+          >
             <Redo2 className="h-4 w-4" />
           </button>
+
           <button
             onClick={onExport}
             disabled={!sourceBlob}
