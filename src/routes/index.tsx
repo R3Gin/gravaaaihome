@@ -6,8 +6,29 @@ import { Mosaicos } from "@/components/Mosaicos";
 import { InstallPwaButton } from "@/components/InstallPwaButton";
 
 export const Route = createFileRoute("/")({
+  head: () => ({
+    meta: [
+      { title: "Gravaai — Gravador de tela e editor de vídeo online" },
+      {
+        name: "description",
+        content:
+          "Grave a tela com webcam e microfone, edite na timeline e exporte em MP4 direto no navegador, sem instalar nada e sem upload.",
+      },
+      { property: "og:title", content: "Gravaai — Gravador de tela e editor de vídeo online" },
+      {
+        property: "og:description",
+        content:
+          "Gravação de tela, teleprompter, legendas automáticas e editor de vídeo — tudo no navegador.",
+      },
+      { property: "og:type", content: "website" },
+      { property: "og:url", content: "https://gravaai.online/" },
+      { name: "twitter:card", content: "summary_large_image" },
+    ],
+    links: [{ rel: "canonical", href: "https://gravaai.online/" }],
+  }),
   component: Index,
 });
+
 
 function Index() {
   return (
@@ -32,6 +53,10 @@ function Index() {
       </header>
 
       <main className="mx-auto max-w-5xl px-4 pb-24 pt-8 sm:px-6 sm:pt-12">
+        <h1 className="sr-only">
+          Gravaai — Gravador de tela e editor de vídeo online no navegador
+        </h1>
+
 
         <ClientOnly fallback={<div className="aspect-video w-full rounded-2xl border border-[var(--border)] bg-[var(--surface)]" />}>
           <ScreenRecorder />

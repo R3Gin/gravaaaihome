@@ -280,8 +280,10 @@ export function VideoEditor() {
       </div>
 
       <div className="hidden h-full min-h-0 flex-col md:flex">
+        <h1 className="sr-only">Editor de vídeo online do Gravaai</h1>
         {/* barra superior */}
         <header className="flex h-14 shrink-0 flex-nowrap items-center gap-2 border-b border-[var(--border)] bg-[var(--surface-2)] px-3">
+
           <input
             value={projectName}
             onChange={(e) => setProjectName(e.target.value)}
@@ -299,12 +301,23 @@ export function VideoEditor() {
               {short(currentTime)} / {short(duration)}
             </span>
           </div>
-          <button onClick={undo} className="rounded-lg border border-[var(--border)] p-2" title="Desfazer">
+          <button
+            onClick={undo}
+            aria-label="Desfazer"
+            className="rounded-lg border border-[var(--border)] p-2"
+            title="Desfazer"
+          >
             <Undo2 className="h-4 w-4" />
           </button>
-          <button onClick={redo} className="rounded-lg border border-[var(--border)] p-2" title="Refazer">
+          <button
+            onClick={redo}
+            aria-label="Refazer"
+            className="rounded-lg border border-[var(--border)] p-2"
+            title="Refazer"
+          >
             <Redo2 className="h-4 w-4" />
           </button>
+
           <button
             onClick={onExport}
             disabled={!sourceBlob}
