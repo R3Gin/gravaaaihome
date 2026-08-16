@@ -96,9 +96,13 @@ export function useSpeechFollow(model: ScriptModel, enabled: boolean) {
     cursorRef.current = 0;
     finalWordsRef.current = [];
     finalizedUpToRef.current = 0;
+    committedCursorRef.current = 0;
+    pendingJumpRef.current = null;
+    lastMatchAtRef.current = performance.now();
     setWordCursor(0);
     setSegmentIndex(0);
   }, []);
+
 
   useEffect(() => {
     if (!enabled) {
