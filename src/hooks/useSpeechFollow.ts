@@ -130,6 +130,10 @@ export function useSpeechFollow(model: ScriptModel, enabled: boolean) {
     manualStopRef.current = false;
     finalWordsRef.current = [];
     finalizedUpToRef.current = 0;
+    committedCursorRef.current = cursorRef.current;
+    pendingJumpRef.current = null;
+    lastMatchAtRef.current = performance.now();
+
 
     const bumpSilence = () => {
       if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
