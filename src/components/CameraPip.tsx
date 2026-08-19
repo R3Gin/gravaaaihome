@@ -117,11 +117,13 @@ export function useCameraPip(opts: UseCameraPipOptions = {}): CameraPipControlle
         audio: false,
       });
       streamRef.current = s;
-      const v = videoRef.current;
+      // A bolha pode ainda não estar montada (ex.: câmera ligada antes de
+      // iniciar a captura). Usa um <video> destacado como suporte; quando a
+      // bolha montar, ela reassume o ref e reanexa o mesmo stream.
+      let v = videoRef.current;
       if (!v) {
-        s.getTracks().forEach((t) => t.stop());
-        streamRef.current = null;
-        throw new Error("Elemento <video> não montado. Renderize <CameraPipBubble/>.");
+        v = document.createElement("video");
+        videoRef.current = v;
       }
       v.srcObject = s;
       v.muted = true;
@@ -510,7 +512,16 @@ export function CameraPipBubble({
       )}
     >
       <video
-        ref={videoRef}
+        ref={(el) => {
+          videoRef.current = el;
+          if (el && controller.streamRef.current) {
+            if (el.srcObject !== controller.streamRef.current) {
+              el.srcObject = controller.streamRef.current;
+            }
+            el.muted = true;
+            void el.play().catch(() => {});
+          }
+        }}
         playsInline
         muted
         autoPlay
