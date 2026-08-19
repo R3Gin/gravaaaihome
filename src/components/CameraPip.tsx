@@ -512,7 +512,16 @@ export function CameraPipBubble({
       )}
     >
       <video
-        ref={videoRef}
+        ref={(el) => {
+          videoRef.current = el;
+          if (el && controller.streamRef.current) {
+            if (el.srcObject !== controller.streamRef.current) {
+              el.srcObject = controller.streamRef.current;
+            }
+            el.muted = true;
+            void el.play().catch(() => {});
+          }
+        }}
         playsInline
         muted
         autoPlay
