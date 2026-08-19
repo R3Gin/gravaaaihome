@@ -112,7 +112,7 @@ export function ScreenRecorder() {
   const navigate = useNavigate();
   const [status, setStatus] = useState<Status>("idle");
   const [screenAudio, setScreenAudio] = useState(true);
-  const [micAudio, setMicAudio] = useState(false);
+  const [micAudio, setMicAudio] = useState(true);
   const [paused, setPaused] = useState(false);
   const [screenAudioEnabled, setScreenAudioEnabled] = useState(true);
   const [micEnabled, setMicEnabled] = useState(true);
