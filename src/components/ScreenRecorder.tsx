@@ -886,13 +886,19 @@ export function ScreenRecorder() {
 
 
         {status === "idle" && (
-          <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center gap-3 text-[var(--muted-foreground)]">
-            <div className="grid h-14 w-14 place-items-center rounded-full border border-white/15 bg-white/[0.04]">
+          <button
+            type="button"
+            onClick={startCapture}
+            aria-label="Iniciar captura de tela"
+            className="absolute inset-0 flex cursor-pointer flex-col items-center justify-center gap-3 text-[var(--muted-foreground)] transition-colors hover:bg-white/[0.03] hover:text-white"
+          >
+            <div className="grid h-14 w-14 place-items-center rounded-full border border-white/15 bg-white/[0.04] transition-colors group-hover:border-[var(--brand)]">
               <ScreenShareIcon className="text-white" />
             </div>
-            <p className="text-sm">Clique em "Iniciar captura" para começar</p>
-          </div>
+            <p className="text-sm">Clique aqui ou em "Iniciar captura" para começar</p>
+          </button>
         )}
+
         {isRecording && (
           <div className="absolute left-3 top-3 flex items-center gap-2 rounded-md bg-black/60 px-2.5 py-1 text-xs font-semibold text-white backdrop-blur-sm">
             <span className="rec-dot inline-block h-2.5 w-2.5 rounded-full bg-[var(--brand)]" />
