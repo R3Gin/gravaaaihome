@@ -339,8 +339,12 @@ export function CameraPipBubble({
   const { active, bubble, setBubble, videoRef, effect, bgImageUrl, effectCanvasRef, style } =
     controller;
   const bgColor = style.bgColor;
-  const sensitivity = style.bgSensitivity;
-  const blurStrength = style.blurStrength;
+  // Refs para não reiniciar o MediaPipe a cada ajuste de slider.
+  const sensitivityRef = useRef(style.bgSensitivity);
+  const blurStrengthRef = useRef(style.blurStrength);
+  sensitivityRef.current = style.bgSensitivity;
+  blurStrengthRef.current = style.blurStrength;
+
 
   const effectActive = active && effect !== "none";
   const [effectReady, setEffectReady] = useState(false);
