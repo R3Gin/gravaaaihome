@@ -339,6 +339,9 @@ export function CameraPipBubble({
   const { active, bubble, setBubble, videoRef, effect, bgImageUrl, effectCanvasRef, style } =
     controller;
   const bgColor = style.bgColor;
+  const sensitivity = style.bgSensitivity;
+  const blurStrength = style.blurStrength;
+
   const effectActive = active && effect !== "none";
   const [effectReady, setEffectReady] = useState(false);
   const [effectError, setEffectError] = useState<string | null>(null);
