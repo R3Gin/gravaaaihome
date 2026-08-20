@@ -320,6 +320,47 @@ export function CameraSettingsDialog({
                   </Button>
                 ))}
               </div>
+              {effect !== "none" && (
+                <div className="space-y-3 pt-3">
+                  <div>
+                    <div className="flex items-center justify-between text-xs text-white/60">
+                      <span>Sensibilidade do recorte</span>
+                      <span>{Math.round(style.bgSensitivity)}%</span>
+                    </div>
+                    <Slider
+                      min={0}
+                      max={100}
+                      step={1}
+                      value={[style.bgSensitivity]}
+                      onValueChange={([v]) =>
+                        setStyle((st) => ({ ...st, bgSensitivity: v }))
+                      }
+                    />
+                    <p className="pt-1 text-[11px] text-white/45">
+                      Menor = borda suave (pega mais do entorno). Maior = recorte
+                      duro, focando só em você.
+                    </p>
+                  </div>
+                  {effect === "blur" && (
+                    <div>
+                      <div className="flex items-center justify-between text-xs text-white/60">
+                        <span>Intensidade do desfoque</span>
+                        <span>{Math.round(style.blurStrength)}px</span>
+                      </div>
+                      <Slider
+                        min={0}
+                        max={40}
+                        step={1}
+                        value={[style.blurStrength]}
+                        onValueChange={([v]) =>
+                          setStyle((st) => ({ ...st, blurStrength: v }))
+                        }
+                      />
+                    </div>
+                  )}
+                </div>
+              )}
+
               {effect === "image" && (
                 <label className="mt-2 inline-block cursor-pointer text-xs text-white/70 underline">
                   {controller.bgImageUrl ? "Trocar imagem" : "Selecionar imagem"}
