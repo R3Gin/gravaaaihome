@@ -390,12 +390,12 @@ export function CameraPipBubble({
       ctx.save();
       ctx.clearRect(0, 0, w, h);
 
-      // 1) Máscara como base — sensibilidade controla a dureza do recorte.
-      // 0 = borda bem suave (mantém mais do entorno), 100 = recorte duro.
+      // 1) Máscara como base — sensibilidade ajusta o limiar/dureza do recorte.
+      // Filtros CSS não alteram o canal alfa da máscara, então processamos os
+      // pixels num canvas auxiliar de baixa resolução (barato e responsivo).
       const s = Math.max(0, Math.min(100, sensitivityRef.current)) / 100;
-      ctx.filter = `contrast(${(1 + s * 9).toFixed(2)}) brightness(${(1.25 - s * 0.45).toFixed(2)})`;
-      ctx.drawImage(r.segmentationMask, 0, 0, w, h);
-      ctx.filter = "none";
+      ctx.drawImage(buildMask(r.segmentationMask, s), 0, 0, w, h);
+
 
       // 2) Onde a máscara está, desenhar a pessoa (source-in)
       ctx.globalCompositeOperation = "source-in";
