@@ -29,6 +29,10 @@ export interface CameraStyle {
   borderColor: string;
   borderWidth: number;
   bgColor: string;
+  /** 0–100: quão agressivo é o recorte pessoa/fundo. */
+  bgSensitivity: number;
+  /** Intensidade do desfoque de fundo em px. */
+  blurStrength: number;
 }
 
 export const DEFAULT_CAMERA_STYLE: CameraStyle = {
@@ -37,7 +41,10 @@ export const DEFAULT_CAMERA_STYLE: CameraStyle = {
   borderColor: "#ef4444",
   borderWidth: 4,
   bgColor: "#111827",
+  bgSensitivity: 50,
+  blurStrength: 14,
 };
+
 
 /** Raio (px) da bolha para um dado formato/tamanho. */
 export function shapeRadius(shape: CameraShape, size: number): number {
