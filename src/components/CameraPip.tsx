@@ -392,7 +392,7 @@ export function CameraPipBubble({
 
       // 1) Máscara como base — sensibilidade controla a dureza do recorte.
       // 0 = borda bem suave (mantém mais do entorno), 100 = recorte duro.
-      const s = Math.max(0, Math.min(100, sensitivity)) / 100;
+      const s = Math.max(0, Math.min(100, sensitivityRef.current)) / 100;
       ctx.filter = `contrast(${(1 + s * 9).toFixed(2)}) brightness(${(1.25 - s * 0.45).toFixed(2)})`;
       ctx.drawImage(r.segmentationMask, 0, 0, w, h);
       ctx.filter = "none";
@@ -407,7 +407,7 @@ export function CameraPipBubble({
       } else {
         ctx.globalCompositeOperation = "destination-over";
         if (effect === "blur") {
-          const b = Math.max(0, blurStrength);
+          const b = Math.max(0, blurStrengthRef.current);
           const pad = Math.ceil(b * 0.6);
           ctx.filter = `blur(${b}px)`;
           ctx.drawImage(src, -pad, -pad, w + pad * 2, h + pad * 2);
