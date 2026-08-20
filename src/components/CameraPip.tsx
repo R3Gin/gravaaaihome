@@ -374,6 +374,49 @@ export function CameraPipBubble({
     };
     loadBg();
 
+    // Canvas auxiliar: converte a máscara em alfa binarizado pela sensibilidade.
+    const maskCanvas = document.createElement("canvas");
+    const MASK_W = 256;
+    const MASK_H = 256;
+    maskCanvas.width = MASK_W;
+    maskCanvas.height = MASK_H;
+    const maskCtx = maskCanvas.getContext("2d", { willReadFrequently: true });
+
+    /**
+     * s = 0   → recorte permissivo e borda bem suave (mantém mais do entorno)
+     * s = 1   → recorte agressivo/duro (só o que o modelo tem certeza)
+     */
+    const buildMask = (mask: CanvasImageSource, s: number): CanvasImageSource => {
+      if (!maskCtx) return mask;
+      maskCtx.clearRect(0, 0, MASK_W, MASK_H);
+      maskCtx.globalCompositeOperation = "source-over";
+      maskCtx.filter = "none";
+      maskCtx.drawImage(mask, 0, 0, MASK_W, MASK_H);
+      const img = maskCtx.getImageData(0, 0, MASK_W, MASK_H);
+      const d = img.data;
+      // Limiar de confiança: 0.12 (permissivo) → 0.80 (rígido)
+      const threshold = 0.12 + s * 0.68;
+      // Largura da transição: 0.35 (suave) → 0.02 (dura)
+      const soft = Math.max(0.02, 0.35 - s * 0.33);
+      const lo = threshold - soft;
+      const inv = 1 / (soft * 2);
+      for (let i = 0; i < d.length; i += 4) {
+        // A máscara pode vir no alfa ou na luminância, dependendo do build.
+        const a = d[i + 3];
+        const v = a < 250 ? a / 255 : d[i] / 255;
+        let t = (v - lo) * inv;
+        t = t < 0 ? 0 : t > 1 ? 1 : t;
+        const e = t * t * (3 - 2 * t); // smoothstep
+        d[i] = 255;
+        d[i + 1] = 255;
+        d[i + 2] = 255;
+        d[i + 3] = (e * 255) | 0;
+      }
+      maskCtx.putImageData(img, 0, 0);
+      return maskCanvas;
+    };
+
+
     const drawFrame = (canvas: HTMLCanvasElement, r: SegResult) => {
       const ctx = canvas.getContext("2d");
       if (!ctx) return;
