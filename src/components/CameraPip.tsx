@@ -29,6 +29,10 @@ export interface CameraStyle {
   borderColor: string;
   borderWidth: number;
   bgColor: string;
+  /** 0–100: quão agressivo é o recorte pessoa/fundo. */
+  bgSensitivity: number;
+  /** Intensidade do desfoque de fundo em px. */
+  blurStrength: number;
 }
 
 export const DEFAULT_CAMERA_STYLE: CameraStyle = {
@@ -37,7 +41,10 @@ export const DEFAULT_CAMERA_STYLE: CameraStyle = {
   borderColor: "#ef4444",
   borderWidth: 4,
   bgColor: "#111827",
+  bgSensitivity: 50,
+  blurStrength: 14,
 };
+
 
 /** Raio (px) da bolha para um dado formato/tamanho. */
 export function shapeRadius(shape: CameraShape, size: number): number {
@@ -332,6 +339,13 @@ export function CameraPipBubble({
   const { active, bubble, setBubble, videoRef, effect, bgImageUrl, effectCanvasRef, style } =
     controller;
   const bgColor = style.bgColor;
+  // Refs para não reiniciar o MediaPipe a cada ajuste de slider.
+  const sensitivityRef = useRef(style.bgSensitivity);
+  const blurStrengthRef = useRef(style.blurStrength);
+  sensitivityRef.current = style.bgSensitivity;
+  blurStrengthRef.current = style.blurStrength;
+
+
   const effectActive = active && effect !== "none";
   const [effectReady, setEffectReady] = useState(false);
   const [effectError, setEffectError] = useState<string | null>(null);
@@ -376,8 +390,12 @@ export function CameraPipBubble({
       ctx.save();
       ctx.clearRect(0, 0, w, h);
 
-      // 1) Máscara como base
+      // 1) Máscara como base — sensibilidade controla a dureza do recorte.
+      // 0 = borda bem suave (mantém mais do entorno), 100 = recorte duro.
+      const s = Math.max(0, Math.min(100, sensitivityRef.current)) / 100;
+      ctx.filter = `contrast(${(1 + s * 9).toFixed(2)}) brightness(${(1.25 - s * 0.45).toFixed(2)})`;
       ctx.drawImage(r.segmentationMask, 0, 0, w, h);
+      ctx.filter = "none";
 
       // 2) Onde a máscara está, desenhar a pessoa (source-in)
       ctx.globalCompositeOperation = "source-in";
@@ -389,10 +407,13 @@ export function CameraPipBubble({
       } else {
         ctx.globalCompositeOperation = "destination-over";
         if (effect === "blur") {
-          ctx.filter = "blur(14px)";
-          ctx.drawImage(src, -8, -8, w + 16, h + 16);
+          const b = Math.max(0, blurStrengthRef.current);
+          const pad = Math.ceil(b * 0.6);
+          ctx.filter = `blur(${b}px)`;
+          ctx.drawImage(src, -pad, -pad, w + pad * 2, h + pad * 2);
           ctx.filter = "none";
         } else if (effect === "image" && bgImg && bgImg.complete && bgImg.naturalWidth) {
+
           const iw = bgImg.naturalWidth, ih = bgImg.naturalHeight;
           // cover
           const scale = Math.max(w / iw, h / ih);
