@@ -88,10 +88,9 @@ export function FeedbackWidget() {
         type="button"
         onClick={() => setOpen(true)}
         aria-label="Enviar sugestão ou reportar bug"
-        className="fixed bottom-5 right-5 z-40 inline-flex h-12 items-center gap-2 rounded-full bg-[var(--brand)] px-4 text-sm font-semibold text-white shadow-lg shadow-black/40 transition hover:bg-[var(--brand-hover)]"
+        className="fixed bottom-5 right-5 z-40 inline-flex h-12 w-12 items-center justify-center rounded-full bg-[var(--brand)] text-sm font-semibold text-white shadow-lg shadow-black/40 transition hover:bg-[var(--brand-hover)]"
       >
         <MessageSquarePlus className="h-5 w-5" />
-        <span className="hidden sm:inline">Sugestão / Bug</span>
       </button>
 
       {open && (
