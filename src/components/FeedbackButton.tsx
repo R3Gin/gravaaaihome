@@ -2,7 +2,7 @@ import { useState, useCallback, useEffect, useRef } from "react";
 import { MessageSquare, X, Loader2, CheckCircle2, AlertCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-const WEBHOOK_URL = "https://SEU_WEBHOOK_AQUI";
+const WEBHOOK_URL = "https://n8n.projetocode.com.br/webhook/feedback";
 
 interface FeedbackForm {
   message: string;
