@@ -2,7 +2,7 @@ import { useState, useCallback, useEffect, useRef } from "react";
 import { MessageSquare, X, Loader2, CheckCircle2, AlertCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-const WEBHOOK_URL = "https://n8n.projetocode.com.br/webhook-test/feedback";
+const WEBHOOK_URL = "https://n8n.projetocode.com.br/webhook/feedback";
 
 interface FeedbackForm {
   message: string;
@@ -109,7 +109,7 @@ export function FeedbackButton() {
           "fixed bottom-5 right-5 z-[100] flex h-12 w-12 items-center justify-center rounded-full",
           "bg-[var(--brand)] text-white shadow-[0_8px_24px_-6px_rgba(232,76,61,0.45)]",
           "transition-all duration-200 ease-out hover:scale-110 hover:shadow-[0_12px_32px_-6px_rgba(232,76,61,0.55)]",
-          "active:scale-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--background)]",
+          "active:scale-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--background)]"
         )}
       >
         <MessageSquare className="h-5 w-5" />
@@ -131,7 +131,7 @@ export function FeedbackButton() {
             className={cn(
               "relative w-full max-w-md overflow-hidden rounded-2xl border border-white/10",
               "bg-[rgba(30,30,30,0.72)] backdrop-blur-xl shadow-[0_24px_64px_-16px_rgba(0,0,0,0.6)]",
-              "text-[var(--foreground)]",
+              "text-[var(--foreground)]"
             )}
           >
             <button
@@ -145,7 +145,10 @@ export function FeedbackButton() {
             </button>
 
             <div className="p-6">
-              <h2 id="feedback-title" className="pr-8 text-lg font-semibold tracking-tight text-white">
+              <h2
+                id="feedback-title"
+                className="pr-8 text-lg font-semibold tracking-tight text-white"
+              >
                 Sugestão ou Bug
               </h2>
               <p className="mt-1 text-sm text-[var(--muted-foreground)]">
@@ -158,7 +161,9 @@ export function FeedbackButton() {
                     <CheckCircle2 className="h-6 w-6" />
                   </div>
                   <p className="text-base font-medium text-white">Obrigado!</p>
-                  <p className="text-sm text-[var(--muted-foreground)]">Sua mensagem foi enviada.</p>
+                  <p className="text-sm text-[var(--muted-foreground)]">
+                    Sua mensagem foi enviada.
+                  </p>
                 </div>
               ) : (
                 <form onSubmit={handleSubmit} className="mt-5 space-y-4">
@@ -176,7 +181,9 @@ export function FeedbackButton() {
                       className={cn(
                         "w-full resize-none rounded-xl border bg-white/[0.04] px-4 py-3 text-sm text-white placeholder:text-white/35",
                         "focus:border-white/30 focus:outline-none focus:ring-1 focus:ring-white/20",
-                        error ? "border-[var(--destructive)] ring-1 ring-[var(--destructive)]" : "border-white/10",
+                        error
+                          ? "border-[var(--destructive)] ring-1 ring-[var(--destructive)]"
+                          : "border-white/10"
                       )}
                     />
                   </div>
@@ -225,7 +232,7 @@ export function FeedbackButton() {
                       "bg-gradient-to-b from-[var(--brand)] to-[var(--brand-hover)]",
                       "shadow-[0_1px_0_rgba(255,255,255,0.15)_inset,0_6px_20px_-6px_rgba(232,76,61,0.45)]",
                       "hover:brightness-110 active:scale-[0.98]",
-                      "disabled:cursor-not-allowed disabled:opacity-60",
+                      "disabled:cursor-not-allowed disabled:opacity-60"
                     )}
                   >
                     {status === "loading" ? (
