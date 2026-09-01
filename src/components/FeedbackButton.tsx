@@ -180,7 +180,7 @@ export function FeedbackButton() {
                       rows={5}
                       className={cn(
                         "w-full resize-none rounded-xl border bg-white/[0.04] px-4 py-3 text-sm text-white placeholder:text-white/35",
-                        "focus:border-[var(--brand)] focus:outline-none focus:ring-1 focus:ring-[var(--brand)]",
+                        "focus:border-white/30 focus:outline-none focus:ring-1 focus:ring-white/20",
                         error
                           ? "border-[var(--destructive)] ring-1 ring-[var(--destructive)]"
                           : "border-white/10"
