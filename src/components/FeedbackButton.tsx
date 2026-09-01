@@ -177,12 +177,11 @@ export function FeedbackButton() {
                       value={form.message}
                       onChange={(e) => setForm((f) => ({ ...f, message: e.target.value }))}
                       placeholder="Descreva o bug ou sua sugestão..."
-                      required
                       rows={5}
                       className={cn(
                         "w-full resize-none rounded-xl border bg-white/[0.04] px-4 py-3 text-sm text-white placeholder:text-white/35",
                         "focus:border-[var(--brand)] focus:outline-none focus:ring-1 focus:ring-[var(--brand)]",
-                        error && !form.message.trim()
+                        error
                           ? "border-[var(--destructive)] ring-1 ring-[var(--destructive)]"
                           : "border-white/10"
                       )}
