@@ -66,7 +66,7 @@ function Index() {
       </main>
 
       <footer className="border-t border-[var(--border)] py-6 text-center text-xs text-[var(--muted-foreground)]">
-        Gravaai · feito para gravar rápido e sem instalar nada.
+        Copyright © 2026 Gravaai - Todos os direitos reservados.
       </footer>
     </div>
   );
