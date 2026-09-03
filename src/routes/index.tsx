@@ -4,6 +4,7 @@ import { Wordmark } from "@/components/Brand";
 import { ScreenRecorder } from "@/components/ScreenRecorder";
 import { Mosaicos } from "@/components/Mosaicos";
 import { InstallPwaButton } from "@/components/InstallPwaButton";
+import { FeedbackButton } from "@/components/FeedbackButton";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -68,6 +69,8 @@ function Index() {
       <footer className="border-t border-[var(--border)] py-6 text-center text-xs text-[var(--muted-foreground)]">
         Copyright © 2026 Gravaai - Todos os direitos reservados.
       </footer>
+
+      <FeedbackButton />
     </div>
   );
 }
