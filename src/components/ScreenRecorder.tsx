@@ -648,7 +648,13 @@ export function ScreenRecorder() {
       // (MediaRecorder não escreve o Duration por padrão). Feito ANTES do
       // ffmpeg e também protege o fallback caso a conversão falhe.
       if (!isNativeMp4) {
-        const durMs = Date.now() - (recordStartedAtRef.current || Date.now());
+        // Desconta o tempo em pausa (inclusive se parou enquanto pausado),
+        // senão o arquivo fica com duração maior que o vídeo real.
+        const stoppedAt = pausedAtRef.current || Date.now();
+        const durMs = Math.max(
+          0,
+          stoppedAt - (recordStartedAtRef.current || stoppedAt) - pausedAccumRef.current,
+        );
         blob = await fixWebmSeekable(blob, durMs);
       }
       // Stop capture streams now that recording is done.

@@ -1,9 +1,39 @@
 import { createServerFn } from "@tanstack/react-start";
+import { getRequestHeader, getRequestIP } from "@tanstack/react-start/server";
 import { z } from "zod";
 
 const schema = z.object({
   text: z.string().min(20).max(120_000),
 });
+
+// Limite por IP para ninguém gastar os créditos de IA chamando a função em loop.
+// Fica em memória de cada instância do servidor: não é perfeito, mas corta abuso simples.
+const RATE_WINDOW_MS = 10 * 60 * 1000;
+const RATE_MAX = 10;
+const hits = new Map<string, number[]>();
+
+function checkRateLimit(key: string) {
+  const now = Date.now();
+  const recent = (hits.get(key) ?? []).filter((t) => now - t < RATE_WINDOW_MS);
+  if (recent.length >= RATE_MAX) {
+    throw new Error("Muitos resumos em pouco tempo. Tente novamente em alguns minutos.");
+  }
+  recent.push(now);
+  hits.set(key, recent);
+  if (hits.size > 5000) {
+    for (const [k, list] of hits) {
+      if (list.every((t) => now - t >= RATE_WINDOW_MS)) hits.delete(k);
+    }
+  }
+}
+
+/** Recusa chamadas que o navegador marca como vindas de outro site. */
+function assertSameOrigin() {
+  const fetchSite = getRequestHeader("sec-fetch-site");
+  if (fetchSite && fetchSite !== "same-origin") {
+    throw new Error("Requisição não permitida.");
+  }
+}
 
 /**
  * Gera um resumo do texto transcrito usando a IA da Lovable Cloud.
@@ -12,6 +42,13 @@ const schema = z.object({
 export const summarizeTranscript = createServerFn({ method: "POST" })
   .inputValidator((data: unknown) => schema.parse(data))
   .handler(async ({ data }) => {
+    assertSameOrigin();
+    const ip =
+      getRequestHeader("cf-connecting-ip") ||
+      getRequestIP({ xForwardedFor: true }) ||
+      "desconhecido";
+    checkRateLimit(ip);
+
     const apiKey = process.env["LOVABLE_API_KEY"];
     if (!apiKey) throw new Error("IA indisponível: chave não configurada.");
 

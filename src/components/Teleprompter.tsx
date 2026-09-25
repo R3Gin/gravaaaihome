@@ -403,9 +403,10 @@ export function Teleprompter() {
   const sendToEditor = useCallback(async () => {
     if (!recorder.downloadUrl) return;
     const blob = await fetch(recorder.downloadUrl).then((r) => r.blob());
-    setEditorHandoff(blob, "teleprompter.mp4");
+    // Se a conversão para MP4 falhou, o arquivo é WebM: o nome precisa bater.
+    setEditorHandoff(blob, `teleprompter.${recorder.downloadExt}`);
     navigate({ to: "/mosaicos/editor" });
-  }, [navigate, recorder.downloadUrl]);
+  }, [navigate, recorder.downloadUrl, recorder.downloadExt]);
 
   const words = useMemo(() => script.trim().split(/\s+/).filter(Boolean).length, [script]);
   const nearLimit = recording && elapsed >= WARN_SECONDS;

@@ -141,6 +141,7 @@ export function VideoEditor() {
       setError(null);
       const meta = await readMeta(blob);
       if (!meta.duration) {
+        URL.revokeObjectURL(meta.url);
         setError("Não consegui ler a duração desse arquivo.");
         return;
       }
