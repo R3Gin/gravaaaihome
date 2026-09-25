@@ -9,18 +9,18 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
-import { Route as SlidesCameraRouteImport } from './routes/slides-camera'
-import { Route as SitemapDotxmlRouteImport } from './routes/sitemap[.]xml'
 import { Route as IndexRouteImport } from './routes/index'
-import { Route as MosaicosVideoParaGifRouteImport } from './routes/mosaicos.video-para-gif'
-import { Route as MosaicosTranscricaoRouteImport } from './routes/mosaicos.transcricao'
-import { Route as MosaicosTeleprompterRouteImport } from './routes/mosaicos.teleprompter'
-import { Route as MosaicosGdocsPresentationRouteImport } from './routes/mosaicos.gdocs-presentation'
+import { Route as SitemapDotxmlRouteImport } from './routes/sitemap[.]xml'
+import { Route as SlidesCameraRouteImport } from './routes/slides-camera'
 import { Route as MosaicosEditorRouteImport } from './routes/mosaicos.editor'
+import { Route as MosaicosGdocsPresentationRouteImport } from './routes/mosaicos.gdocs-presentation'
+import { Route as MosaicosTeleprompterRouteImport } from './routes/mosaicos.teleprompter'
+import { Route as MosaicosTranscricaoRouteImport } from './routes/mosaicos.transcricao'
+import { Route as MosaicosVideoParaGifRouteImport } from './routes/mosaicos.video-para-gif'
 
-const SlidesCameraRoute = SlidesCameraRouteImport.update({
-  id: '/slides-camera',
-  path: '/slides-camera',
+const IndexRoute = IndexRouteImport.update({
+  id: '/',
+  path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
 const SitemapDotxmlRoute = SitemapDotxmlRouteImport.update({
@@ -28,24 +28,14 @@ const SitemapDotxmlRoute = SitemapDotxmlRouteImport.update({
   path: '/sitemap.xml',
   getParentRoute: () => rootRouteImport,
 } as any)
-const IndexRoute = IndexRouteImport.update({
-  id: '/',
-  path: '/',
+const SlidesCameraRoute = SlidesCameraRouteImport.update({
+  id: '/slides-camera',
+  path: '/slides-camera',
   getParentRoute: () => rootRouteImport,
 } as any)
-const MosaicosVideoParaGifRoute = MosaicosVideoParaGifRouteImport.update({
-  id: '/mosaicos/video-para-gif',
-  path: '/mosaicos/video-para-gif',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const MosaicosTranscricaoRoute = MosaicosTranscricaoRouteImport.update({
-  id: '/mosaicos/transcricao',
-  path: '/mosaicos/transcricao',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const MosaicosTeleprompterRoute = MosaicosTeleprompterRouteImport.update({
-  id: '/mosaicos/teleprompter',
-  path: '/mosaicos/teleprompter',
+const MosaicosEditorRoute = MosaicosEditorRouteImport.update({
+  id: '/mosaicos/editor',
+  path: '/mosaicos/editor',
   getParentRoute: () => rootRouteImport,
 } as any)
 const MosaicosGdocsPresentationRoute =
@@ -54,9 +44,19 @@ const MosaicosGdocsPresentationRoute =
     path: '/mosaicos/gdocs-presentation',
     getParentRoute: () => rootRouteImport,
   } as any)
-const MosaicosEditorRoute = MosaicosEditorRouteImport.update({
-  id: '/mosaicos/editor',
-  path: '/mosaicos/editor',
+const MosaicosTeleprompterRoute = MosaicosTeleprompterRouteImport.update({
+  id: '/mosaicos/teleprompter',
+  path: '/mosaicos/teleprompter',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const MosaicosTranscricaoRoute = MosaicosTranscricaoRouteImport.update({
+  id: '/mosaicos/transcricao',
+  path: '/mosaicos/transcricao',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const MosaicosVideoParaGifRoute = MosaicosVideoParaGifRouteImport.update({
+  id: '/mosaicos/video-para-gif',
+  path: '/mosaicos/video-para-gif',
   getParentRoute: () => rootRouteImport,
 } as any)
 
@@ -137,11 +137,11 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
-    '/slides-camera': {
-      id: '/slides-camera'
-      path: '/slides-camera'
-      fullPath: '/slides-camera'
-      preLoaderRoute: typeof SlidesCameraRouteImport
+    '/': {
+      id: '/'
+      path: '/'
+      fullPath: '/'
+      preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/sitemap.xml': {
@@ -151,32 +151,18 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SitemapDotxmlRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/': {
-      id: '/'
-      path: '/'
-      fullPath: '/'
-      preLoaderRoute: typeof IndexRouteImport
+    '/slides-camera': {
+      id: '/slides-camera'
+      path: '/slides-camera'
+      fullPath: '/slides-camera'
+      preLoaderRoute: typeof SlidesCameraRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/mosaicos/video-para-gif': {
-      id: '/mosaicos/video-para-gif'
-      path: '/mosaicos/video-para-gif'
-      fullPath: '/mosaicos/video-para-gif'
-      preLoaderRoute: typeof MosaicosVideoParaGifRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/mosaicos/transcricao': {
-      id: '/mosaicos/transcricao'
-      path: '/mosaicos/transcricao'
-      fullPath: '/mosaicos/transcricao'
-      preLoaderRoute: typeof MosaicosTranscricaoRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/mosaicos/teleprompter': {
-      id: '/mosaicos/teleprompter'
-      path: '/mosaicos/teleprompter'
-      fullPath: '/mosaicos/teleprompter'
-      preLoaderRoute: typeof MosaicosTeleprompterRouteImport
+    '/mosaicos/editor': {
+      id: '/mosaicos/editor'
+      path: '/mosaicos/editor'
+      fullPath: '/mosaicos/editor'
+      preLoaderRoute: typeof MosaicosEditorRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/mosaicos/gdocs-presentation': {
@@ -186,11 +172,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof MosaicosGdocsPresentationRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/mosaicos/editor': {
-      id: '/mosaicos/editor'
-      path: '/mosaicos/editor'
-      fullPath: '/mosaicos/editor'
-      preLoaderRoute: typeof MosaicosEditorRouteImport
+    '/mosaicos/teleprompter': {
+      id: '/mosaicos/teleprompter'
+      path: '/mosaicos/teleprompter'
+      fullPath: '/mosaicos/teleprompter'
+      preLoaderRoute: typeof MosaicosTeleprompterRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/mosaicos/transcricao': {
+      id: '/mosaicos/transcricao'
+      path: '/mosaicos/transcricao'
+      fullPath: '/mosaicos/transcricao'
+      preLoaderRoute: typeof MosaicosTranscricaoRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/mosaicos/video-para-gif': {
+      id: '/mosaicos/video-para-gif'
+      path: '/mosaicos/video-para-gif'
+      fullPath: '/mosaicos/video-para-gif'
+      preLoaderRoute: typeof MosaicosVideoParaGifRouteImport
       parentRoute: typeof rootRouteImport
     }
   }

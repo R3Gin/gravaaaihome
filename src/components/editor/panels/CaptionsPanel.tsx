@@ -73,6 +73,7 @@ export function CaptionsPanel() {
   const [busy, setBusy] = useState(false);
   const [stage, setStage] = useState<string>("");
   const [download, setDownload] = useState(0);
+  const [progress, setProgress] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [lang, setLang] = useState<string>("portuguese");
   const [tab, setTab] = useState<"estilo" | "lista">("estilo");
@@ -128,6 +129,7 @@ export function CaptionsPanel() {
     setBusy(true);
     setError(null);
     setDownload(0);
+    setProgress(0);
     const events = {
       onStage: (s: "audio" | "model" | "transcribe" | "finalize") =>
         setStage(
@@ -138,6 +140,7 @@ export function CaptionsPanel() {
               : "Transcrevendo…",
         ),
       onDownload: setDownload,
+      onProgress: setProgress,
     };
     try {
       setStage("Montando o áudio já cortado…");
@@ -248,12 +251,17 @@ export function CaptionsPanel() {
 
       {busy ? (
         <div className="space-y-1.5">
-          <p className="text-[11px] text-[var(--muted-foreground)]">{stage}</p>
-          {download > 0 && download < 1 ? (
+          <p className="text-[11px] text-[var(--muted-foreground)]">
+            {stage}
+            {stage === "Transcrevendo…" ? ` ${Math.round(progress * 100)}%` : ""}
+          </p>
+          {(download > 0 && download < 1) || stage === "Transcrevendo…" ? (
             <div className="h-1 rounded bg-[var(--border)]">
               <div
                 className="h-full rounded bg-[var(--brand)] transition-[width]"
-                style={{ width: `${Math.round(download * 100)}%` }}
+                style={{
+                  width: `${Math.round((stage === "Transcrevendo…" ? progress : download) * 100)}%`,
+                }}
               />
             </div>
           ) : null}

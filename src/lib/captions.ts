@@ -78,31 +78,119 @@ export async function transcribeSamples(
     );
   }
 
-  const worker = new Worker(new URL("./whisper.worker.ts", import.meta.url), { type: "module" });
-
   try {
-    const result = await new Promise<TranscribeResult>((resolve, reject) => {
-      worker.onmessage = (e: MessageEvent) => {
-        const msg = e.data as
-          | { type: "stage"; stage: "model" | "transcribe" | "finalize" }
-          | { type: "download"; progress: number }
-          | { type: "progress"; progress: number }
-          | { type: "done"; segments: CaptionSegment[]; words?: WordTiming[] }
-          | { type: "error"; message: string };
-        if (msg.type === "stage") events.onStage?.(msg.stage);
-        if (msg.type === "download") events.onDownload?.(msg.progress);
-        if (msg.type === "progress") events.onProgress?.(msg.progress);
-        if (msg.type === "done") resolve({ segments: msg.segments, words: msg.words ?? [] });
-        if (msg.type === "error") reject(new Error(msg.message));
-      };
-          worker.onerror = () =>
-        reject(new Error("O modelo de transcrição não pôde ser carregado neste navegador."));
-      worker.postMessage({ type: "transcribe", audio, language: lang }, [audio.buffer]);
-    });
-    return validateTranscript(result, duration);
-  } finally {
-    worker.terminate();
+    return await runWorker(audio, lang, duration, events, false);
+  } catch (err) {
+    // a GPU falhou ou gerou texto inválido: tenta de novo pela CPU (mais lenta, mais estável)
+    if (err instanceof GpuFailure) {
+      console.warn("[legendas] tentativa na GPU falhou, repetindo na CPU:", err.cause);
+      return runWorker(audio, lang, duration, events, true);
+    }
+    throw err;
   }
+}
+
+/** erro vindo da tentativa na GPU; `cause` guarda o erro original */
+class GpuFailure extends Error {}
+
+/*
+ * O worker fica vivo entre transcrições para não recarregar o modelo a cada
+ * clique. Só é descartado quando trava ou quebra.
+ */
+let sharedWorker: Worker | null = null;
+let queue: Promise<unknown> = Promise.resolve();
+
+function getWorker() {
+  sharedWorker ??= new Worker(new URL("./whisper.worker.ts", import.meta.url), { type: "module" });
+  return sharedWorker;
+}
+
+function killWorker() {
+  sharedWorker?.terminate();
+  sharedWorker = null;
+}
+
+/** sem nenhuma mensagem do worker por esse tempo = travado */
+const STALL_MS = 3 * 60 * 1000;
+
+function runWorker(
+  audio: Float32Array,
+  language: string | undefined,
+  duration: number,
+  events: TranscribeEvents,
+  forceWasm: boolean,
+): Promise<TranscribeResult> {
+  const job = queue.then(
+    () =>
+      new Promise<TranscribeResult>((resolve, reject) => {
+        const worker = getWorker();
+        let timer = 0;
+        const arm = () => {
+          window.clearTimeout(timer);
+          timer = window.setTimeout(() => {
+            finish();
+            killWorker();
+            reject(
+              new Error(
+                "A transcrição parou de responder. Feche outras abas pesadas e tente de novo, ou use “Marcar blocos de fala”.",
+              ),
+            );
+          }, STALL_MS);
+        };
+        const finish = () => {
+          window.clearTimeout(timer);
+          worker.onmessage = null;
+          worker.onerror = null;
+        };
+
+        worker.onmessage = (e: MessageEvent) => {
+          arm();
+          const msg = e.data as
+            | { type: "stage"; stage: "model" | "transcribe" | "finalize" }
+            | { type: "download"; progress: number }
+            | { type: "progress"; progress: number }
+            | {
+                type: "done";
+                segments: CaptionSegment[];
+                words?: WordTiming[];
+                device?: "webgpu" | "wasm";
+              }
+            | { type: "error"; message: string; retryOnCpu?: boolean };
+          if (msg.type === "stage") events.onStage?.(msg.stage);
+          if (msg.type === "download") events.onDownload?.(msg.progress);
+          if (msg.type === "progress") events.onProgress?.(msg.progress);
+          if (msg.type === "done") {
+            finish();
+            try {
+              resolve(validateTranscript({ segments: msg.segments, words: msg.words ?? [] }, duration));
+            } catch (err) {
+              reject(msg.device === "webgpu" && !forceWasm ? new GpuFailure("gpu", { cause: err }) : err);
+            }
+          }
+          if (msg.type === "error") {
+            finish();
+            const err = new Error(msg.message);
+            reject(msg.retryOnCpu && !forceWasm ? new GpuFailure("gpu", { cause: err }) : err);
+          }
+        };
+        worker.onerror = (e) => {
+          console.error("[legendas] worker quebrou:", e.message);
+          finish();
+          killWorker();
+          reject(
+            forceWasm
+              ? new Error("O modelo de transcrição não pôde ser carregado neste navegador.")
+              : new GpuFailure("gpu", { cause: e }),
+          );
+        };
+        arm();
+        // copia: o buffer é transferido e pode ser preciso repetir na CPU
+        const copy = audio.slice();
+        worker.postMessage({ type: "transcribe", audio: copy, language, forceWasm }, [copy.buffer]);
+      }),
+  );
+  queue = job.catch(() => undefined);
+  return job;
 }
 
 const NO_SPEECH =
