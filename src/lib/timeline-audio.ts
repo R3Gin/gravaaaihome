@@ -61,10 +61,14 @@ async function decodeUrl(url: string, fallback: Blob | null): Promise<AudioBuffe
     }
     if (!blob) return null;
     const ctx = new Ctx();
-    const buf = await ctx.decodeAudioData(await blob.arrayBuffer());
-    void ctx.close();
-    decoded.set(url, buf);
-    return buf;
+    try {
+      const buf = await ctx.decodeAudioData(await blob.arrayBuffer());
+      decoded.set(url, buf);
+      return buf;
+    } finally {
+      // fecha mesmo se a decodificação falhar: o navegador limita contextos de áudio abertos
+      void ctx.close();
+    }
   } catch {
     return null;
   }
