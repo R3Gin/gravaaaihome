@@ -774,6 +774,7 @@ export const useEditor = create<EditorState & EditorActions>((set, get) => {
 
 
     loadSource: (url, duration, size, name) => {
+      const previousUrl = get().sourceUrl;
       const tracks = emptyTracks();
       const linkGroupId = uid();
       const clip: Clip = {
@@ -833,7 +834,16 @@ export const useEditor = create<EditorState & EditorActions>((set, get) => {
         captionsSig: null,
 
       });
-
+      // O histórico foi zerado, então nada mais aponta para o vídeo anterior:
+      // libera a memória dele (vídeos longos ocupam centenas de MB).
+      if (
+        previousUrl &&
+        previousUrl !== url &&
+        previousUrl.startsWith("blob:") &&
+        !get().mediaLibrary.some((m) => m.url === previousUrl)
+      ) {
+        setTimeout(() => URL.revokeObjectURL(previousUrl), 0);
+      }
     },
 
     reset: () =>

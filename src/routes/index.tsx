@@ -24,6 +24,12 @@ export const Route = createFileRoute("/")({
       { property: "og:type", content: "website" },
       { property: "og:url", content: "https://gravaai.online/" },
       { name: "twitter:card", content: "summary_large_image" },
+      { name: "twitter:title", content: "Gravaai — Gravador de tela e editor de vídeo online" },
+      {
+        name: "twitter:description",
+        content:
+          "Gravação de tela, teleprompter, legendas automáticas e editor de vídeo — tudo no navegador.",
+      },
     ],
     links: [{ rel: "canonical", href: "https://gravaai.online/" }],
   }),
@@ -41,14 +47,9 @@ function Index() {
             <ClientOnly fallback={null}>
               <InstallPwaButton />
             </ClientOnly>
-            <a
-              href="https://developer.mozilla.org/pt-BR/docs/Web/API/Screen_Capture_API"
-              target="_blank"
-              rel="noreferrer"
-              className="hidden text-xs text-[var(--muted-foreground)] hover:text-white sm:block"
-            >
+            <span className="hidden text-xs text-[var(--muted-foreground)] sm:block">
               100% no navegador · sem upload
-            </a>
+            </span>
           </div>
         </div>
       </header>
