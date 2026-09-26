@@ -1,29 +1,23 @@
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
-  AlignHorizontalJustifyStart,
-  AudioLines,
-  Copy,
   GripVertical,
   Link2,
-  Link2Off,
-  Magnet,
-  MoveHorizontal,
   Music,
-  Scissors,
   Sparkles,
-  Trash2,
   Type,
   Video,
   ZoomIn,
   ZoomOut,
+  Play,
+  Pause,
 } from "lucide-react";
 
 import { applySnap, freeStart, snapReleaseTolerance, snapTargets, snapTolerance } from "@/lib/snap";
 import {
   MIN_CLIP,
-  canDetachAudio,
 
   findClip,
+  isLayeredTrack,
   selectionGroup,
   useEditor,
   type Clip,
@@ -41,7 +35,15 @@ import {
 } from "@/lib/keyframes";
 import { KeyframeSpeedModal } from "@/components/editor/KeyframeSpeedModal";
 import { getPeaks, type Peaks } from "@/lib/waveform";
+import { subscribeFilmstrip, type Filmstrip } from "@/lib/filmstrip";
 import { cn } from "@/lib/utils";
+import { SIDE_W } from "@/components/editor/layout";
+
+const OVERLAY_LABEL: Record<string, string> = {
+  blur: "Desfoque",
+  spotlight: "Destaque",
+  media: "Mídia",
+};
 
 const ANNOTATION_LABEL: Record<string, string> = {
   pen: "caneta",
@@ -52,11 +54,32 @@ const ANNOTATION_LABEL: Record<string, string> = {
 };
 
 
-const LABEL_W = 96;
+const LABEL_W = SIDE_W;
 const TL_MIN_H = 180;
 const TL_DEFAULT_H = 280;
 const TL_HEIGHT_KEY = "gravaai:timeline-height";
-const LANE_H = 56;
+const LANE_H = 44;
+/** altura de cada sub-linha quando clipes de texto/sobreposição se sobrepõem */
+const ROW_H = 26;
+
+/** distribui clipes sobrepostos em sub-linhas (o primeiro que couber) */
+function stackRows(clips: Clip[]) {
+  const ends: number[] = [];
+  const rows = new Map<string, number>();
+  for (const c of [...clips].sort((a, b) => a.startTime - b.startTime)) {
+    let row = ends.findIndex((end) => c.startTime >= end - 1e-3);
+    if (row === -1) {
+      row = ends.length;
+      ends.push(c.startTime + c.duration);
+    } else ends[row] = c.startTime + c.duration;
+    rows.set(c.id, row);
+  }
+  return { rows, count: Math.max(1, ends.length) };
+}
+
+function laneHeight(count: number) {
+  return count <= 1 ? LANE_H : Math.max(LANE_H, count * ROW_H + 4);
+}
 const KF_H = 22;
 const FX_H = 34;
 
@@ -469,7 +492,17 @@ function AudioWaveform({
 
 
 
-const ClipBox = memo(function ClipBox({ clip, track }: { clip: Clip; track: Track }) {
+const ClipBox = memo(function ClipBox({
+  clip,
+  track,
+  row = 0,
+  rowCount = 1,
+}: {
+  clip: Clip;
+  track: Track;
+  row?: number;
+  rowCount?: number;
+}) {
   const zoom = useEditor((s) => s.zoom);
   const tool = useEditor((s) => s.tool);
   const selected = useEditor((s) => s.selectedClipIds.includes(clip.id));
@@ -517,6 +550,7 @@ const ClipBox = memo(function ClipBox({ clip, track }: { clip: Clip; track: Trac
   /** posição livre mais próxima na faixa (mesma regra aplicada no store) */
   const place = (start: number, dur: number) => {
     const s = useEditor.getState();
+    if (isLayeredTrack(track.type)) return start;
     const others =
       s.tracks.find((t) => t.id === clipRef.current.trackId)?.clips.filter(
         (c) => c.id !== clipRef.current.id,
@@ -642,12 +676,16 @@ const ClipBox = memo(function ClipBox({ clip, track }: { clip: Clip; track: Trac
 
   const color =
     track.type === "video"
-      ? "from-[var(--brand)]/50 to-[var(--brand)]/20 border-[var(--brand)]/50"
+      ? "bg-[#7a2a24] border-[#b8453a]"
       : track.type === "text"
-        ? "from-sky-500/40 to-sky-500/15 border-sky-400/50"
+        ? "bg-[#1f4f7a] border-[#3a7fbf]"
         : track.type === "overlay"
-          ? "from-amber-500/40 to-amber-500/15 border-amber-400/50"
-          : "from-emerald-500/40 to-emerald-500/15 border-emerald-400/50";
+          ? "bg-[#7a5418] border-[#b88327]"
+          : "bg-emerald-600/35 border-emerald-500/60";
+  const strip = useFilmstrip(clip.type === "video" ? clip.sourceUrl : null);
+  const mediaName = useEditor((s) =>
+    clip.mediaId ? (s.mediaLibrary.find((m) => m.id === clip.mediaId)?.name ?? null) : null,
+  );
 
   const start = ghost?.start ?? clip.startTime;
   const dur = ghost?.duration ?? clip.duration;
@@ -657,11 +695,11 @@ const ClipBox = memo(function ClipBox({ clip, track }: { clip: Clip; track: Trac
       data-clip-id={clip.id}
       onPointerDown={onPointerDown}
       className={cn(
-        "absolute top-1 flex h-[calc(100%-8px)] touch-none select-none items-center gap-1 overflow-hidden rounded-md border bg-gradient-to-b px-2 text-[11px] font-semibold text-white animate-scale-in",
+        "absolute top-[3px] flex h-[calc(100%-6px)] touch-none select-none items-center gap-1 overflow-hidden rounded-[5px] border px-1.5 text-[11px] font-medium text-white animate-scale-in",
         color,
         !dragging && "transition-[left,width] duration-150 ease-out",
         tool === "blade" ? "cursor-crosshair" : dragging ? "cursor-grabbing" : "cursor-grab",
-        selected && "ring-2 ring-[var(--brand)] ring-offset-1 ring-offset-[var(--surface-2)]",
+        selected && "border-white ring-1 ring-white",
         dragging && "opacity-80",
         magnetized && "brightness-125 ring-2 ring-[var(--brand)]",
       )}
@@ -673,35 +711,133 @@ const ClipBox = memo(function ClipBox({ clip, track }: { clip: Clip; track: Trac
         paddingLeft: dur * zoom < 24 ? 0 : undefined,
         paddingRight: dur * zoom < 24 ? 0 : undefined,
         zIndex: dragging ? 20 : selected ? 10 : 1,
+        ...(rowCount > 1 ? { top: 2 + row * ROW_H, height: ROW_H - 3 } : null),
       }}
 
     >
-      {clip.linkGroupId && dur * zoom >= 40 ? (
-        <Link2 className="pointer-events-none h-3 w-3 shrink-0 opacity-80" />
+      {strip ? (
+        <FilmstripTiles
+          strip={strip}
+          width={dur * zoom}
+          from={clip.sourceInStart}
+          to={clip.sourceInEnd}
+        />
       ) : null}
-      <span className="pointer-events-none truncate">
-        {clip.type === "text"
+      {clip.linkGroupId && !strip && dur * zoom >= 40 ? (
+        <Link2 className="pointer-events-none relative h-3 w-3 shrink-0 opacity-80" />
+      ) : null}
+      <span
+        className={cn(
+          "pointer-events-none relative truncate",
+          strip && "self-start mt-0.5 rounded-sm bg-black/55 px-1 text-[10px] leading-4",
+        )}
+      >
+        {mediaName
+          ? mediaName
+          : clip.type === "text"
           ? clip.textContent
           : clip.overlayKind === "annotation"
             ? ANNOTATION_LABEL[clip.annotation?.type ?? "pen"]
-            : (clip.overlayKind ?? track.label)}
+            : clip.overlayKind
+              ? (OVERLAY_LABEL[clip.overlayKind] ?? clip.overlayKind)
+              : track.label}
       </span>
 
       {selected && tool !== "blade" ? (
         <>
           <span
             onPointerDown={startTrim("start")}
-            className="absolute inset-y-0 left-0 w-2.5 cursor-ew-resize bg-white/70"
+            className="absolute inset-y-0 left-0 z-10 w-2 cursor-ew-resize rounded-l-[4px] bg-white"
           />
           <span
             onPointerDown={startTrim("end")}
-            className="absolute inset-y-0 right-0 w-2.5 cursor-ew-resize bg-white/70"
+            className="absolute inset-y-0 right-0 z-10 w-2 cursor-ew-resize rounded-r-[4px] bg-white"
           />
         </>
       ) : null}
     </div>
   );
 });
+
+/** Miniaturas de um vídeo (null enquanto não é vídeo ou não há duração conhecida). */
+function useFilmstrip(url: string | null | undefined): Filmstrip | null {
+  const duration = useEditor((s) =>
+    !url
+      ? 0
+      : url === s.sourceUrl
+        ? s.sourceDuration
+        : (s.mediaLibrary.find((m) => m.url === url)?.duration ?? 0),
+  );
+  const [strip, setStrip] = useState<Filmstrip | null>(null);
+  useEffect(() => {
+    if (!url || !duration) {
+      setStrip(null);
+      return;
+    }
+    return subscribeFilmstrip(url, duration, setStrip);
+  }, [url, duration]);
+  return strip;
+}
+
+const TILE_W = 64;
+
+/** Quadros do vídeo lado a lado dentro do clipe (como no CapCut). */
+const FilmstripTiles = memo(function FilmstripTiles({
+  strip,
+  width,
+  from,
+  to,
+}: {
+  strip: Filmstrip;
+  width: number;
+  from: number;
+  to: number;
+}) {
+  const count = Math.min(300, Math.max(1, Math.ceil(width / TILE_W)));
+  const span = Math.max(0, to - from);
+  const tiles: string[] = [];
+  for (let i = 0; i < count; i++) {
+    const t = from + ((i * TILE_W) / Math.max(1, width)) * span;
+    const idx = Math.min(strip.frames.length - 1, Math.max(0, Math.round(t / strip.step)));
+    tiles.push(strip.frames[idx] ?? "");
+  }
+  return (
+    <div className="pointer-events-none absolute inset-0 flex overflow-hidden opacity-80">
+      {tiles.map((src, i) =>
+        src ? (
+          <img
+            key={i}
+            src={src}
+            alt=""
+            draggable={false}
+            className="h-full shrink-0 object-cover"
+            style={{ width: TILE_W }}
+          />
+        ) : (
+          <span key={i} className="h-full shrink-0" style={{ width: TILE_W }} />
+        ),
+      )}
+    </div>
+  );
+});
+
+/** Tempo atual / duração, no formato 00:00:00. */
+function Timecode() {
+  const currentTime = useEditor((s) => s.currentTime);
+  const duration = useEditor((s) => s.duration);
+  const tc = (t: number) => {
+    const h = Math.floor(t / 3600);
+    const m = Math.floor((t % 3600) / 60);
+    const sec = Math.floor(t % 60);
+    return [h, m, sec].map((n) => String(n).padStart(2, "0")).join(":");
+  };
+  return (
+    <span className="font-mono text-[11px] tabular-nums text-[var(--foreground)]">
+      {tc(currentTime)}
+      <span className="text-[var(--muted-foreground)]"> / {tc(duration)}</span>
+    </span>
+  );
+}
 
 /** Agulha: componente próprio para só ela redesenhar a cada quadro durante o play. */
 function Playhead({
@@ -738,19 +874,14 @@ export function Timeline() {
   const tracks = useEditor((s) => s.tracks);
   const zoom = useEditor((s) => s.zoom);
   const duration = useEditor((s) => s.duration);
-  const tool = useEditor((s) => s.tool);
+  const playing = useEditor((s) => s.playing);
+  const setPlaying = useEditor((s) => s.setPlaying);
   const selectedClipId = useEditor((s) => s.selectedClipId);
   const selectedClipIds = useEditor((s) => s.selectedClipIds);
   const setZoom = useEditor((s) => s.setZoom);
   const setCurrentTime = useEditor((s) => s.setCurrentTime);
-  const setTool = useEditor((s) => s.setTool);
   const select = useEditor((s) => s.select);
   const selectMany = useEditor((s) => s.selectMany);
-  const removeSelected = useEditor((s) => s.removeSelected);
-  const duplicateSelected = useEditor((s) => s.duplicateSelected);
-  const detachAudio = useEditor((s) => s.detachAudio);
-  const toggleLink = useEditor((s) => s.toggleLink);
-  const splitPlayhead = useEditor((s) => s.splitPlayhead);
   const silences = useEditor((s) => s.silences);
   const sourceUrl = useEditor((s) => s.sourceUrl);
 
@@ -778,7 +909,7 @@ export function Timeline() {
 
 
   const scrollRef = useRef<HTMLDivElement>(null);
-  const width = Math.max(600, (duration + 4) * zoom);
+  const contentWidth = Math.max(600, (duration + 4) * zoom);
 
   /* --- virtualização: só renderiza o que está na janela visível --- */
   const [view, setView] = useState({ left: 0, width: 1200 });
@@ -807,6 +938,9 @@ export function Timeline() {
       if (raf) cancelAnimationFrame(raf);
     };
   }, []);
+
+  /** a área das faixas ocupa pelo menos a largura visível */
+  const width = Math.max(contentWidth, view.width);
 
   const visible = useMemo(() => {
     const margin = 600; // px de folga fora da tela
@@ -994,26 +1128,19 @@ export function Timeline() {
     return { map, count: Math.max(ends.length, effects.length ? 1 : 0) };
   }, [effects]);
   const fxHeight = fxRows.count * FX_H;
-  const lanesHeight = visibleTracks.length * LANE_H + kfRows.length * KF_H + fxHeight;
+  /* texto e sobreposições podem se sobrepor: cada faixa ganha sub-linhas */
+  const stacks = useMemo(() => {
+    const map = new Map<string, ReturnType<typeof stackRows>>();
+    for (const t of visibleTracks)
+      map.set(t.id, isLayeredTrack(t.type) ? stackRows(t.clips) : { rows: new Map(), count: 1 });
+    return map;
+  }, [visibleTracks]);
+  const trackH = (t: Track) => laneHeight(stacks.get(t.id)?.count ?? 1);
+  const lanesHeight =
+    visibleTracks.reduce((h, t) => h + trackH(t), 0) + kfRows.length * KF_H + fxHeight;
 
 
-  const snapEnabled = useEditor((s) => s.snapEnabled);
   const snapGuide = useEditor((s) => s.snapGuide);
-  const toggleSnap = useEditor((s) => s.toggleSnap);
-  const rippleEnabled = useEditor((s) => s.rippleEnabled);
-  const toggleRipple = useEditor((s) => s.toggleRipple);
-  const alignAllClips = useEditor((s) => s.alignAllClips);
-  const tracksForGaps = useEditor((s) => s.tracks);
-  const canAlign = useMemo(() => {
-    for (const t of tracksForGaps) {
-      let cursor = 0;
-      for (const c of [...t.clips].sort((a, b) => a.startTime - b.startTime)) {
-        if (Math.abs(c.startTime - cursor) > 1e-3) return true;
-        cursor += c.duration;
-      }
-    }
-    return false;
-  }, [tracksForGaps]);
   const addMediaClip = useEditor((s) => s.addMediaClip);
 
   /* --- reordenar faixas (arraste vertical nos rótulos) --- */
@@ -1081,9 +1208,11 @@ export function Timeline() {
   const rowHeights = useMemo(
     () =>
       visibleTracks.map(
-        (t) => LANE_H + (selectedClip?.trackId === t.id ? kfRows.length * KF_H : 0),
+        (t) =>
+          laneHeight(stacks.get(t.id)?.count ?? 1) +
+          (selectedClip?.trackId === t.id ? kfRows.length * KF_H : 0),
       ),
-    [visibleTracks, selectedClip, kfRows.length],
+    [visibleTracks, selectedClip, kfRows.length, stacks],
   );
 
 
@@ -1135,7 +1264,7 @@ export function Timeline() {
   return (
     <div
       onPointerDown={startMarquee}
-      className="relative flex shrink-0 flex-col border-t border-[var(--border)] bg-[var(--surface-2)]"
+      className="relative flex shrink-0 flex-col border-t border-[var(--border)] bg-[var(--surface)]"
       style={{ height: panelH }}
     >
       <div
@@ -1145,138 +1274,38 @@ export function Timeline() {
         title="Arraste para aumentar ou diminuir a linha do tempo (duplo clique volta ao padrão)"
         className="absolute inset-x-0 -top-1 z-50 h-2 cursor-row-resize hover:bg-[var(--brand)]/40"
       />
-      {/* barra de ações */}
-      <div className="flex h-11 shrink-0 items-center gap-2 border-b border-[var(--border)] px-3">
-        <button
-          onClick={() => setTool(tool === "blade" ? "select" : "blade")}
-          className={cn(
-            "flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-semibold",
-            tool === "blade"
-              ? "border-[var(--brand)] bg-[var(--brand)]/15 text-[var(--brand)]"
-              : "border-[var(--border)] text-[var(--muted-foreground)]",
-          )}
-          title="Dividir: ative e clique no clipe"
-        >
-          <Scissors className="h-4 w-4" /> Dividir
-        </button>
-        <button
-          disabled={!sourceUrl}
-          onClick={() => window.dispatchEvent(new CustomEvent("editor:open-panel", { detail: "silence" }))}
-          className="flex items-center gap-1.5 rounded-lg border border-[var(--border)] px-2.5 py-1.5 text-xs font-semibold text-[var(--muted-foreground)] disabled:opacity-40"
-        >
-          <AudioLines className="h-4 w-4" /> Detectar silêncios
-        </button>
-        <button
-          onClick={splitPlayhead}
-          title="Dividir no playhead (atalho: S)"
-          className="flex items-center gap-1.5 rounded-lg border border-[var(--border)] px-2.5 py-1.5 text-xs font-semibold text-[var(--muted-foreground)]"
-        >
-          Dividir no playhead
-          <kbd className="rounded border border-[var(--border)] px-1 text-[10px] font-bold text-[var(--foreground)]">S</kbd>
-        </button>
-
-        <button
-          disabled={selectedClipIds.length === 0}
-          onClick={duplicateSelected}
-          className="flex items-center gap-1.5 rounded-lg border border-[var(--border)] px-2.5 py-1.5 text-xs font-semibold text-[var(--muted-foreground)] disabled:opacity-40"
-        >
-          <Copy className="h-4 w-4" /> Duplicar
-          {selectedClipIds.length > 1 ? ` (${selectedClipIds.length})` : ""}
-        </button>
-        <button
-          disabled={selectedClipIds.length === 0}
-          onClick={removeSelected}
-          className="flex items-center gap-1.5 rounded-lg border border-[var(--border)] px-2.5 py-1.5 text-xs font-semibold text-[var(--muted-foreground)] disabled:opacity-40"
-        >
-          <Trash2 className="h-4 w-4" /> Deletar
-          {selectedClipIds.length > 1 ? ` (${selectedClipIds.length})` : ""}
-        </button>
-        {selectedClip ? (
-          selectedClip.linkGroupId ? (
-            <button
-              onClick={() => toggleLink(selectedClip.id)}
-              title="Desanexar áudio e vídeo (passam a se mover separados)"
-              className="flex items-center gap-1.5 rounded-lg border border-[var(--brand)] bg-[var(--brand)]/15 px-2.5 py-1.5 text-xs font-semibold text-[var(--brand)]"
-            >
-              <Link2Off className="h-4 w-4" /> Desanexar
-
-            </button>
-          ) : canDetachAudio(tracks, selectedClip) ? (
-            <button
-              onClick={() => detachAudio(selectedClip.id)}
-              title="Separa o áudio em uma faixa própria, ainda colado ao vídeo"
-              className="flex items-center gap-1.5 rounded-lg border border-[var(--border)] px-2.5 py-1.5 text-xs font-semibold text-[var(--muted-foreground)]"
-            >
-              <Music className="h-4 w-4" /> Separar áudio
-            </button>
-          ) : selectedClip.type === "audio" ? (
-            <button
-              onClick={() => toggleLink(selectedClip.id)}
-              title="Vincular novamente ao clipe de vídeo mais próximo"
-              className="flex items-center gap-1.5 rounded-lg border border-[var(--border)] px-2.5 py-1.5 text-xs font-semibold text-[var(--muted-foreground)]"
-            >
-              <Link2 className="h-4 w-4" /> Vincular
-            </button>
-          ) : null
-        ) : null}
-
-        <button
-          onClick={toggleSnap}
-          title="Imantação: gruda clipes nas bordas vizinhas e na agulha (segure Alt para ignorar)"
-          className={cn(
-            "flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-semibold",
-            snapEnabled
-              ? "border-[var(--brand)] bg-[var(--brand)]/15 text-[var(--brand)]"
-              : "border-[var(--border)] text-[var(--muted-foreground)]",
-          )}
-        >
-          <Magnet className="h-4 w-4" /> Imantar
-        </button>
-        <button
-          onClick={toggleRipple}
-          title="Ondulação: ao mover ou apagar um corte, os clipes seguintes acompanham"
-          className={cn(
-            "flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-semibold",
-            rippleEnabled
-              ? "border-[var(--brand)] bg-[var(--brand)]/15 text-[var(--brand)]"
-              : "border-[var(--border)] text-[var(--muted-foreground)]",
-          )}
-        >
-          <MoveHorizontal className="h-4 w-4" /> Ondulação
-        </button>
-        <button
-          onClick={alignAllClips}
-          disabled={!canAlign}
-          title="Ajustar: encosta todos os clipes, fechando os espaços dos cortes"
-          className="flex items-center gap-1.5 rounded-lg border border-[var(--border)] px-2.5 py-1.5 text-xs font-semibold text-[var(--muted-foreground)] disabled:opacity-40"
-        >
-          <AlignHorizontalJustifyStart className="h-4 w-4" /> Ajustar
-        </button>
-        <div className="ml-auto flex items-center gap-1.5">
-          <button
-            onClick={() => zoomAround(zoom / 1.4)}
-            title="Diminuir zoom (Ctrl + roda do mouse)"
-            className="rounded-md border border-[var(--border)] p-1.5"
-          >
-            <ZoomOut className="h-3.5 w-3.5" />
-          </button>
-          <span className="w-14 text-center text-[11px] tabular-nums text-[var(--muted-foreground)]">
-            {Math.round(zoom)} px/s
-          </span>
-          <button
-            onClick={() => zoomAround(zoom * 1.4)}
-            title="Aumentar zoom (Ctrl + roda do mouse)"
-            className="rounded-md border border-[var(--border)] p-1.5"
-          >
-            <ZoomIn className="h-3.5 w-3.5" />
-          </button>
-        </div>
-      </div>
-
       <div className="flex min-h-0 flex-1">
         {/* rótulos das faixas (arraste vertical para reordenar) */}
         <div className="shrink-0 border-r border-[var(--border)]" style={{ width: LABEL_W }}>
-          <div className="h-7 border-b border-[var(--border)]" />
+          <div className="flex h-7 items-center gap-1 border-b border-[var(--border)] pl-1.5 pr-1">
+            <button
+              onClick={() => setPlaying(!playing)}
+              disabled={!sourceUrl}
+              title="Reproduzir / pausar (Espaço)"
+              aria-label={playing ? "Pausar" : "Reproduzir"}
+              className="grid h-6 w-6 place-items-center rounded text-[var(--foreground)] hover:bg-white/10 disabled:opacity-30"
+            >
+              {playing ? <Pause className="h-3.5 w-3.5" /> : <Play className="h-3.5 w-3.5" />}
+            </button>
+            <Timecode />
+            <span className="ml-auto" />
+            <button
+              onClick={() => zoomAround(zoom / 1.4)}
+              title="Diminuir zoom (Ctrl + roda do mouse)"
+              aria-label="Diminuir zoom"
+              className="grid h-6 w-6 place-items-center rounded text-[var(--muted-foreground)] hover:bg-white/10 hover:text-[var(--foreground)]"
+            >
+              <ZoomOut className="h-3.5 w-3.5" />
+            </button>
+            <button
+              onClick={() => zoomAround(zoom * 1.4)}
+              title="Aumentar zoom (Ctrl + roda do mouse)"
+              aria-label="Aumentar zoom"
+              className="grid h-6 w-6 place-items-center rounded text-[var(--muted-foreground)] hover:bg-white/10 hover:text-[var(--foreground)]"
+            >
+              <ZoomIn className="h-3.5 w-3.5" />
+            </button>
+          </div>
           <div ref={labelsRef} className="overflow-hidden">
             {visibleTracks.map((t, i) => (
               <div key={t.id} className="animate-fade-in">
@@ -1288,7 +1317,7 @@ export function Timeline() {
                     dragTrack?.id === t.id && "cursor-grabbing bg-[var(--brand)]/20 text-[var(--foreground)]",
                     dragTrack && dragTrack.id !== t.id && dragTrack.overIndex === i && "bg-[var(--brand)]/10",
                   )}
-                  style={{ height: LANE_H }}
+                  style={{ height: trackH(t) }}
                 >
                   <GripVertical className="h-3.5 w-3.5 shrink-0 opacity-40 group-hover:opacity-90" />
                   {t.type === "video" ? (
@@ -1411,7 +1440,7 @@ export function Timeline() {
                       addMediaClip(id, start);
                     }}
                     className="relative border-b border-[var(--border)]"
-                    style={{ height: LANE_H }}
+                    style={{ height: trackH(track) }}
                   >
                     {track.type === "audio" ? (
                       <AudioWaveform width={width} viewLeft={view.left} viewWidth={view.width} />
@@ -1425,7 +1454,13 @@ export function Timeline() {
                       )
 
                       .map((clip) => (
-                        <ClipBox key={clip.id} clip={clip} track={track} />
+                        <ClipBox
+                          key={clip.id}
+                          clip={clip}
+                          track={track}
+                          row={stacks.get(track.id)?.rows.get(clip.id) ?? 0}
+                          rowCount={stacks.get(track.id)?.count ?? 1}
+                        />
                       ))}
 
                   </div>

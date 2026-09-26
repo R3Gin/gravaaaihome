@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Pause, Play } from "lucide-react";
-import { findClip, useEditor } from "@/state/editor-store";
+import { allClips, findClip, useEditor } from "@/state/editor-store";
 import {
   denoiseSamplesRnnoise,
   playAudioPreview,
@@ -48,7 +48,15 @@ export function AudioPanel() {
   const selectedClipId = useEditor((s) => s.selectedClipId);
   const sourceBlob = useEditor((s) => s.sourceBlob);
   const updateClip = useEditor((s) => s.updateClip);
-  const clip = findClip(tracks, selectedClipId);
+  const selected = findClip(tracks, selectedClipId);
+  // vídeo com áudio em faixa própria fica mudo: os ajustes vão para o áudio vinculado
+  const linkedAudio =
+    selected?.type === "video" && selected.linkGroupId
+      ? (allClips(tracks).find(
+          (c) => c.type === "audio" && c.linkGroupId === selected.linkGroupId,
+        ) ?? null)
+      : null;
+  const clip = linkedAudio ?? selected;
   const [playingMode, setPlayingMode] = useState<"raw" | "clean" | null>(null);
   const [progress, setProgress] = useState<number | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -107,6 +115,11 @@ export function AudioPanel() {
 
   return (
     <div className="space-y-4">
+      {linkedAudio ? (
+        <p className="text-[10px] leading-relaxed text-[var(--muted-foreground)]">
+          Ajustando o áudio vinculado a este vídeo.
+        </p>
+      ) : null}
       <div className="space-y-1.5">
         <span className="text-[11px] font-semibold text-[var(--muted-foreground)]">Volume</span>
         <Slider

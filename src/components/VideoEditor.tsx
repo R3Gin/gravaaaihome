@@ -4,8 +4,6 @@ import {
   Captions,
   Download,
   Keyboard,
-  Pause,
-  Play,
   Redo2,
   Shapes,
   Sparkles,
@@ -15,7 +13,6 @@ import {
   Volume2,
   Blend,
   PenTool,
-  X,
 } from "lucide-react";
 import { Preview } from "@/components/editor/Preview";
 import { Timeline } from "@/components/editor/Timeline";
@@ -30,6 +27,8 @@ import { MediaPanel } from "@/components/editor/panels/MediaPanel";
 import { findClip, useEditor } from "@/state/editor-store";
 import { takeEditorHandoff } from "@/lib/editor-handoff";
 import { ExportDialog } from "@/components/editor/ExportDialog";
+import { ToolDock } from "@/components/editor/ToolDock";
+import { SIDE_W } from "@/components/editor/layout";
 
 import { cn } from "@/lib/utils";
 
@@ -42,10 +41,9 @@ type PanelId =
   | "annotations"
   | "text"
   | "effects"
-  | "shortcuts"
-  | null;
+  | "shortcuts";
 
-const TOOLS: { id: Exclude<PanelId, null>; label: string; icon: typeof Upload }[] = [
+const TOOLS: { id: PanelId; label: string; icon: typeof Upload }[] = [
   { id: "media", label: "Mídia", icon: Upload },
   { id: "silence", label: "Silêncio", icon: AudioLines },
   { id: "captions", label: "Legendas", icon: Captions },
@@ -119,7 +117,7 @@ function ShortcutGroup({ items }: { items: { keys: string[]; action: string }[] 
 
 export function VideoEditor() {
   const videoRef = useRef<HTMLVideoElement>(null);
-  const [panel, setPanel] = useState<PanelId>(null);
+  const [panel, setPanel] = useState<PanelId>("media");
   const sourceBlob = useEditor((s) => s.sourceBlob);
   const [exportOpen, setExportOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -128,10 +126,8 @@ export function VideoEditor() {
 
   const projectName = useEditor((s) => s.projectName);
   const setProjectName = useEditor((s) => s.setProjectName);
-  const playing = useEditor((s) => s.playing);
   const setPlaying = useEditor((s) => s.setPlaying);
   const sourceUrl = useEditor((s) => s.sourceUrl);
-  const currentTime = useEditor((s) => s.currentTime);
   const duration = useEditor((s) => s.duration);
   const aspect = useEditor((s) => s.aspect);
   const tracks = useEditor((s) => s.tracks);
@@ -159,7 +155,6 @@ export function VideoEditor() {
       setStoreBlob(blob);
 
       loadSource(meta.url, meta.duration, { width: meta.width, height: meta.height }, name);
-      setPanel(null);
     },
     [loadSource, readMeta, setStoreBlob],
   );
@@ -199,6 +194,10 @@ export function VideoEditor() {
       if (e.code === "Space") {
         e.preventDefault();
         setPlaying(!useEditor.getState().playing);
+      }
+      if (!e.metaKey && !e.ctrlKey && !e.altKey && (key === "v" || key === "b")) {
+        e.preventDefault();
+        useEditor.getState().setTool(key === "b" ? "blade" : "select");
       }
       if (!e.metaKey && !e.ctrlKey && !e.altKey && e.key.toLowerCase() === "s") {
         e.preventDefault();
@@ -285,8 +284,7 @@ export function VideoEditor() {
   };
 
 
-  const short = (t: number) =>
-    `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, "0")}`;
+  const panelLabel = TOOLS.find((t) => t.id === panel)?.label;
 
   return (
     <div className="flex h-screen w-screen flex-col overflow-hidden bg-[var(--background)] text-[var(--foreground)]">
@@ -300,99 +298,89 @@ export function VideoEditor() {
       <div className="hidden h-full min-h-0 flex-col md:flex">
         <h1 className="sr-only">Editor de vídeo online do Gravaai</h1>
         {/* barra superior */}
-        <header className="flex h-14 shrink-0 flex-nowrap items-center gap-2 border-b border-[var(--border)] bg-[var(--surface-2)] px-3">
-
+        <header className="flex h-11 shrink-0 flex-nowrap items-center gap-1.5 border-b border-[var(--border)] bg-[var(--surface)] px-3">
+          <span className="grid h-6 w-6 shrink-0 place-items-center rounded-md bg-[var(--brand)] text-[11px] font-black text-white">
+            G
+          </span>
           <input
             value={projectName}
             onChange={(e) => setProjectName(e.target.value)}
-            className="w-40 shrink-0 rounded-lg border border-transparent bg-transparent px-2 py-1 text-sm font-semibold hover:border-[var(--border)] focus:border-[var(--brand)] focus:outline-none lg:w-56"
+            aria-label="Nome do projeto"
+            className="w-40 shrink-0 rounded-md border border-transparent bg-transparent px-2 py-1 text-[13px] font-semibold hover:border-[var(--border)] focus:border-[var(--brand)] focus:outline-none lg:w-64"
           />
-          <div className="mx-auto flex items-center gap-2">
+          <div className="ml-auto flex items-center gap-1">
             <button
-              onClick={() => setPlaying(!playing)}
-              disabled={!sourceUrl}
-              className="grid h-9 w-9 place-items-center rounded-lg bg-[var(--brand)] text-white disabled:opacity-40"
+              onClick={undo}
+              disabled={!canUndo}
+              aria-label="Desfazer"
+              className="grid h-8 w-8 place-items-center rounded-md text-[var(--muted-foreground)] hover:bg-white/5 hover:text-[var(--foreground)] disabled:opacity-30"
+              title="Desfazer (Ctrl+Z)"
             >
-              {playing ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
+              <Undo2 className="h-4 w-4" />
             </button>
-            <span className="text-xs tabular-nums text-[var(--muted-foreground)]">
-              {short(currentTime)} / {short(duration)}
-            </span>
+            <button
+              onClick={redo}
+              disabled={!canRedo}
+              aria-label="Refazer"
+              className="grid h-8 w-8 place-items-center rounded-md text-[var(--muted-foreground)] hover:bg-white/5 hover:text-[var(--foreground)] disabled:opacity-30"
+              title="Refazer (Ctrl+Shift+Z)"
+            >
+              <Redo2 className="h-4 w-4" />
+            </button>
+            <button
+              onClick={onExport}
+              disabled={!sourceBlob}
+              className="ml-2 flex h-8 items-center gap-2 rounded-md bg-[var(--brand)] px-3 text-xs font-semibold text-white hover:bg-[var(--brand-hover)] disabled:opacity-40"
+            >
+              <Download className="h-4 w-4" />
+              Exportar MP4
+            </button>
           </div>
-          <button
-            onClick={undo}
-            disabled={!canUndo}
-            aria-label="Desfazer"
-            className="rounded-lg border border-[var(--border)] p-2 disabled:opacity-40"
-            title="Desfazer (Ctrl+Z)"
-          >
-            <Undo2 className="h-4 w-4" />
-          </button>
-          <button
-            onClick={redo}
-            disabled={!canRedo}
-            aria-label="Refazer"
-            className="rounded-lg border border-[var(--border)] p-2 disabled:opacity-40"
-            title="Refazer (Ctrl+Shift+Z)"
-          >
-            <Redo2 className="h-4 w-4" />
-          </button>
-
-          <button
-            onClick={onExport}
-            disabled={!sourceBlob}
-            className="flex items-center gap-2 rounded-lg bg-[var(--brand)] px-3 py-2 text-xs font-semibold text-white disabled:opacity-40"
-          >
-            <Download className="h-4 w-4" />
-            <span className="hidden lg:inline">Exportar MP4</span>
-          </button>
         </header>
-
-
 
         {error ? (
           <div className="shrink-0 bg-red-500/15 px-4 py-2 text-xs text-red-300">{error}</div>
         ) : null}
 
-        {/* área central */}
+        {/* área central: biblioteca | vídeo | propriedades */}
         <div className="relative flex min-h-0 flex-1">
-          <nav className="flex w-16 shrink-0 flex-col items-center gap-1 border-r border-[var(--border)] bg-[var(--surface-2)] py-3">
-            {TOOLS.map((t) => (
-              <button
-                key={t.id}
-                onClick={() => setPanel(panel === t.id ? null : t.id)}
-                className={cn(
-                  "flex w-14 flex-col items-center gap-1 rounded-lg py-2 text-[10px] font-semibold",
-                  panel === t.id
-                    ? "bg-[var(--brand)]/15 text-[var(--brand)]"
-                    : "text-[var(--muted-foreground)] hover:text-[var(--foreground)]",
-                )}
-              >
-                <t.icon className="h-5 w-5" />
-                {t.label}
-              </button>
-            ))}
-          </nav>
-
-          {/* drawer sobre o preview */}
-          {panel ? (
-            <div className="absolute left-16 top-0 z-40 flex h-full w-72 flex-col overflow-y-auto border-r border-[var(--border)] bg-[var(--surface-2)] p-4 shadow-xl">
-              <div className="mb-3 flex items-center justify-between">
-                <h2 className="text-xs font-bold uppercase tracking-wide text-[var(--muted-foreground)]">
-                  {TOOLS.find((t) => t.id === panel)?.label}
-                </h2>
-                <button onClick={() => setPanel(null)}>
-                  <X className="h-4 w-4" />
+          <aside
+            className="flex shrink-0 flex-col border-r border-[var(--border)] bg-[var(--surface)]"
+            style={{ width: SIDE_W }}
+          >
+            <nav className="flex shrink-0 items-center justify-between gap-0.5 border-b border-[var(--border)] px-1.5 py-1.5">
+              {TOOLS.map((t) => (
+                <button
+                  key={t.id}
+                  onClick={() => setPanel(t.id)}
+                  title={t.label}
+                  aria-label={t.label}
+                  aria-pressed={panel === t.id}
+                  className={cn(
+                    "grid h-8 w-8 place-items-center rounded-md transition-colors",
+                    panel === t.id
+                      ? "bg-[var(--brand)]/15 text-[var(--brand)]"
+                      : "text-[var(--muted-foreground)] hover:bg-white/5 hover:text-[var(--foreground)]",
+                  )}
+                >
+                  <t.icon className="h-4 w-4" />
                 </button>
-              </div>
-
+              ))}
+            </nav>
+            <div className="flex h-9 shrink-0 items-center px-3 text-[12px] font-semibold">
+              {panelLabel}
+              {panel === "media" && mediaLibrary.length > 0 ? (
+                <span className="ml-1.5 text-[var(--muted-foreground)]">({mediaLibrary.length + (sourceUrl ? 1 : 0)})</span>
+              ) : null}
+            </div>
+            <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-4">
               {panel === "media" ? (
                 <MediaPanel
                   onLoadMain={(file) => void load(file, file.name.replace(/\.[^.]+$/, ""))}
                 />
               ) : null}
 
-              {panel === "silence" ? <SilencePanel onClose={() => setPanel(null)} /> : null}
+              {panel === "silence" ? <SilencePanel onClose={() => setPanel("media")} /> : null}
 
               {panel === "captions" ? <CaptionsPanel /> : null}
 
@@ -401,8 +389,6 @@ export function VideoEditor() {
               {panel === "transitions" ? <TransitionsPanel /> : null}
 
               {panel === "annotations" ? <AnnotationsPanel /> : null}
-
-
 
               {panel === "text" ? (
                 <button
@@ -448,6 +434,7 @@ export function VideoEditor() {
                       { keys: ["Delete"], action: "Remover clipes/keyframes selecionados" },
                       { keys: ["Ctrl/⌘", "Z"], action: "Desfazer" },
                       { keys: ["Ctrl/⌘", "Shift", "Z"], action: "Refazer" },
+                      { keys: ["Ctrl/⌘", "Roda"], action: "Zoom na linha do tempo" },
                       { keys: ["Ctrl/⌘", "C"], action: "Copiar keyframes selecionados" },
                       { keys: ["Ctrl/⌘", "V"], action: "Colar keyframes" },
                       { keys: ["←", "→"], action: "Navegar entre keyframes" },
@@ -458,30 +445,33 @@ export function VideoEditor() {
                 </div>
               ) : null}
             </div>
-          ) : null}
+          </aside>
 
-          {sourceUrl ? (
-            <Preview videoRef={videoRef} />
-          ) : (
-            <div className="flex min-h-0 flex-1 items-center justify-center p-8">
-              <label className="flex cursor-pointer flex-col items-center gap-3 rounded-2xl border border-dashed border-[var(--border)] px-12 py-16 text-center">
-                <Upload className="h-6 w-6 text-[var(--brand)]" />
-                <span className="text-sm font-semibold">Carregue um vídeo para começar</span>
-                <span className="text-xs text-[var(--muted-foreground)]">
-                  Tudo é processado no seu navegador — nenhum arquivo sai do dispositivo.
-                </span>
-                <input
-                  type="file"
-                  accept="video/*"
-                  className="hidden"
-                  onChange={(e) => {
-                    const file = e.target.files?.[0];
-                    if (file) void load(file, file.name.replace(/\.[^.]+$/, ""));
-                  }}
-                />
-              </label>
-            </div>
-          )}
+          <section className="flex min-w-0 flex-1 flex-col bg-[var(--background)]">
+            {sourceUrl ? (
+              <Preview videoRef={videoRef} />
+            ) : (
+              <div className="flex min-h-0 flex-1 items-center justify-center p-8">
+                <label className="flex cursor-pointer flex-col items-center gap-3 rounded-2xl border border-dashed border-[var(--border)] px-12 py-16 text-center hover:border-[var(--brand)]">
+                  <Upload className="h-6 w-6 text-[var(--brand)]" />
+                  <span className="text-sm font-semibold">Carregue um vídeo para começar</span>
+                  <span className="text-xs text-[var(--muted-foreground)]">
+                    Tudo é processado no seu navegador — nenhum arquivo sai do dispositivo.
+                  </span>
+                  <input
+                    type="file"
+                    accept="video/*"
+                    className="hidden"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (file) void load(file, file.name.replace(/\.[^.]+$/, ""));
+                    }}
+                  />
+                </label>
+              </div>
+            )}
+            <ToolDock onOpenPanel={(id) => setPanel(id)} />
+          </section>
 
           <Inspector />
         </div>

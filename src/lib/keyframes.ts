@@ -382,7 +382,9 @@ const P = {
 export const ANIM_PROPS: Record<string, AnimProp> = P;
 
 export function animatablePropsFor(clip: Clip): AnimProp[] {
-  if (clip.type === "video" || clip.type === "audio") {
+  // clipe de áudio não tem imagem: só o volume é animável
+  if (clip.type === "audio") return [P.volume];
+  if (clip.type === "video") {
     return [
       P.position,
       P.scale,

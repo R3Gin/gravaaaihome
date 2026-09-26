@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef } from "react";
-import { clipAt, useEditor, type AspectRatio } from "@/state/editor-store";
+import { clipAt, useEditor } from "@/state/editor-store";
 import { buildFrame, drawFrame, type HitRegion } from "@/lib/preview-compose";
 import { mediaSourceFor, syncMediaClips } from "@/lib/media-elements";
 import {
@@ -8,12 +8,9 @@ import {
   type Annotation,
 } from "@/lib/annotations";
 import { cn } from "@/lib/utils";
+import { ASPECTS } from "@/components/editor/layout";
 
-const ASPECTS: { id: AspectRatio; label: string; ratio: number }[] = [
-  { id: "16:9", label: "16:9", ratio: 16 / 9 },
-  { id: "9:16", label: "9:16", ratio: 9 / 16 },
-  { id: "1:1", label: "1:1", ratio: 1 },
-];
+
 
 interface Props {
   videoRef: React.RefObject<HTMLVideoElement | null>;
@@ -24,7 +21,6 @@ export function Preview({ videoRef }: Props) {
   const playing = useEditor((s) => s.playing);
   const aspect = useEditor((s) => s.aspect);
 
-  const setAspect = useEditor((s) => s.setAspect);
   const setCurrentTime = useEditor((s) => s.setCurrentTime);
   const setPlaying = useEditor((s) => s.setPlaying);
   const select = useEditor((s) => s.select);
@@ -135,18 +131,24 @@ export function Preview({ videoRef }: Props) {
   }, [playing, paint]);
 
   /* --- seek quando o playhead muda fora da reprodução --- */
-  const currentTime = useEditor((s) => s.currentTime);
+  // assinatura direta no store: o preview não re-renderiza a cada mudança da agulha
   useEffect(() => {
-    const v = videoRef.current;
-    if (!v || playing) return;
-    const clip = clipAt(useEditor.getState().tracks, "video", currentTime);
-    if (!clip) return;
-    const speed = clip.speed ?? 1;
-    const target = clip.sourceInStart + (currentTime - clip.startTime) * speed;
-    if (Math.abs(v.currentTime - target) > 0.04) {
-      v.currentTime = target;
-    }
-  }, [currentTime, playing, videoRef]);
+    const seekTo = (s: ReturnType<typeof useEditor.getState>) => {
+      const v = videoRef.current;
+      if (!v || s.playing) return;
+      const clip = clipAt(s.tracks, "video", s.currentTime);
+      if (!clip) return;
+      const speed = clip.speed ?? 1;
+      const target = clip.sourceInStart + (s.currentTime - clip.startTime) * speed;
+      if (Math.abs(v.currentTime - target) > 0.04) {
+        v.currentTime = target;
+      }
+    };
+    seekTo(useEditor.getState());
+    return useEditor.subscribe((s, prev) => {
+      if (s.currentTime !== prev.currentTime || s.playing !== prev.playing) seekTo(s);
+    });
+  }, [videoRef]);
 
   /* --- pool de decodificadores: evita seek (e congelamento) nas emendas --- */
   const videoARef = useRef<HTMLVideoElement | null>(null);
@@ -618,8 +620,17 @@ export function Preview({ videoRef }: Props) {
           onPointerMove={onPointerMove}
           onPointerUp={endDrag}
           onPointerLeave={endDrag}
+          onDoubleClick={() => {
+            // duplo clique num texto: vai direto para o campo de edição
+            const s = useEditor.getState();
+            const clip = s.tracks.flatMap((t) => t.clips).find((c) => c.id === s.selectedClipId);
+            if (clip?.type !== "text") return;
+            const field = document.getElementById("inspector-text") as HTMLTextAreaElement | null;
+            field?.focus();
+            field?.select();
+          }}
           className={cn(
-            "relative overflow-hidden rounded-xl border border-[var(--border)] bg-black shadow-lg",
+            "relative overflow-hidden rounded-md bg-black shadow-2xl shadow-black/60",
             annotationTool && annotationTool !== "eraser" && "cursor-crosshair",
             annotationTool === "eraser" && "cursor-cell",
             pendingEffectPreset && "cursor-crosshair ring-2 ring-[var(--brand)]",
@@ -702,22 +713,6 @@ export function Preview({ videoRef }: Props) {
         </div>
       </div>
 
-      <div className="flex shrink-0 items-center justify-center gap-2 pb-3">
-        {ASPECTS.map((a) => (
-          <button
-            key={a.id}
-            onClick={() => setAspect(a.id)}
-            className={cn(
-              "rounded-lg border px-3 py-1 text-xs font-semibold",
-              aspect === a.id
-                ? "border-[var(--brand)] bg-[var(--brand)]/15 text-[var(--brand)]"
-                : "border-[var(--border)] text-[var(--muted-foreground)]",
-            )}
-          >
-            {a.label}
-          </button>
-        ))}
-      </div>
     </div>
   );
 }
