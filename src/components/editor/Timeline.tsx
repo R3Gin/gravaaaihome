@@ -17,6 +17,7 @@ import {
   MIN_CLIP,
 
   findClip,
+  isLayeredTrack,
   selectionGroup,
   useEditor,
   type Clip,
@@ -38,6 +39,12 @@ import { subscribeFilmstrip, type Filmstrip } from "@/lib/filmstrip";
 import { cn } from "@/lib/utils";
 import { SIDE_W } from "@/components/editor/layout";
 
+const OVERLAY_LABEL: Record<string, string> = {
+  blur: "Desfoque",
+  spotlight: "Destaque",
+  media: "Mídia",
+};
+
 const ANNOTATION_LABEL: Record<string, string> = {
   pen: "caneta",
   arrow: "seta",
@@ -52,6 +59,27 @@ const TL_MIN_H = 180;
 const TL_DEFAULT_H = 280;
 const TL_HEIGHT_KEY = "gravaai:timeline-height";
 const LANE_H = 44;
+/** altura de cada sub-linha quando clipes de texto/sobreposição se sobrepõem */
+const ROW_H = 26;
+
+/** distribui clipes sobrepostos em sub-linhas (o primeiro que couber) */
+function stackRows(clips: Clip[]) {
+  const ends: number[] = [];
+  const rows = new Map<string, number>();
+  for (const c of [...clips].sort((a, b) => a.startTime - b.startTime)) {
+    let row = ends.findIndex((end) => c.startTime >= end - 1e-3);
+    if (row === -1) {
+      row = ends.length;
+      ends.push(c.startTime + c.duration);
+    } else ends[row] = c.startTime + c.duration;
+    rows.set(c.id, row);
+  }
+  return { rows, count: Math.max(1, ends.length) };
+}
+
+function laneHeight(count: number) {
+  return count <= 1 ? LANE_H : Math.max(LANE_H, count * ROW_H + 4);
+}
 const KF_H = 22;
 const FX_H = 34;
 
@@ -464,7 +492,17 @@ function AudioWaveform({
 
 
 
-const ClipBox = memo(function ClipBox({ clip, track }: { clip: Clip; track: Track }) {
+const ClipBox = memo(function ClipBox({
+  clip,
+  track,
+  row = 0,
+  rowCount = 1,
+}: {
+  clip: Clip;
+  track: Track;
+  row?: number;
+  rowCount?: number;
+}) {
   const zoom = useEditor((s) => s.zoom);
   const tool = useEditor((s) => s.tool);
   const selected = useEditor((s) => s.selectedClipIds.includes(clip.id));
@@ -512,6 +550,7 @@ const ClipBox = memo(function ClipBox({ clip, track }: { clip: Clip; track: Trac
   /** posição livre mais próxima na faixa (mesma regra aplicada no store) */
   const place = (start: number, dur: number) => {
     const s = useEditor.getState();
+    if (isLayeredTrack(track.type)) return start;
     const others =
       s.tracks.find((t) => t.id === clipRef.current.trackId)?.clips.filter(
         (c) => c.id !== clipRef.current.id,
@@ -644,6 +683,9 @@ const ClipBox = memo(function ClipBox({ clip, track }: { clip: Clip; track: Trac
           ? "bg-[#7a5418] border-[#b88327]"
           : "bg-emerald-600/35 border-emerald-500/60";
   const strip = useFilmstrip(clip.type === "video" ? clip.sourceUrl : null);
+  const mediaName = useEditor((s) =>
+    clip.mediaId ? (s.mediaLibrary.find((m) => m.id === clip.mediaId)?.name ?? null) : null,
+  );
 
   const start = ghost?.start ?? clip.startTime;
   const dur = ghost?.duration ?? clip.duration;
@@ -669,6 +711,7 @@ const ClipBox = memo(function ClipBox({ clip, track }: { clip: Clip; track: Trac
         paddingLeft: dur * zoom < 24 ? 0 : undefined,
         paddingRight: dur * zoom < 24 ? 0 : undefined,
         zIndex: dragging ? 20 : selected ? 10 : 1,
+        ...(rowCount > 1 ? { top: 2 + row * ROW_H, height: ROW_H - 3 } : null),
       }}
 
     >
@@ -689,11 +732,15 @@ const ClipBox = memo(function ClipBox({ clip, track }: { clip: Clip; track: Trac
           strip && "self-start mt-0.5 rounded-sm bg-black/55 px-1 text-[10px] leading-4",
         )}
       >
-        {clip.type === "text"
+        {mediaName
+          ? mediaName
+          : clip.type === "text"
           ? clip.textContent
           : clip.overlayKind === "annotation"
             ? ANNOTATION_LABEL[clip.annotation?.type ?? "pen"]
-            : (clip.overlayKind ?? track.label)}
+            : clip.overlayKind
+              ? (OVERLAY_LABEL[clip.overlayKind] ?? clip.overlayKind)
+              : track.label}
       </span>
 
       {selected && tool !== "blade" ? (
@@ -1081,7 +1128,16 @@ export function Timeline() {
     return { map, count: Math.max(ends.length, effects.length ? 1 : 0) };
   }, [effects]);
   const fxHeight = fxRows.count * FX_H;
-  const lanesHeight = visibleTracks.length * LANE_H + kfRows.length * KF_H + fxHeight;
+  /* texto e sobreposições podem se sobrepor: cada faixa ganha sub-linhas */
+  const stacks = useMemo(() => {
+    const map = new Map<string, ReturnType<typeof stackRows>>();
+    for (const t of visibleTracks)
+      map.set(t.id, isLayeredTrack(t.type) ? stackRows(t.clips) : { rows: new Map(), count: 1 });
+    return map;
+  }, [visibleTracks]);
+  const trackH = (t: Track) => laneHeight(stacks.get(t.id)?.count ?? 1);
+  const lanesHeight =
+    visibleTracks.reduce((h, t) => h + trackH(t), 0) + kfRows.length * KF_H + fxHeight;
 
 
   const snapGuide = useEditor((s) => s.snapGuide);
@@ -1152,9 +1208,11 @@ export function Timeline() {
   const rowHeights = useMemo(
     () =>
       visibleTracks.map(
-        (t) => LANE_H + (selectedClip?.trackId === t.id ? kfRows.length * KF_H : 0),
+        (t) =>
+          laneHeight(stacks.get(t.id)?.count ?? 1) +
+          (selectedClip?.trackId === t.id ? kfRows.length * KF_H : 0),
       ),
-    [visibleTracks, selectedClip, kfRows.length],
+    [visibleTracks, selectedClip, kfRows.length, stacks],
   );
 
 
@@ -1259,7 +1317,7 @@ export function Timeline() {
                     dragTrack?.id === t.id && "cursor-grabbing bg-[var(--brand)]/20 text-[var(--foreground)]",
                     dragTrack && dragTrack.id !== t.id && dragTrack.overIndex === i && "bg-[var(--brand)]/10",
                   )}
-                  style={{ height: LANE_H }}
+                  style={{ height: trackH(t) }}
                 >
                   <GripVertical className="h-3.5 w-3.5 shrink-0 opacity-40 group-hover:opacity-90" />
                   {t.type === "video" ? (
@@ -1382,7 +1440,7 @@ export function Timeline() {
                       addMediaClip(id, start);
                     }}
                     className="relative border-b border-[var(--border)]"
-                    style={{ height: LANE_H }}
+                    style={{ height: trackH(track) }}
                   >
                     {track.type === "audio" ? (
                       <AudioWaveform width={width} viewLeft={view.left} viewWidth={view.width} />
@@ -1396,7 +1454,13 @@ export function Timeline() {
                       )
 
                       .map((clip) => (
-                        <ClipBox key={clip.id} clip={clip} track={track} />
+                        <ClipBox
+                          key={clip.id}
+                          clip={clip}
+                          track={track}
+                          row={stacks.get(track.id)?.rows.get(clip.id) ?? 0}
+                          rowCount={stacks.get(track.id)?.count ?? 1}
+                        />
                       ))}
 
                   </div>

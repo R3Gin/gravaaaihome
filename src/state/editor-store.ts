@@ -54,6 +54,15 @@ import {
  * ------------------------------------------------------------------ */
 
 export type TrackType = "video" | "audio" | "text" | "overlay";
+
+/**
+ * Faixas "em camadas": texto e sobreposições podem ficar ao mesmo tempo na
+ * tela (título + legenda, várias setas), então seus clipes podem se sobrepor
+ * e a timeline os empilha em sub-linhas. Vídeo e áudio seguem sem sobreposição.
+ */
+export function isLayeredTrack(type: TrackType) {
+  return type === "text" || type === "overlay";
+}
 export type TransitionKind = "none" | "fade" | "slide" | "zoom" | "wipe";
 export type TransitionDir = "left" | "right" | "up" | "down";
 
@@ -488,7 +497,7 @@ function emptyTracks(): Track[] {
   return [
     { id: VIDEO_TRACK, type: "video", label: "Vídeo", clips: [] },
     { id: AUDIO_TRACK, type: "audio", label: "Áudio", clips: [] },
-    { id: OVERLAY_TRACK, type: "overlay", label: "Efeitos", clips: [] },
+    { id: OVERLAY_TRACK, type: "overlay", label: "Sobreposições", clips: [] },
     { id: TEXT_TRACK, type: "text", label: "Texto", clips: [] },
   ];
 }
@@ -1062,8 +1071,14 @@ export const useEditor = create<EditorState & EditorActions>((set, get) => {
         return;
       }
       write((tracks) =>
-        mapTracks(tracks, (clips) => {
+        mapTracks(tracks, (clips, track) => {
           if (!clips.some((c) => movingIds.has(c.id))) return clips;
+          if (isLayeredTrack(track.type))
+            return clips
+              .map((c) =>
+                movingIds.has(c.id) ? { ...c, startTime: Math.max(0, c.startTime + delta) } : c,
+              )
+              .sort((a, b) => a.startTime - b.startTime);
           const moved = clips
             .filter((c) => movingIds.has(c.id))
             .map((c) => ({ ...c, startTime: Math.max(0, c.startTime + delta) }));
@@ -1275,11 +1290,13 @@ export const useEditor = create<EditorState & EditorActions>((set, get) => {
 
     splitPlayhead: () => {
       const { tracks, currentTime, selectedClipId } = get();
-      const target =
-        findClip(tracks, selectedClipId) ??
-        allClips(tracks).find(
-          (c) => c.type === "video" && currentTime > c.startTime && currentTime < c.startTime + c.duration,
-        );
+      const under = (c: Clip | null) =>
+        !!c && currentTime > c.startTime + MIN_CLIP && currentTime < c.startTime + c.duration - MIN_CLIP;
+      // o selecionado só é cortado se estiver sob a agulha; senão, corta o vídeo ali
+      const selected = findClip(tracks, selectedClipId);
+      const target = under(selected)
+        ? selected
+        : allClips(tracks).find((c) => c.type === "video" && under(c));
       if (target) get().splitAt(target.id, currentTime);
     },
 
@@ -1302,7 +1319,8 @@ export const useEditor = create<EditorState & EditorActions>((set, get) => {
       write((tracks) =>
         mapTracks(tracks, (clips, track) => {
           if (track.id !== clip.trackId) return clips;
-          copy.startTime = freeStart(clips, copy.startTime, copy.duration);
+          if (!isLayeredTrack(track.type))
+            copy.startTime = freeStart(clips, copy.startTime, copy.duration);
           return [...clips, copy].sort((a, b) => a.startTime - b.startTime);
         }),
       );
@@ -1337,7 +1355,9 @@ export const useEditor = create<EditorState & EditorActions>((set, get) => {
         mapTracks(tracks, (clips, track) => {
           if (track.id !== clip.trackId) return clips;
           const others = clips.filter((c) => c.id !== id);
-          const start = freeStart(others, desired, clip.duration);
+          const start = isLayeredTrack(track.type)
+            ? desired
+            : freeStart(others, desired, clip.duration);
           return clips
             .map((c) => (c.id === id ? { ...c, startTime: start } : c))
             .sort((a, b) => a.startTime - b.startTime);
@@ -1350,7 +1370,9 @@ export const useEditor = create<EditorState & EditorActions>((set, get) => {
       const clip = findClip(get().tracks, id);
       if (!clip) return;
       const speed = clip.speed ?? 1;
-      const siblings = (get().tracks.find((t) => t.id === clip.trackId)?.clips ?? []).filter(
+      const ownTrack = get().tracks.find((t) => t.id === clip.trackId);
+      // em faixas em camadas o clipe pode passar por cima dos outros
+      const siblings = (ownTrack && isLayeredTrack(ownTrack.type) ? [] : (ownTrack?.clips ?? [])).filter(
         (c) => c.id !== id,
       );
       // limites impostos pelos vizinhos: o trim nunca invade outro clipe

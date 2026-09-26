@@ -71,7 +71,9 @@ function AppliedChips() {
 export function EffectsLibraryPanel() {
   const tracks = useEditor((s) => s.tracks);
   const selectedClipId = useEditor((s) => s.selectedClipId);
-  const currentTime = useEditor((s) => s.currentTime);
+  const currentTime = useEditor((s) =>
+    s.playing ? Math.floor(s.currentTime * 4) / 4 : s.currentTime,
+  );
   const apply = useEditor((s) => s.applyEffectPreset);
   const pending = useEditor((s) => s.pendingEffectPreset);
   const setPending = useEditor((s) => s.setPendingEffectPreset);

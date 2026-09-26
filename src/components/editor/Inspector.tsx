@@ -1,4 +1,5 @@
 import { ChevronLeft, ChevronRight, Diamond, Plus } from "lucide-react";
+import { AudioPanel } from "@/components/editor/panels/AudioPanel";
 import { EffectInspector } from "@/components/editor/panels/EffectInspector";
 import { ClipTransitionControls } from "@/components/editor/panels/ClipTransitionControls";
 import { presetById } from "@/lib/effect-presets";
@@ -64,7 +65,10 @@ function Slider({
  * entre keyframes + controle do valor.
  * ------------------------------------------------------------------ */
 function AnimRow({ clip, prop }: { clip: Clip; prop: AnimProp }) {
-  const currentTime = useEditor((s) => s.currentTime);
+  // durante o play o valor exibido atualiza 4x por segundo (não a cada quadro)
+  const currentTime = useEditor((s) =>
+    s.playing ? Math.floor(s.currentTime * 4) / 4 : s.currentTime,
+  );
   const setCurrentTime = useEditor((s) => s.setCurrentTime);
   const setPropValue = useEditor((s) => s.setPropValue);
   const toggle = useEditor((s) => s.togglePropertyAnimation);
@@ -315,6 +319,7 @@ export function Inspector() {
           </p>
         ) : (
           <>
+            {clip.type === "audio" ? <AudioPanel /> : null}
             <ImageSection clip={clip} />
             <KeyframeEditor clip={clip} />
             <AnimSection clip={clip} />
@@ -346,7 +351,7 @@ export function Inspector() {
               <ClipTransitionControls clip={clip} />
             </div>
             <p className="rounded-lg border border-[var(--border)] p-3 text-[10px] leading-relaxed text-[var(--muted-foreground)]">
-              Volume, redução de ruído e fades ficam no módulo <strong>Áudio</strong>; os efeitos
+              Volume, redução de ruído e fades: selecione o clipe na faixa <strong>Áudio</strong>; os efeitos
               prontos (zoom, entrada, saída, ênfase) ficam no módulo <strong>Efeitos</strong> e
               aparecem como barras na timeline.
             </p>
@@ -357,6 +362,7 @@ export function Inspector() {
           <>
             <Row label="Texto">
               <textarea
+                id="inspector-text"
                 value={clip.textContent ?? ""}
                 onChange={(e) => updateClip(clip.id, { textContent: e.target.value })}
                 rows={3}

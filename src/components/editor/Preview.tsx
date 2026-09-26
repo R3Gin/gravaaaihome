@@ -131,18 +131,24 @@ export function Preview({ videoRef }: Props) {
   }, [playing, paint]);
 
   /* --- seek quando o playhead muda fora da reprodução --- */
-  const currentTime = useEditor((s) => s.currentTime);
+  // assinatura direta no store: o preview não re-renderiza a cada mudança da agulha
   useEffect(() => {
-    const v = videoRef.current;
-    if (!v || playing) return;
-    const clip = clipAt(useEditor.getState().tracks, "video", currentTime);
-    if (!clip) return;
-    const speed = clip.speed ?? 1;
-    const target = clip.sourceInStart + (currentTime - clip.startTime) * speed;
-    if (Math.abs(v.currentTime - target) > 0.04) {
-      v.currentTime = target;
-    }
-  }, [currentTime, playing, videoRef]);
+    const seekTo = (s: ReturnType<typeof useEditor.getState>) => {
+      const v = videoRef.current;
+      if (!v || s.playing) return;
+      const clip = clipAt(s.tracks, "video", s.currentTime);
+      if (!clip) return;
+      const speed = clip.speed ?? 1;
+      const target = clip.sourceInStart + (s.currentTime - clip.startTime) * speed;
+      if (Math.abs(v.currentTime - target) > 0.04) {
+        v.currentTime = target;
+      }
+    };
+    seekTo(useEditor.getState());
+    return useEditor.subscribe((s, prev) => {
+      if (s.currentTime !== prev.currentTime || s.playing !== prev.playing) seekTo(s);
+    });
+  }, [videoRef]);
 
   /* --- pool de decodificadores: evita seek (e congelamento) nas emendas --- */
   const videoARef = useRef<HTMLVideoElement | null>(null);
@@ -614,6 +620,15 @@ export function Preview({ videoRef }: Props) {
           onPointerMove={onPointerMove}
           onPointerUp={endDrag}
           onPointerLeave={endDrag}
+          onDoubleClick={() => {
+            // duplo clique num texto: vai direto para o campo de edição
+            const s = useEditor.getState();
+            const clip = s.tracks.flatMap((t) => t.clips).find((c) => c.id === s.selectedClipId);
+            if (clip?.type !== "text") return;
+            const field = document.getElementById("inspector-text") as HTMLTextAreaElement | null;
+            field?.focus();
+            field?.select();
+          }}
           className={cn(
             "relative overflow-hidden rounded-md bg-black shadow-2xl shadow-black/60",
             annotationTool && annotationTool !== "eraser" && "cursor-crosshair",
