@@ -259,8 +259,9 @@ export interface EditorState {
   selectedClipIds: string[];
 
   tracks: Track[];
-  past: Track[][];
-  future: Track[][];
+  /** passos de desfazer/refazer (cada um é o projeto inteiro naquele momento) */
+  past: HistoryEntry[];
+  future: HistoryEntry[];
   /** arquivo original (usado por análise de áudio e exportação) */
   sourceBlob: Blob | null;
   /** trechos silenciosos detectados — só interface, não faz parte do projeto */
@@ -311,6 +312,16 @@ export interface EditorState {
   mediaLibrary: MediaItem[];
 }
 
+
+/** O que o Ctrl+Z restaura: tudo que é projeto (não inclui playhead, zoom, seleção). */
+export interface HistoryEntry {
+  tracks: Track[];
+  effects: TimelineEffect[];
+  removedRanges: SilenceRange[];
+  captionStyle: CaptionStyle;
+  transcript: EditorState["transcript"];
+  captionsSig: string | null;
+}
 
 export interface EditorActions {
   loadSource: (url: string, duration: number, size?: { width: number; height: number }, name?: string) => void;
@@ -458,6 +469,7 @@ export interface EditorActions {
   cycleKeyframeRows: (all?: boolean) => void;
   undo: () => void;
   redo: () => void;
+  /** Fecha um arraste feito com alterações "ao vivo": vira um único passo de desfazer. */
   commit: () => void;
 }
 
@@ -718,16 +730,141 @@ function buildCaptionsFromTranscript(
 
 }
 
-export const useEditor = create<EditorState & EditorActions>((set, get) => {
-  const snapshot = () =>
-    set((s) => ({ past: [...s.past.slice(-49), s.tracks], future: [] }));
+const HISTORY_LIMIT = 100;
+/** alterações seguidas no mesmo controle (slider, digitação) dentro desse intervalo viram um passo só */
+const COALESCE_MS = 800;
 
-  const write = (fn: (tracks: Track[]) => Track[]) => {
-    snapshot();
+function historyEntry(s: EditorState): HistoryEntry {
+  return {
+    tracks: s.tracks,
+    effects: s.effects,
+    removedRanges: s.removedRanges,
+    captionStyle: s.captionStyle,
+    transcript: s.transcript,
+    captionsSig: s.captionsSig,
+  };
+}
+
+function sameEntry(a: HistoryEntry, b: HistoryEntry) {
+  return (
+    a.tracks === b.tracks &&
+    a.effects === b.effects &&
+    a.removedRanges === b.removedRanges &&
+    a.captionStyle === b.captionStyle &&
+    a.transcript === b.transcript &&
+    a.captionsSig === b.captionsSig
+  );
+}
+
+/** Restaura um passo do histórico, limpando a seleção do que deixou de existir. */
+function restoreEntry(s: EditorState, entry: HistoryEntry): Partial<EditorState> {
+  const ids = new Set(allClips(entry.tracks).map((c) => c.id));
+  const selectedClipIds = s.selectedClipIds.filter((id) => ids.has(id));
+  const selectedClipId =
+    s.selectedClipId && ids.has(s.selectedClipId)
+      ? s.selectedClipId
+      : (selectedClipIds[selectedClipIds.length - 1] ?? null);
+  const selectedEffectId =
+    s.selectedEffectId && entry.effects.some((e) => e.id === s.selectedEffectId)
+      ? s.selectedEffectId
+      : null;
+  return {
+    ...entry,
+    duration: timelineDuration(entry.tracks),
+    selectedClipId,
+    selectedClipIds,
+    selectedEffectId,
+    selectedKeyframes: [],
+    snapGuide: null,
+  };
+}
+
+export const useEditor = create<EditorState & EditorActions>((set, get) => {
+  /* ---- histórico: cada ação do usuário = um passo de desfazer ----
+   * - ação pontual (cortar, apagar, soltar um clipe): um passo.
+   * - arraste com prévia ao vivo: o estado de antes é guardado no 1º movimento
+   *   (`beginLive`) e vira um passo só quando o arraste termina (`commit`).
+   * - slider/digitação no mesmo campo: alterações próximas se juntam (`key`). */
+  let liveStart: HistoryEntry | null = null;
+  let lastKey: string | null = null;
+  let lastAt = 0;
+  let batching = false;
+
+  const pushPast = (entry: HistoryEntry) =>
+    set((s) => ({ past: [...s.past.slice(-(HISTORY_LIMIT - 1)), entry], future: [] }));
+
+  const record = (key?: string) => {
+    if (batching) return;
+    const now = Date.now();
+    if (liveStart) {
+      const entry = liveStart;
+      liveStart = null;
+      lastKey = null;
+      pushPast(entry);
+      return;
+    }
+    if (key && key === lastKey && now - lastAt < COALESCE_MS) {
+      lastAt = now;
+      return;
+    }
+    lastKey = key ?? null;
+    lastAt = now;
+    pushPast(historyEntry(get()));
+  };
+
+  const beginLive = () => {
+    if (!liveStart) liveStart = historyEntry(get());
+  };
+
+  const commitLive = () => {
+    if (!liveStart) return;
+    const entry = liveStart;
+    liveStart = null;
+    lastKey = null;
+    if (!sameEntry(entry, historyEntry(get()))) pushPast(entry);
+  };
+
+  const clearHistory = () => {
+    liveStart = null;
+    lastKey = null;
+  };
+
+  /** aplica sem gravar no histórico (quem chama já gravou) */
+  const apply = (fn: (tracks: Track[]) => Track[]) =>
     set((s) => {
       const tracks = fn(s.tracks);
       return { tracks, duration: timelineDuration(tracks) };
     });
+
+  /** aplica e grava um passo — só se algo mudou de fato (clique sem efeito não vira Ctrl+Z vazio) */
+  const write = (fn: (tracks: Track[]) => Track[], key?: string) => {
+    const before = get().tracks;
+    const tracks = fn(before);
+    if (tracks === before || JSON.stringify(tracks) === JSON.stringify(before)) {
+      commitLive();
+      return;
+    }
+    record(key);
+    set({ tracks, duration: timelineDuration(tracks) });
+  };
+
+  /** várias alterações que o usuário vê como uma ação só */
+  const batch = (fn: () => void) => {
+    record();
+    batching = true;
+    try {
+      fn();
+    } finally {
+      batching = false;
+      lastKey = null;
+    }
+  };
+
+  /** alteração pontual num clipe: sempre um passo próprio (nunca se junta a outra) */
+  const updateStep = (id: string, patch: Partial<Clip>) => {
+    lastKey = null;
+    get().updateClip(id, patch);
+    lastKey = null;
   };
 
   return {
@@ -774,6 +911,7 @@ export const useEditor = create<EditorState & EditorActions>((set, get) => {
 
 
     loadSource: (url, duration, size, name) => {
+      clearHistory();
       const previousUrl = get().sourceUrl;
       const tracks = emptyTracks();
       const linkGroupId = uid();
@@ -846,7 +984,8 @@ export const useEditor = create<EditorState & EditorActions>((set, get) => {
       }
     },
 
-    reset: () =>
+    reset: () => {
+      clearHistory();
       set({
         sourceUrl: null,
         sourceDuration: 0,
@@ -858,7 +997,8 @@ export const useEditor = create<EditorState & EditorActions>((set, get) => {
         selectedClipIds: [],
         past: [],
         future: [],
-      }),
+      });
+    },
 
     setProjectName: (projectName) => set({ projectName }),
     setCurrentTime: (t) => set({ currentTime: Math.max(0, t) }),
@@ -956,7 +1096,10 @@ export const useEditor = create<EditorState & EditorActions>((set, get) => {
 
     duplicateSelected: () => {
       const ids = [...get().selectedClipIds];
-      for (const id of ids) get().duplicateClip(id);
+      if (ids.length === 0) return;
+      batch(() => {
+        for (const id of ids) get().duplicateClip(id);
+      });
     },
 
     detachAudio: (clipId) => {
@@ -1038,20 +1181,21 @@ export const useEditor = create<EditorState & EditorActions>((set, get) => {
 
 
 
-    reorderTracks: (from, to) =>
-      set((s) => {
-        if (from === to || from < 0 || to < 0 || from >= s.tracks.length || to >= s.tracks.length)
-          return {};
-        const tracks = [...s.tracks];
+    reorderTracks: (from, to) => {
+      const n = get().tracks.length;
+      if (from === to || from < 0 || to < 0 || from >= n || to >= n) return;
+      write((current) => {
+        const tracks = [...current];
         const [moved] = tracks.splice(from, 1);
-        if (!moved) return {};
-        tracks.splice(to, 0, moved);
-        return { tracks };
-      }),
+        if (moved) tracks.splice(to, 0, moved);
+        return tracks;
+      });
+    },
 
 
     updateClip: (id, patch) =>
-      write((tracks) =>
+      write(
+        (tracks) =>
         mapTracks(tracks, (clips) =>
           clips.map((c) => {
             if (c.id !== id) return c;
@@ -1063,15 +1207,18 @@ export const useEditor = create<EditorState & EditorActions>((set, get) => {
             return { ...c, ...patch, captionEdited: edited };
           }),
         ),
+        `clip:${id}:${Object.keys(patch).sort().join(",")}`,
       ),
 
 
-    updateClipLive: (id, patch) =>
+    updateClipLive: (id, patch) => {
+      beginLive();
       set((s) => ({
         tracks: mapTracks(s.tracks, (clips) =>
           clips.map((c) => (c.id === id ? { ...c, ...patch } : c)),
         ),
-      })),
+      }));
+    },
 
 
 
@@ -1515,11 +1662,12 @@ export const useEditor = create<EditorState & EditorActions>((set, get) => {
     audioSignature: () => timelineAudioSignature(allClips(get().tracks) as AudioClipRef[]),
 
     addCaptionClips: (rawSegments, words, meta) => {
+      record();
       set({
         transcript: { segments: rawSegments, words: words ?? [], timeline: meta?.timeline },
         captionsSig: meta?.sig ?? get().audioSignature(),
       });
-      buildCaptionsFromTranscript(get, write);
+      buildCaptionsFromTranscript(get, apply);
     },
 
 
@@ -1531,9 +1679,10 @@ export const useEditor = create<EditorState & EditorActions>((set, get) => {
 
     setCaptionStyle: (patch, ids) => {
       const style = ids?.length ? get().captionStyle : { ...get().captionStyle, ...patch };
+      record(`captionStyle:${ids?.join(",") ?? ""}:${Object.keys(patch).sort().join(",")}`);
       if (!ids?.length) set({ captionStyle: style });
       const target = ids?.length ? new Set(ids) : null;
-      write((tracks) =>
+      apply((tracks) =>
         mapTracks(tracks, (clips) =>
           clips.map((c) => {
             if (!c.isCaption) return c;
@@ -1565,15 +1714,16 @@ export const useEditor = create<EditorState & EditorActions>((set, get) => {
     },
 
     clearCaptions: () => {
+      record();
       set({ transcript: null });
-      write((tracks) => mapTracks(tracks, (clips) => clips.filter((c) => !c.isCaption)));
+      apply((tracks) => mapTracks(tracks, (clips) => clips.filter((c) => !c.isCaption)));
     },
 
 
     setTransition: (clipId, patch) => {
       const clip = findClip(get().tracks, clipId);
       if (!clip) return;
-      get().updateClip(clipId, {
+      updateStep(clipId, {
         transition: patch.kind ?? clip.transition ?? "none",
         transitionDuration: Math.max(
           0.1,
@@ -1593,7 +1743,7 @@ export const useEditor = create<EditorState & EditorActions>((set, get) => {
       const value = meta.get(resolveClip(clip, get().currentTime));
       const keys = clip.keyframes?.[prop] ?? [];
       const map: KeyframeMap = { ...(clip.keyframes ?? {}), [prop]: upsertKeyframe(keys, local, value) };
-      get().updateClip(clipId, { keyframes: map });
+      updateStep(clipId, { keyframes: map });
     },
 
     setKeyframeValue: (clipId, prop, kfId, value, live) => {
@@ -1625,11 +1775,11 @@ export const useEditor = create<EditorState & EditorActions>((set, get) => {
       if ((map[prop]?.length ?? 0) > 0) {
         // desliga: congela o valor atual e remove todos os keyframes
         delete map[prop];
-        get().updateClip(clipId, { keyframes: map, ...meta.set(meta.get(clip)) });
+        updateStep(clipId, { keyframes: map, ...meta.set(meta.get(clip)) });
       } else {
         const local = Math.max(0, Math.min(clip.duration, get().currentTime - clip.startTime));
         map[prop] = [newKeyframe(local, meta.get(clip))];
-        get().updateClip(clipId, { keyframes: map });
+        updateStep(clipId, { keyframes: map });
       }
       set({ selectedKeyframes: [] });
     },
@@ -1674,7 +1824,7 @@ export const useEditor = create<EditorState & EditorActions>((set, get) => {
         ...clip.keyframes,
         [prop]: clip.keyframes[prop].map((k) => (k.id === kfId ? { ...k, easing } : k)),
       };
-      get().updateClip(clipId, { keyframes: map });
+      updateStep(clipId, { keyframes: map });
     },
 
     setKeyframeSpeed: (clipId, prop, kfId, patch, live) => {
@@ -1761,6 +1911,7 @@ export const useEditor = create<EditorState & EditorActions>((set, get) => {
         label: def.label,
       };
       const effects = [...get().effects, fx];
+      record();
       set({
         effects,
         tracks: applyEffectsToTracks(get().tracks, effects),
@@ -1774,11 +1925,13 @@ export const useEditor = create<EditorState & EditorActions>((set, get) => {
       const effects = get().effects.map((e) =>
         e.id === effectId ? { ...e, params: { ...e.params, ...params } } : e,
       );
+      record(`fx:${effectId}:${Object.keys(params).sort().join(",")}`);
       set({ effects, tracks: applyEffectsToTracks(get().tracks, effects) });
     },
 
     removeEffectPreset: (_clipId, effectId) => {
       const effects = get().effects.filter((e) => e.id !== effectId);
+      record();
       set({
         effects,
         tracks: applyEffectsToTracks(get().tracks, effects),
@@ -1788,6 +1941,7 @@ export const useEditor = create<EditorState & EditorActions>((set, get) => {
     },
 
     moveEffect: (effectId, start) => {
+      beginLive();
       const effects = get().effects.map((e) => {
         if (e.id !== effectId) return e;
         const len = e.end - e.start;
@@ -1798,6 +1952,7 @@ export const useEditor = create<EditorState & EditorActions>((set, get) => {
     },
 
     resizeEffect: (effectId, start, end) => {
+      beginLive();
       const effects = get().effects.map((e) => {
         if (e.id !== effectId) return e;
         const s = Math.max(0, Math.min(start, end - 0.2));
@@ -1819,6 +1974,7 @@ export const useEditor = create<EditorState & EditorActions>((set, get) => {
       const effects = get().effects.map((e) =>
         e.id === effectId ? { ...e, params: { ...e.params, point } } : e,
       );
+      record();
       set({
         effects,
         tracks: applyEffectsToTracks(get().tracks, effects),
@@ -1838,7 +1994,7 @@ export const useEditor = create<EditorState & EditorActions>((set, get) => {
       const rest = map[prop].filter((k) => k.id !== kfId);
       if (rest.length === 0) delete map[prop];
       else map[prop] = rest;
-      get().updateClip(clipId, { keyframes: map });
+      updateStep(clipId, { keyframes: map });
       set((s) => ({ selectedKeyframes: s.selectedKeyframes.filter((k) => k.kfId !== kfId) }));
     },
 
@@ -1854,7 +2010,7 @@ export const useEditor = create<EditorState & EditorActions>((set, get) => {
         if (rest.length === 0) delete map[sel.prop];
         else map[sel.prop] = rest;
       }
-      get().updateClip(clip.id, { keyframes: map });
+      updateStep(clip.id, { keyframes: map });
       set({ selectedKeyframes: [] });
     },
 
@@ -1930,7 +2086,7 @@ export const useEditor = create<EditorState & EditorActions>((set, get) => {
         map[item.prop] = sortKeys([...keys, kf]);
         created.push({ prop: item.prop, kfId: kf.id });
       }
-      get().updateClip(clip.id, { keyframes: map });
+      updateStep(clip.id, { keyframes: map });
       set({ selectedKeyframes: created });
     },
 
@@ -1941,31 +2097,33 @@ export const useEditor = create<EditorState & EditorActions>((set, get) => {
       }),
 
 
-    undo: () =>
-      set((s) => {
-        const prev = s.past[s.past.length - 1];
-        if (!prev) return s;
-        return {
-          tracks: prev,
-          past: s.past.slice(0, -1),
-          future: [s.tracks, ...s.future].slice(0, 50),
-          duration: timelineDuration(prev),
-        };
-      }),
+    undo: () => {
+      commitLive();
+      lastKey = null;
+      const s = get();
+      const prev = s.past[s.past.length - 1];
+      if (!prev) return;
+      set({
+        ...restoreEntry(s, prev),
+        past: s.past.slice(0, -1),
+        future: [historyEntry(s), ...s.future].slice(0, HISTORY_LIMIT),
+      });
+    },
 
-    redo: () =>
-      set((s) => {
-        const next = s.future[0];
-        if (!next) return s;
-        return {
-          tracks: next,
-          past: [...s.past, s.tracks],
-          future: s.future.slice(1),
-          duration: timelineDuration(next),
-        };
-      }),
+    redo: () => {
+      commitLive();
+      lastKey = null;
+      const s = get();
+      const next = s.future[0];
+      if (!next) return;
+      set({
+        ...restoreEntry(s, next),
+        past: [...s.past, historyEntry(s)].slice(-HISTORY_LIMIT),
+        future: s.future.slice(1),
+      });
+    },
 
-    commit: () => snapshot(),
+    commit: () => commitLive(),
   };
 });
 

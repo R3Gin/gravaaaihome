@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   AlignHorizontalJustifyStart,
   AudioLines,
@@ -53,12 +53,15 @@ const ANNOTATION_LABEL: Record<string, string> = {
 
 
 const LABEL_W = 96;
+const TL_MIN_H = 180;
+const TL_DEFAULT_H = 280;
+const TL_HEIGHT_KEY = "gravaai:timeline-height";
 const LANE_H = 56;
 const KF_H = 22;
 const FX_H = 34;
 
 /** barra de um efeito com janela própria (arrastar move, bordas esticam) */
-function EffectBar({ fx, row = 0 }: { fx: TimelineEffect; row?: number }) {
+const EffectBar = memo(function EffectBar({ fx, row = 0 }: { fx: TimelineEffect; row?: number }) {
   const zoom = useEditor((s) => s.zoom);
   const moveEffect = useEditor((s) => s.moveEffect);
   const resizeEffect = useEditor((s) => s.resizeEffect);
@@ -82,6 +85,7 @@ function EffectBar({ fx, row = 0 }: { fx: TimelineEffect; row?: number }) {
     const up = () => {
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", up);
+      useEditor.getState().commit();
     };
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerup", up);
@@ -124,7 +128,7 @@ function EffectBar({ fx, row = 0 }: { fx: TimelineEffect; row?: number }) {
       />
     </div>
   );
-}
+});
 
 
 function fmt(t: number) {
@@ -465,7 +469,7 @@ function AudioWaveform({
 
 
 
-function ClipBox({ clip, track }: { clip: Clip; track: Track }) {
+const ClipBox = memo(function ClipBox({ clip, track }: { clip: Clip; track: Track }) {
   const zoom = useEditor((s) => s.zoom);
   const tool = useEditor((s) => s.tool);
   const selected = useEditor((s) => s.selectedClipIds.includes(clip.id));
@@ -697,14 +701,43 @@ function ClipBox({ clip, track }: { clip: Clip; track: Track }) {
       ) : null}
     </div>
   );
+});
+
+/** Agulha: componente próprio para só ela redesenhar a cada quadro durante o play. */
+function Playhead({
+  height,
+  onPointerDown,
+}: {
+  height: number;
+  onPointerDown: (e: React.PointerEvent) => void;
+}) {
+  const zoom = useEditor((s) => s.zoom);
+  const currentTime = useEditor((s) => s.currentTime);
+  return (
+    <div
+      onPointerDown={onPointerDown}
+      className="absolute left-0 top-0 z-40 w-px cursor-ew-resize bg-[var(--brand)] will-change-transform"
+      style={{ transform: `translateX(${currentTime * zoom}px)`, height }}
+    >
+      <span className="absolute -left-2 -top-1 h-4 w-4 cursor-ew-resize rounded-sm bg-[var(--brand)]" />
+      <span className="absolute -left-2 top-0 h-full w-4" />
+    </div>
+  );
 }
 
+function readTimelineHeight() {
+  try {
+    const v = Number(localStorage.getItem(TL_HEIGHT_KEY));
+    return Number.isFinite(v) && v >= TL_MIN_H ? v : TL_DEFAULT_H;
+  } catch {
+    return TL_DEFAULT_H;
+  }
+}
 
 export function Timeline() {
   const tracks = useEditor((s) => s.tracks);
   const zoom = useEditor((s) => s.zoom);
   const duration = useEditor((s) => s.duration);
-  const currentTime = useEditor((s) => s.currentTime);
   const tool = useEditor((s) => s.tool);
   const selectedClipId = useEditor((s) => s.selectedClipId);
   const selectedClipIds = useEditor((s) => s.selectedClipIds);
@@ -782,6 +815,98 @@ export function Timeline() {
       to: (view.left + view.width + margin) / zoom,
     };
   }, [view, zoom]);
+
+  /* --- zoom ancorado: o ponto sob o mouse (ou a agulha) fica parado na tela --- */
+  const zoomAnchor = useRef<{ time: number; px: number } | null>(null);
+  const zoomAround = useCallback(
+    (next: number, clientX?: number) => {
+      const el = scrollRef.current;
+      const s = useEditor.getState();
+      if (el) {
+        const box = el.getBoundingClientRect();
+        const playheadPx = s.currentTime * s.zoom - el.scrollLeft;
+        const px =
+          clientX != null
+            ? clientX - box.left
+            : playheadPx >= 0 && playheadPx <= el.clientWidth
+              ? playheadPx
+              : el.clientWidth / 2;
+        zoomAnchor.current = { time: (px + el.scrollLeft) / s.zoom, px };
+      }
+      setZoom(next);
+    },
+    [setZoom],
+  );
+  useLayoutEffect(() => {
+    const a = zoomAnchor.current;
+    const el = scrollRef.current;
+    zoomAnchor.current = null;
+    if (a && el) el.scrollLeft = Math.max(0, a.time * zoom - a.px);
+  }, [zoom]);
+
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const onWheel = (e: WheelEvent) => {
+      const unit = e.deltaMode === 1 ? 33 : e.deltaMode === 2 ? el.clientWidth : 1;
+      if (e.ctrlKey || e.metaKey) {
+        // Ctrl/⌘ + roda (ou pinça no trackpad): zoom na posição do mouse
+        e.preventDefault();
+        const z = useEditor.getState().zoom;
+        zoomAround(z * Math.exp(-e.deltaY * unit * 0.002), e.clientX);
+        return;
+      }
+      // sem faixas para rolar na vertical, a roda anda na linha do tempo
+      if (!e.shiftKey && Math.abs(e.deltaY) > Math.abs(e.deltaX) && el.scrollHeight <= el.clientHeight + 1) {
+        e.preventDefault();
+        el.scrollLeft += e.deltaY * unit;
+      }
+    };
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => el.removeEventListener("wheel", onWheel);
+  }, [zoomAround]);
+
+  /* durante o play a linha do tempo acompanha a agulha */
+  useEffect(
+    () =>
+      useEditor.subscribe((s, prev) => {
+        if (!s.playing || s.currentTime === prev.currentTime) return;
+        const el = scrollRef.current;
+        if (!el) return;
+        const x = s.currentTime * s.zoom;
+        if (x > el.scrollLeft + el.clientWidth - 24 || x < el.scrollLeft)
+          el.scrollLeft = Math.max(0, x - el.clientWidth * 0.15);
+      }),
+    [],
+  );
+
+  /* altura da linha do tempo: arraste a borda de cima */
+  const [panelH, setPanelH] = useState(TL_DEFAULT_H);
+  useEffect(() => setPanelH(readTimelineHeight()), []);
+  const startResize = (e: React.PointerEvent) => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const y0 = e.clientY;
+    const h0 = panelH;
+    let h = h0;
+    const max = () => Math.max(TL_MIN_H, window.innerHeight * 0.75);
+    const move = (ev: PointerEvent) => {
+      h = Math.round(Math.min(max(), Math.max(TL_MIN_H, h0 + (y0 - ev.clientY))));
+      setPanelH(h);
+    };
+    const up = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      try {
+        localStorage.setItem(TL_HEIGHT_KEY, String(h));
+      } catch {
+        /* sem armazenamento: só não lembra a altura */
+      }
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+  };
 
   const ticks = useMemo(() => {
     const step = zoom > 120 ? 1 : zoom > 50 ? 2 : zoom > 25 ? 5 : 10;
@@ -932,7 +1057,13 @@ export function Timeline() {
       const right = Math.max(box.x1, box.x2);
       const top = Math.min(box.y1, box.y2);
       const bottom = Math.max(box.y1, box.y2);
-      if (right - left < 4 && bottom - top < 4) return;
+      if (right - left < 4 && bottom - top < 4) {
+        // clique simples no vazio da faixa: leva a agulha até ali
+        const lane = scrollRef.current?.getBoundingClientRect();
+        if (!additive && lane && x1 >= lane.left && y1 > lane.top + 28)
+          setCurrentTime(timeFromClientX(x1));
+        return;
+      }
       const ids: string[] = [];
       document.querySelectorAll<HTMLElement>("[data-clip-id]").forEach((el) => {
         const r = el.getBoundingClientRect();
@@ -1004,8 +1135,16 @@ export function Timeline() {
   return (
     <div
       onPointerDown={startMarquee}
-      className="flex h-[280px] shrink-0 flex-col border-t border-[var(--border)] bg-[var(--surface-2)]"
+      className="relative flex shrink-0 flex-col border-t border-[var(--border)] bg-[var(--surface-2)]"
+      style={{ height: panelH }}
     >
+      <div
+        data-no-marquee
+        onPointerDown={startResize}
+        onDoubleClick={() => setPanelH(TL_DEFAULT_H)}
+        title="Arraste para aumentar ou diminuir a linha do tempo (duplo clique volta ao padrão)"
+        className="absolute inset-x-0 -top-1 z-50 h-2 cursor-row-resize hover:bg-[var(--brand)]/40"
+      />
       {/* barra de ações */}
       <div className="flex h-11 shrink-0 items-center gap-2 border-b border-[var(--border)] px-3">
         <button
@@ -1114,13 +1253,21 @@ export function Timeline() {
           <AlignHorizontalJustifyStart className="h-4 w-4" /> Ajustar
         </button>
         <div className="ml-auto flex items-center gap-1.5">
-          <button onClick={() => setZoom(zoom / 1.4)} className="rounded-md border border-[var(--border)] p-1.5">
+          <button
+            onClick={() => zoomAround(zoom / 1.4)}
+            title="Diminuir zoom (Ctrl + roda do mouse)"
+            className="rounded-md border border-[var(--border)] p-1.5"
+          >
             <ZoomOut className="h-3.5 w-3.5" />
           </button>
           <span className="w-14 text-center text-[11px] tabular-nums text-[var(--muted-foreground)]">
             {Math.round(zoom)} px/s
           </span>
-          <button onClick={() => setZoom(zoom * 1.4)} className="rounded-md border border-[var(--border)] p-1.5">
+          <button
+            onClick={() => zoomAround(zoom * 1.4)}
+            title="Aumentar zoom (Ctrl + roda do mouse)"
+            className="rounded-md border border-[var(--border)] p-1.5"
+          >
             <ZoomIn className="h-3.5 w-3.5" />
           </button>
         </div>
@@ -1319,14 +1466,7 @@ export function Timeline() {
             ) : null}
 
             {/* playhead — arrastável */}
-            <div
-              onPointerDown={startScrub}
-              className="absolute top-0 z-40 w-px cursor-ew-resize bg-[var(--brand)]"
-              style={{ left: currentTime * zoom, height: 28 + lanesHeight }}
-            >
-              <span className="absolute -left-2 -top-1 h-4 w-4 cursor-ew-resize rounded-sm bg-[var(--brand)]" />
-              <span className="absolute -left-2 top-0 h-full w-4" />
-            </div>
+            <Playhead height={28 + lanesHeight} onPointerDown={startScrub} />
           </div>
         </div>
       </div>

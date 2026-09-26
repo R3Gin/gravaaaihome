@@ -57,6 +57,15 @@ const TOOLS: { id: Exclude<PanelId, null>; label: string; icon: typeof Upload }[
   { id: "shortcuts", label: "Atalhos", icon: Keyboard },
 ];
 
+/** campo onde Ctrl+Z deve desfazer o texto digitado, não o projeto */
+function isTextField(el: HTMLElement | null) {
+  if (!el) return false;
+  if (el.isContentEditable || el.tagName === "TEXTAREA") return true;
+  if (el.tagName !== "INPUT") return false;
+  const type = (el as HTMLInputElement).type;
+  return !["range", "checkbox", "radio", "color", "button", "submit", "file"].includes(type);
+}
+
 function useVideoMeta() {
   return useCallback(async (blob: Blob) => {
     const url = URL.createObjectURL(blob);
@@ -130,6 +139,8 @@ export function VideoEditor() {
   const loadSource = useEditor((s) => s.loadSource);
   const undo = useEditor((s) => s.undo);
   const redo = useEditor((s) => s.redo);
+  const canUndo = useEditor((s) => s.past.length > 0);
+  const canRedo = useEditor((s) => s.future.length > 0);
   const addTextClip = useEditor((s) => s.addTextClip);
   const addOverlayClip = useEditor((s) => s.addOverlayClip);
   const setStoreBlob = useEditor((s) => s.setSourceBlob);
@@ -169,6 +180,17 @@ export function VideoEditor() {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement | null;
+      const mod = e.metaKey || e.ctrlKey;
+      const key = e.key.toLowerCase();
+      // Ctrl+Z / Ctrl+Shift+Z / Ctrl+Y: desfazer/refazer do editor. Só campos de
+      // texto ficam com o desfazer nativo; depois de mexer num slider, checkbox
+      // ou seletor o atalho continua valendo para o projeto.
+      if (mod && !e.altKey && (key === "z" || key === "y") && !isTextField(target)) {
+        e.preventDefault();
+        if (key === "y" || e.shiftKey) redo();
+        else undo();
+        return;
+      }
       if (
         target &&
         (/input|textarea|select/i.test(target.tagName) || target.isContentEditable)
@@ -177,11 +199,6 @@ export function VideoEditor() {
       if (e.code === "Space") {
         e.preventDefault();
         setPlaying(!useEditor.getState().playing);
-      }
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "z") {
-        e.preventDefault();
-        if (e.shiftKey) redo();
-        else undo();
       }
       if (!e.metaKey && !e.ctrlKey && !e.altKey && e.key.toLowerCase() === "s") {
         e.preventDefault();
@@ -304,17 +321,19 @@ export function VideoEditor() {
           </div>
           <button
             onClick={undo}
+            disabled={!canUndo}
             aria-label="Desfazer"
-            className="rounded-lg border border-[var(--border)] p-2"
-            title="Desfazer"
+            className="rounded-lg border border-[var(--border)] p-2 disabled:opacity-40"
+            title="Desfazer (Ctrl+Z)"
           >
             <Undo2 className="h-4 w-4" />
           </button>
           <button
             onClick={redo}
+            disabled={!canRedo}
             aria-label="Refazer"
-            className="rounded-lg border border-[var(--border)] p-2"
-            title="Refazer"
+            className="rounded-lg border border-[var(--border)] p-2 disabled:opacity-40"
+            title="Refazer (Ctrl+Shift+Z)"
           >
             <Redo2 className="h-4 w-4" />
           </button>
