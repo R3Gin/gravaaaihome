@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef } from "react";
-import { clipAt, useEditor, type AspectRatio } from "@/state/editor-store";
+import { clipAt, useEditor } from "@/state/editor-store";
 import { buildFrame, drawFrame, type HitRegion } from "@/lib/preview-compose";
 import { mediaSourceFor, syncMediaClips } from "@/lib/media-elements";
 import {
@@ -8,12 +8,9 @@ import {
   type Annotation,
 } from "@/lib/annotations";
 import { cn } from "@/lib/utils";
+import { ASPECTS } from "@/components/editor/layout";
 
-const ASPECTS: { id: AspectRatio; label: string; ratio: number }[] = [
-  { id: "16:9", label: "16:9", ratio: 16 / 9 },
-  { id: "9:16", label: "9:16", ratio: 9 / 16 },
-  { id: "1:1", label: "1:1", ratio: 1 },
-];
+
 
 interface Props {
   videoRef: React.RefObject<HTMLVideoElement | null>;
@@ -24,7 +21,6 @@ export function Preview({ videoRef }: Props) {
   const playing = useEditor((s) => s.playing);
   const aspect = useEditor((s) => s.aspect);
 
-  const setAspect = useEditor((s) => s.setAspect);
   const setCurrentTime = useEditor((s) => s.setCurrentTime);
   const setPlaying = useEditor((s) => s.setPlaying);
   const select = useEditor((s) => s.select);
@@ -619,7 +615,7 @@ export function Preview({ videoRef }: Props) {
           onPointerUp={endDrag}
           onPointerLeave={endDrag}
           className={cn(
-            "relative overflow-hidden rounded-xl border border-[var(--border)] bg-black shadow-lg",
+            "relative overflow-hidden rounded-md bg-black shadow-2xl shadow-black/60",
             annotationTool && annotationTool !== "eraser" && "cursor-crosshair",
             annotationTool === "eraser" && "cursor-cell",
             pendingEffectPreset && "cursor-crosshair ring-2 ring-[var(--brand)]",
@@ -702,22 +698,6 @@ export function Preview({ videoRef }: Props) {
         </div>
       </div>
 
-      <div className="flex shrink-0 items-center justify-center gap-2 pb-3">
-        {ASPECTS.map((a) => (
-          <button
-            key={a.id}
-            onClick={() => setAspect(a.id)}
-            className={cn(
-              "rounded-lg border px-3 py-1 text-xs font-semibold",
-              aspect === a.id
-                ? "border-[var(--brand)] bg-[var(--brand)]/15 text-[var(--brand)]"
-                : "border-[var(--border)] text-[var(--muted-foreground)]",
-            )}
-          >
-            {a.label}
-          </button>
-        ))}
-      </div>
     </div>
   );
 }

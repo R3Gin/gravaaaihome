@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { dropFilmstrip } from "@/lib/filmstrip";
 import { applySnap, freeStart, snapReleaseTolerance, snapTargets } from "@/lib/snap";
 import {
   applyContinuity,
@@ -981,6 +982,7 @@ export const useEditor = create<EditorState & EditorActions>((set, get) => {
         !get().mediaLibrary.some((m) => m.url === previousUrl)
       ) {
         setTimeout(() => URL.revokeObjectURL(previousUrl), 0);
+        dropFilmstrip(previousUrl);
       }
     },
 

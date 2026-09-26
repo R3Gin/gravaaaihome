@@ -273,6 +273,13 @@ function PresetSection({ clip, side }: { clip: Clip; side: "in" | "out" }) {
 }
 
 
+const CLIP_LABEL: Record<string, string> = {
+  video: "Clipe de vídeo",
+  audio: "Clipe de áudio",
+  text: "Texto",
+  overlay: "Sobreposição",
+};
+
 export function Inspector() {
   const tracks = useEditor((s) => s.tracks);
   const selectedClipId = useEditor((s) => s.selectedClipId);
@@ -284,8 +291,8 @@ export function Inspector() {
 
   if (effect) {
     return (
-      <aside className="flex w-72 shrink-0 flex-col border-l border-[var(--border)] bg-[var(--surface-2)]">
-        <div className="shrink-0 border-b border-[var(--border)] px-4 py-3 text-xs font-bold uppercase tracking-wide text-[var(--brand)]">
+      <aside className="flex w-72 shrink-0 flex-col border-l border-[var(--border)] bg-[var(--surface)]">
+        <div className="flex h-9 shrink-0 items-center border-b border-[var(--border)] px-4 text-[12px] font-semibold">
           {`Efeito · ${effectLabel}`}
         </div>
         <div className="min-h-0 flex-1 overflow-y-auto p-4">
@@ -296,9 +303,9 @@ export function Inspector() {
   }
 
   return (
-    <aside className="flex w-72 shrink-0 flex-col border-l border-[var(--border)] bg-[var(--surface-2)]">
-      <div className="shrink-0 border-b border-[var(--border)] px-4 py-3 text-xs font-bold uppercase tracking-wide text-[var(--muted-foreground)]">
-        {clip ? `Clipe · ${clip.type}` : "Propriedades"}
+    <aside className="flex w-72 shrink-0 flex-col border-l border-[var(--border)] bg-[var(--surface)]">
+      <div className="flex h-9 shrink-0 items-center border-b border-[var(--border)] px-4 text-[12px] font-semibold">
+        {clip ? CLIP_LABEL[clip.type] : "Propriedades"}
       </div>
       <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-4">
         {!clip ? (

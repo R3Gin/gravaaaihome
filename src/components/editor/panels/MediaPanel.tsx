@@ -1,4 +1,5 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { subscribeFilmstrip } from "@/lib/filmstrip";
 import { Film, Image as ImageIcon, Loader2, Music, Trash2, Upload } from "lucide-react";
 import { useEditor, type MediaItem, type MediaKind } from "@/state/editor-store";
 import { dropMediaEl } from "@/lib/media-elements";
@@ -50,13 +51,68 @@ function fmt(t: number) {
   return `${m}:${String(s).padStart(2, "0")}`;
 }
 
+/** primeiro quadro do vídeo principal (reaproveita as miniaturas da timeline) */
+function useMainThumb(url: string | null, duration: number) {
+  const [thumb, setThumb] = useState("");
+  useEffect(() => {
+    setThumb("");
+    if (!url || !duration) return;
+    return subscribeFilmstrip(url, duration, (s) => setThumb(s.frames[0] ?? ""));
+  }, [url, duration]);
+  return thumb;
+}
+
+function Tile({
+  thumb,
+  kind,
+  badge,
+  name,
+  active,
+}: {
+  thumb?: string;
+  kind: MediaKind;
+  badge?: string;
+  name: string;
+  active?: boolean;
+}) {
+  return (
+    <>
+      <div
+        className={cn(
+          "relative grid aspect-video place-items-center overflow-hidden rounded-md bg-black/50",
+          active ? "ring-2 ring-[var(--brand)]" : "group-hover:ring-2 group-hover:ring-white/40",
+          kind === "audio" && "bg-emerald-600/30",
+        )}
+      >
+        {thumb ? (
+          <img src={thumb} alt="" draggable={false} className="h-full w-full object-cover" />
+        ) : kind === "audio" ? (
+          <Music className="h-5 w-5 text-emerald-300" />
+        ) : kind === "video" ? (
+          <Film className="h-5 w-5 text-[var(--muted-foreground)]" />
+        ) : (
+          <ImageIcon className="h-5 w-5 text-[var(--muted-foreground)]" />
+        )}
+        {badge ? (
+          <span className="absolute left-1 top-1 rounded bg-black/70 px-1 text-[10px] font-medium tabular-nums text-white">
+            {badge}
+          </span>
+        ) : null}
+      </div>
+      <p className="mt-1 truncate text-[11px] text-[var(--muted-foreground)]">{name}</p>
+    </>
+  );
+}
+
 export function MediaPanel({ onLoadMain }: { onLoadMain: (file: File) => void }) {
   const library = useEditor((s) => s.mediaLibrary);
   const addMediaItem = useEditor((s) => s.addMediaItem);
   const removeMediaItem = useEditor((s) => s.removeMediaItem);
   const addMediaClip = useEditor((s) => s.addMediaClip);
-  const currentTime = useEditor((s) => s.currentTime);
   const sourceUrl = useEditor((s) => s.sourceUrl);
+  const sourceDuration = useEditor((s) => s.sourceDuration);
+  const projectName = useEditor((s) => s.projectName);
+  const mainThumb = useMainThumb(sourceUrl, sourceDuration);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [over, setOver] = useState(false);
@@ -112,7 +168,8 @@ export function MediaPanel({ onLoadMain }: { onLoadMain: (file: File) => void })
         }}
         onClick={() => inputRef.current?.click()}
         className={cn(
-          "flex cursor-pointer flex-col items-center gap-2 rounded-xl border border-dashed p-5 text-center text-xs text-[var(--muted-foreground)]",
+          "flex cursor-pointer flex-col items-center gap-2 rounded-xl border border-dashed text-center text-xs text-[var(--muted-foreground)]",
+          sourceUrl ? "p-3" : "p-5",
           over ? "border-[var(--brand)] bg-[var(--brand)]/10" : "border-[var(--border)]",
         )}
       >
@@ -137,12 +194,20 @@ export function MediaPanel({ onLoadMain }: { onLoadMain: (file: File) => void })
 
       {error ? <p className="text-[11px] text-red-400">{error}</p> : null}
 
-      {library.length > 0 ? (
+      {sourceUrl || library.length > 0 ? (
         <>
-          <p className="text-[10px] text-[var(--muted-foreground)]">
-            Arraste um item para a timeline ou clique para inserir na agulha.
-          </p>
-          <ul className="flex flex-col gap-2">
+          <ul className="grid grid-cols-2 gap-x-2 gap-y-3">
+            {sourceUrl ? (
+              <li title="Vídeo principal do projeto">
+                <Tile
+                  thumb={mainThumb}
+                  kind="video"
+                  badge={fmt(sourceDuration)}
+                  name={projectName}
+                  active
+                />
+              </li>
+            ) : null}
             {library.map((item) => (
               <li
                 key={item.id}
@@ -151,40 +216,36 @@ export function MediaPanel({ onLoadMain }: { onLoadMain: (file: File) => void })
                   e.dataTransfer.setData("application/x-gravaai-media", item.id);
                   e.dataTransfer.effectAllowed = "copy";
                 }}
-                onClick={() => addMediaClip(item.id, currentTime)}
-                className="group flex cursor-grab items-center gap-2 rounded-lg border border-[var(--border)] bg-[var(--surface-1,transparent)] p-2 text-[11px] hover:border-[var(--brand)]"
+                onClick={() => addMediaClip(item.id, useEditor.getState().currentTime)}
+                title="Arraste para a timeline ou clique para inserir na agulha"
+                className="group relative cursor-grab"
               >
-                <div className="grid h-10 w-14 shrink-0 place-items-center overflow-hidden rounded bg-black/40">
-                  {item.thumbnail ? (
-                    <img src={item.thumbnail} alt="" className="h-full w-full object-cover" />
-                  ) : item.kind === "audio" ? (
-                    <Music className="h-4 w-4 text-emerald-400" />
-                  ) : item.kind === "video" ? (
-                    <Film className="h-4 w-4" />
-                  ) : (
-                    <ImageIcon className="h-4 w-4" />
-                  )}
-                </div>
-                <div className="min-w-0 flex-1">
-                  <p className="truncate font-semibold">{item.name}</p>
-                  <p className="text-[10px] text-[var(--muted-foreground)]">
-                    {item.kind === "image" ? "imagem" : fmt(item.duration) || item.kind}
-                  </p>
-                </div>
+                <Tile
+                  thumb={item.thumbnail}
+                  kind={item.kind}
+                  badge={item.kind === "image" ? "imagem" : fmt(item.duration)}
+                  name={item.name}
+                />
                 <button
                   title="Remover da biblioteca"
+                  aria-label="Remover da biblioteca"
                   onClick={(e) => {
                     e.stopPropagation();
                     dropMediaEl(item.id);
                     removeMediaItem(item.id);
                   }}
-                  className="opacity-0 transition-opacity group-hover:opacity-100"
+                  className="absolute right-1 top-1 grid h-5 w-5 place-items-center rounded bg-black/70 opacity-0 transition-opacity group-hover:opacity-100"
                 >
-                  <Trash2 className="h-3.5 w-3.5 text-[var(--muted-foreground)]" />
+                  <Trash2 className="h-3 w-3 text-white" />
                 </button>
               </li>
             ))}
           </ul>
+          {library.length > 0 ? (
+            <p className="text-[10px] text-[var(--muted-foreground)]">
+              Arraste um item para a timeline ou clique para inserir na agulha.
+            </p>
+          ) : null}
         </>
       ) : null}
 
