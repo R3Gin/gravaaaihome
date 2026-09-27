@@ -394,7 +394,8 @@ export function animatablePropsFor(clip: Clip): AnimProp[] {
       P.brightness,
       P.contrast,
       P.saturation,
-      P.volume,
+      // com o áudio numa faixa própria o vídeo fica mudo: o volume mora no clipe de áudio
+      ...(clip.muted ? [] : [P.volume]),
     ];
   }
   if (clip.type === "text") {

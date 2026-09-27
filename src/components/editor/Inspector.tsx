@@ -289,6 +289,7 @@ export function Inspector() {
   const selectedClipId = useEditor((s) => s.selectedClipId);
   const selectedEffectId = useEditor((s) => s.selectedEffectId);
   const updateClip = useEditor((s) => s.updateClip);
+  const setClipSpeed = useEditor((s) => s.setClipSpeed);
   const clip = findClip(tracks, selectedClipId);
   const effect = useEditor((s) => s.effects.find((e) => e.id === selectedEffectId) ?? null);
   const effectLabel = effect ? presetById(effect.presetId)?.label ?? "Efeito" : null;
@@ -337,11 +338,7 @@ export function Inspector() {
                 min={0.5}
                 max={2}
                 step={0.05}
-                onChange={(v) => {
-                  const oldSpeed = clip.speed ?? 1;
-                  const duration = (clip.duration * oldSpeed) / v;
-                  updateClip(clip.id, { speed: v, duration });
-                }}
+                onChange={(v) => setClipSpeed(clip.id, v)}
               />
             </Row>
             <div className="space-y-2">

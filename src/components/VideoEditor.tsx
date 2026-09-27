@@ -191,6 +191,11 @@ export function VideoEditor() {
         (/input|textarea|select/i.test(target.tagName) || target.isContentEditable)
       )
         return;
+      if (e.key === "Home" || e.key === "End") {
+        e.preventDefault();
+        const state = useEditor.getState();
+        state.setCurrentTime(e.key === "Home" ? 0 : state.duration);
+      }
       if (e.code === "Space") {
         e.preventDefault();
         setPlaying(!useEditor.getState().playing);
@@ -253,8 +258,13 @@ export function VideoEditor() {
       if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
         const state = useEditor.getState();
         const sel = state.selectedKeyframes;
-        if (sel.length === 0) return;
         e.preventDefault();
+        if (sel.length === 0) {
+          // sem keyframe selecionado: anda a agulha 1 quadro (Shift = 1 segundo)
+          const step = (e.key === "ArrowRight" ? 1 : -1) * (e.shiftKey ? 1 : 1 / 30);
+          state.setCurrentTime(Math.min(state.duration, state.currentTime + step));
+          return;
+        }
         const dir = e.key === "ArrowRight" ? 1 : -1;
         if (e.altKey) {
           state.nudgeSelectedKeyframes(dir * (e.shiftKey ? 0.5 : 0.05));
@@ -427,7 +437,10 @@ export function VideoEditor() {
                   <ShortcutGroup
                     items={[
                       { keys: ["Espaço"], action: "Reproduzir / Pausar" },
-                      { keys: ["S"], action: "Dividir vídeo no playhead" },
+                      { keys: ["←", "→"], action: "Andar 1 quadro (Shift: 1 segundo)" },
+                      { keys: ["Home", "End"], action: "Ir para o início / fim" },
+                      { keys: ["S"], action: "Dividir no playhead" },
+                      { keys: ["V", "B"], action: "Selecionar / lâmina" },
                       { keys: ["U"], action: "Expandir propriedades com keyframes" },
                       { keys: ["U", "U"], action: "Mostrar todas as propriedades modificadas" },
                       { keys: ["Ctrl/⌘", "A"], action: "Selecionar todos os clipes" },
@@ -437,7 +450,7 @@ export function VideoEditor() {
                       { keys: ["Ctrl/⌘", "Roda"], action: "Zoom na linha do tempo" },
                       { keys: ["Ctrl/⌘", "C"], action: "Copiar keyframes selecionados" },
                       { keys: ["Ctrl/⌘", "V"], action: "Colar keyframes" },
-                      { keys: ["←", "→"], action: "Navegar entre keyframes" },
+                      { keys: ["←", "→"], action: "Com keyframe selecionado: ir ao próximo" },
                       { keys: ["Alt", "←", "→"], action: "Deslocar keyframes no tempo" },
                       { keys: ["Esc"], action: "Cancelar modo ponto de efeito" },
                     ]}

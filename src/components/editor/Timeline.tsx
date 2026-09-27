@@ -383,49 +383,61 @@ function KeyframeLane({
 
 
 
-/** Waveform do áudio do vídeo, desenhada na faixa "Áudio". */
+/** Waveform de uma faixa de áudio: cada clipe desenha a onda do arquivo de onde vem. */
 function AudioWaveform({
+  track,
   width,
   viewLeft,
   viewWidth,
 }: {
+  track: Track;
   width: number;
   viewLeft: number;
   viewWidth: number;
 }) {
 
   const sourceBlob = useEditor((s) => s.sourceBlob);
+  const mediaLibrary = useEditor((s) => s.mediaLibrary);
   const zoom = useEditor((s) => s.zoom);
-  const tracks = useEditor((s) => s.tracks);
-  const [peaks, setPeaks] = useState<Peaks | null>(null);
+  const [peaksByBlob, setPeaksByBlob] = useState<Map<Blob, Peaks | null>>(() => new Map());
   const [loading, setLoading] = useState(false);
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
-  /* A onda segue os clipes da própria faixa de áudio; se ela estiver vazia
-     (projetos antigos), cai de volta para os clipes de vídeo. */
-  const waveClips = useMemo(() => {
-    const audio = tracks.find((t) => t.type === "audio")?.clips ?? [];
-    if (audio.length > 0) return audio;
-    return tracks.find((t) => t.type === "video")?.clips ?? [];
-  }, [tracks]);
+  const waveClips = track.clips;
 
+  /** arquivo de cada clipe: o vídeo principal ou a música importada */
+  const blobOf = useCallback(
+    (clip: Clip): Blob | null =>
+      clip.mediaId
+        ? (mediaLibrary.find((m) => m.id === clip.mediaId)?.blob ?? null)
+        : sourceBlob,
+    [mediaLibrary, sourceBlob],
+  );
+  const blobs = useMemo(
+    () => [...new Set(waveClips.map(blobOf).filter((b): b is Blob => Boolean(b)))],
+    [waveClips, blobOf],
+  );
 
   useEffect(() => {
-    if (!sourceBlob) {
-      setPeaks(null);
-      return;
-    }
+    const missing = blobs.filter((b) => !peaksByBlob.has(b));
+    if (missing.length === 0) return;
     let alive = true;
     setLoading(true);
-    void getPeaks(sourceBlob).then((p) => {
-      if (!alive) return;
-      setPeaks(p);
-      setLoading(false);
-    });
+    void Promise.all(missing.map((b) => getPeaks(b).then((p) => [b, p] as const))).then(
+      (list) => {
+        if (!alive) return;
+        setPeaksByBlob((prev) => {
+          const next = new Map(prev);
+          for (const [b, p] of list) next.set(b, p);
+          return next;
+        });
+        setLoading(false);
+      },
+    );
     return () => {
       alive = false;
     };
-  }, [sourceBlob]);
+  }, [blobs, peaksByBlob]);
 
   /* Só a janela visível vai para o canvas: em vídeos longos a largura total
      estoura o limite de pixels do navegador e come memória à toa. */
@@ -434,7 +446,7 @@ function AudioWaveform({
 
   const draw = useCallback(() => {
     const canvas = canvasRef.current;
-    if (!canvas || !peaks) return;
+    if (!canvas) return;
     const dpr = window.devicePixelRatio || 1;
     const h = LANE_H - 10;
     canvas.width = Math.max(1, Math.floor(winWidth * dpr));
@@ -449,6 +461,10 @@ function AudioWaveform({
 
     const mid = h / 2;
     for (const clip of waveClips) {
+      const blob = blobOf(clip);
+      const peaks = blob ? peaksByBlob.get(blob) : null;
+      if (!peaks) continue;
+      const speed = clip.speed && clip.speed > 0 ? clip.speed : 1;
       const x0 = clip.startTime * zoom - winLeft;
       const w = clip.duration * zoom;
       if (w < 1 || x0 + w < 0 || x0 > winWidth) continue;
@@ -456,13 +472,13 @@ function AudioWaveform({
       for (let i = 0; i < cols; i++) {
         const x = x0 + i;
         if (x < 0 || x > winWidth) continue;
-        const t = clip.sourceInStart + ((i / cols) * (clip.sourceInEnd - clip.sourceInStart));
+        const t = clip.sourceInStart + (i / cols) * clip.duration * speed;
         const idx = Math.min(peaks.data.length - 1, Math.max(0, Math.round((t / peaks.duration) * peaks.data.length)));
         const amp = (peaks.data[idx] ?? 0) * (mid - 2);
         ctx.fillRect(x, mid - amp, 1, Math.max(1, amp * 2));
       }
     }
-  }, [peaks, waveClips, winLeft, winWidth, zoom]);
+  }, [peaksByBlob, blobOf, waveClips, winLeft, winWidth, zoom]);
 
   useEffect(() => {
     draw();
@@ -476,7 +492,7 @@ function AudioWaveform({
     return () => ro.disconnect();
   }, [draw]);
 
-  if (!sourceBlob) return null;
+  if (blobs.length === 0) return null;
 
   return (
     <div className="pointer-events-none absolute inset-x-0 top-[5px]">
@@ -1443,7 +1459,12 @@ export function Timeline() {
                     style={{ height: trackH(track) }}
                   >
                     {track.type === "audio" ? (
-                      <AudioWaveform width={width} viewLeft={view.left} viewWidth={view.width} />
+                      <AudioWaveform
+                        track={track}
+                        width={width}
+                        viewLeft={view.left}
+                        viewWidth={view.width}
+                      />
                     ) : null}
                     {track.clips
                       .filter(

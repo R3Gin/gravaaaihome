@@ -17,6 +17,8 @@ export interface AudioClipRef {
   speed?: number;
   volume?: number;
   muted?: boolean;
+  /** clipes vindos da biblioteca (música importada) não entram na transcrição */
+  mediaId?: string;
 }
 
 const RATE = 16000;
@@ -37,6 +39,7 @@ function audible(clips: AudioClipRef[]) {
       (c) =>
         (c.type === "video" || c.type === "audio") &&
         !c.muted &&
+        !c.mediaId &&
         c.sourceUrl &&
         c.duration > 0.02,
     )

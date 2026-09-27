@@ -123,7 +123,7 @@ export function ToolDock({ onOpenPanel }: { onOpenPanel: (id: "text") => void })
           >
             <Music className="h-4 w-4" />
           </DockButton>
-        ) : selectedClip?.type === "audio" ? (
+        ) : selectedClip?.type === "audio" && !selectedClip.mediaId ? (
           <DockButton
             title="Vincular novamente ao clipe de vídeo"
             onClick={() => toggleLink(selectedClip.id)}
