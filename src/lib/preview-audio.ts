@@ -2,7 +2,7 @@
  * Ganho de áudio do preview.
  *
  * O `volume` de um <audio>/<video> só vai de 0 a 1, mas o editor deixa subir
- * até 200%. Quando o ganho passa de 1, o elemento é ligado (uma única vez) a um
+ * até 300%. Quando o ganho passa de 1, o elemento é ligado (uma única vez) a um
  * GainNode num AudioContext compartilhado. Os fades e os keyframes de volume
  * entram no mesmo cálculo, então o que se ouve no player é o que sai no arquivo.
  */

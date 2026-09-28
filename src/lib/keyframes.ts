@@ -322,7 +322,7 @@ const P = {
     label: "Volume",
     kind: "number",
     min: 0,
-    max: 1,
+    max: 3,
     step: 0.01,
     get: (c) => c.volume ?? 1,
     set: (v) => ({ volume: num(v, 1) }),
