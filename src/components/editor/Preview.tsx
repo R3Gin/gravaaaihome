@@ -1,6 +1,14 @@
 import { useCallback, useEffect, useRef } from "react";
-import { clipAt, mainTrack, useEditor } from "@/state/editor-store";
-import { buildFrame, drawFrame, type HitRegion } from "@/lib/preview-compose";
+import { clipAt, findClip, mainTrack, useEditor } from "@/state/editor-store";
+import { presetById } from "@/lib/effect-presets";
+import {
+  buildFrame,
+  drawFrame,
+  stageToVideoPoint,
+  videoToStagePoint,
+  type FrameData,
+  type HitRegion,
+} from "@/lib/preview-compose";
 import { mediaSourceFor, syncMediaClips } from "@/lib/media-elements";
 import { clipGain, resumePreviewAudio, setElementGain } from "@/lib/preview-audio";
 import {
@@ -34,6 +42,8 @@ export function Preview({ videoRef }: Props) {
   const rafRef = useRef<number | null>(null);
   const drawRafRef = useRef<number | null>(null);
   const hitsRef = useRef<HitRegion[]>([]);
+  /** último quadro desenhado: usado para saber em que ponto do vídeo a pessoa clicou */
+  const frameRef = useRef<FrameData | null>(null);
   const dragRef = useRef<{
     id: string;
     kind: "move" | "resize" | "annotation-move";
@@ -44,12 +54,6 @@ export function Preview({ videoRef }: Props) {
   
   const annotationTool = useEditor((s) => s.annotationTool);
   const pendingEffectPreset = useEditor((s) => s.pendingEffectPreset);
-  const selectedEffectId = useEditor((s) => s.selectedEffectId);
-  const effectsList = useEditor((s) => s.effects);
-  const focusPoint = (() => {
-    const fx = effectsList.find((e) => e.id === selectedEffectId);
-    return fx && fx.category === "zoom" ? fx.params.point : undefined;
-  })();
   const setPendingEffectPreset = useEditor((s) => s.setPendingEffectPreset);
 
   /* Esc cancela o modo "clique no ponto" dos presets de zoom */
@@ -92,10 +96,33 @@ export function Preview({ videoRef }: Props) {
     }
     const frame = buildFrame(s.tracks, s.captionStyle, time, s.selectedClipId);
     syncMediaClips(s.tracks, s.mediaLibrary, time, s.playing);
+    frameRef.current = frame;
     hitsRef.current = drawFrame(ctx, v, frame, W, H, (clip) =>
       mediaSourceFor(clip, s.mediaLibrary),
     );
     if (draftRef.current) drawAnnotation(ctx, draftRef.current, W, H);
+
+    // ponto de foco do zoom selecionado, onde ele está na tela neste quadro
+    const fxSel = s.effects.find((e) => e.id === s.selectedEffectId);
+    const focus = fxSel?.category === "zoom" ? fxSel.params.point : undefined;
+    if (focus && v && v.videoWidth > 0) {
+      const at = videoToStagePoint(frame, v.videoWidth, v.videoHeight, W, H, focus);
+      ctx.save();
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = "#e53935";
+      ctx.fillStyle = "rgba(229,57,53,0.25)";
+      ctx.beginPath();
+      ctx.arc(at.x, at.y, 9, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(at.x - 14, at.y);
+      ctx.lineTo(at.x + 14, at.y);
+      ctx.moveTo(at.x, at.y - 14);
+      ctx.lineTo(at.x, at.y + 14);
+      ctx.stroke();
+      ctx.restore();
+    }
   }, [videoRef]);
 
   const schedulePaint = useCallback(() => {
@@ -482,17 +509,30 @@ export function Preview({ videoRef }: Props) {
       const ny = Math.max(0, Math.min(1, py / box.height));
       const s = useEditor.getState();
       const pending = s.pendingEffectPreset;
+      /* o ponto do zoom é guardado sobre o quadro do vídeo (não sobre o palco):
+       * desconta faixas pretas e o zoom/pan que já estão na tela */
+      const videoPoint = () => {
+        const v = videoRef.current;
+        const f = frameRef.current;
+        if (!v || !v.videoWidth || !f) return { x: nx, y: ny };
+        return stageToVideoPoint(f, v.videoWidth, v.videoHeight, box.width, box.height, nx, ny);
+      };
       if (pending && pending.mode === "repoint") {
-        s.setEffectPoint(pending.effectId, { x: nx, y: ny });
+        s.setEffectPoint(pending.effectId, videoPoint());
         return;
       }
       if (pending) {
-        const target = s.selectedClipId ?? clipAt(s.tracks, "video", s.currentTime)?.id ?? null;
+        const types = presetById(pending.presetId)?.types;
+        const sel = findClip(s.tracks, s.selectedClipId);
+        const target =
+          sel && (!types || types.includes(sel.type))
+            ? sel.id
+            : (clipAt(s.tracks, "video", s.currentTime)?.id ?? null);
         if (target) {
           if (!s.selectedClipId) s.select(target);
           s.applyEffectPreset(target, pending.presetId, {
             ...pending.params,
-            point: { x: nx, y: ny },
+            point: videoPoint(),
           });
         }
         s.setPendingEffectPreset(null);
@@ -545,7 +585,7 @@ export function Preview({ videoRef }: Props) {
       }
       (e.target as HTMLElement).setPointerCapture?.(e.pointerId);
     },
-    [schedulePaint, select],
+    [schedulePaint, select, videoRef],
   );
 
   const onPointerMove = useCallback(
@@ -697,13 +737,6 @@ export function Preview({ videoRef }: Props) {
             <div className="absolute inset-0 grid place-items-center text-sm text-[var(--muted-foreground)]">
               Nenhum vídeo carregado
             </div>
-          ) : null}
-
-          {focusPoint ? (
-            <span
-              className="pointer-events-none absolute z-10 h-5 w-5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-[var(--brand)] bg-[var(--brand)]/25"
-              style={{ left: `${focusPoint.x * 100}%`, top: `${focusPoint.y * 100}%` }}
-            />
           ) : null}
 
           {pendingEffectPreset ? (
