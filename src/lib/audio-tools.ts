@@ -328,10 +328,12 @@ export function mapSourceRangesToTimeline(
     sourceInStart: number;
     sourceInEnd: number;
     speed?: number;
+    mediaId?: string;
   }[],
 ): Segment[] {
+  // só o vídeo principal: música importada tem outra linha do tempo de origem
   const media = clips
-    .filter((c) => c.type === "video" || c.type === "audio")
+    .filter((c) => (c.type === "video" || c.type === "audio") && !c.mediaId)
     .sort((a, b) => a.startTime - b.startTime);
   const out: Segment[] = [];
 

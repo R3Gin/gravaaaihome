@@ -9,7 +9,16 @@
 import { Muxer, ArrayBufferTarget } from "mp4-muxer";
 import { buildFrame, drawFrame } from "@/lib/preview-compose";
 import { mediaSourceFor } from "@/lib/media-elements";
-import type { AspectRatio, CaptionStyle, Clip, MediaItem, Track } from "@/state/editor-store";
+import { denoiseSamplesRnnoise } from "@/lib/audio-tools";
+import { clipGain } from "@/lib/preview-audio";
+import {
+  mainTrack,
+  type AspectRatio,
+  type CaptionStyle,
+  type Clip,
+  type MediaItem,
+  type Track,
+} from "@/state/editor-store";
 
 export type ExportQuality = "rapida" | "padrao" | "alta";
 
@@ -115,79 +124,130 @@ function seekTo(v: HTMLVideoElement, t: number): Promise<void> {
 /* ------------------------------------------------------------------ áudio */
 
 interface AudioSourceClip {
-  startTime: number;
-  duration: number;
-  srcStart: number;
-  srcEnd: number;
-  speed: number;
-  volume: number;
-  fadeIn: number;
-  fadeOut: number;
+  clip: Clip;
+  /** arquivo de onde sai o som: o vídeo principal ou um item da biblioteca */
+  blob: Blob;
+  denoise: boolean;
 }
 
-function collectAudioClips(tracks: Track[]): AudioSourceClip[] {
-  const audioTrack = tracks.find((t) => t.type === "audio");
-  const videoTrack = tracks.find((t) => t.type === "video");
-  const from = (c: Clip, vol: number): AudioSourceClip => ({
-    startTime: c.startTime,
-    duration: c.duration,
-    srcStart: c.sourceInStart,
-    srcEnd: c.sourceInEnd,
-    speed: c.speed ?? 1,
-    volume: vol,
-    fadeIn: c.fadeIn ?? 0,
-    fadeOut: c.fadeOut ?? 0,
-  });
+/**
+ * Tudo o que soa na timeline: o áudio do vídeo principal (faixa "Áudio", ou os
+ * clipes de vídeo não mudos em projetos sem ela), as faixas de música e o som
+ * dos vídeos importados como sobreposição.
+ */
+function collectAudioClips(
+  tracks: Track[],
+  source: Blob,
+  library: MediaItem[],
+): AudioSourceClip[] {
   const out: AudioSourceClip[] = [];
-  if (audioTrack && audioTrack.clips.length > 0) {
-    for (const c of audioTrack.clips) out.push(from(c, c.volume ?? 1));
-    return out;
-  }
-  for (const c of videoTrack?.clips ?? []) {
-    if (c.muted) continue;
-    out.push(from(c, c.volume ?? 1));
+  const blobOf = (c: Clip) =>
+    c.mediaId ? (library.find((m) => m.id === c.mediaId)?.blob ?? null) : source;
+  const push = (c: Clip) => {
+    if (c.muted || c.duration <= 0.01) return;
+    const blob = blobOf(c);
+    if (blob) out.push({ clip: c, blob, denoise: c.denoise === true });
+  };
+  const main = mainTrack(tracks, "audio");
+  if (main && main.clips.length > 0) main.clips.forEach(push);
+  else mainTrack(tracks, "video")?.clips.forEach(push);
+  for (const t of tracks) {
+    if (t === main) continue;
+    if (t.type === "audio") t.clips.forEach(push);
+    if (t.type === "overlay")
+      for (const c of t.clips) {
+        const item = c.mediaId ? library.find((m) => m.id === c.mediaId) : null;
+        if (item?.kind === "video") push(c);
+      }
   }
   return out;
 }
 
+/** Versão sem ruído (RNNoise, mono 48 kHz) de um áudio já decodificado. */
+async function denoiseBuffer(buf: AudioBuffer): Promise<AudioBuffer | null> {
+  try {
+    const rate = 48000;
+    const mono = new OfflineAudioContext(1, Math.max(1, Math.ceil(buf.duration * rate)), rate);
+    const src = mono.createBufferSource();
+    src.buffer = buf;
+    src.connect(mono.destination);
+    src.start();
+    const rendered = await mono.startRendering();
+    const clean = await denoiseSamplesRnnoise(rendered.getChannelData(0), rate);
+    const out = new AudioBuffer({ length: clean.length, numberOfChannels: 1, sampleRate: rate });
+    out.getChannelData(0).set(clean);
+    return out;
+  } catch (err) {
+    console.warn("[export] redução de ruído indisponível, usando o áudio original", err);
+    return null;
+  }
+}
+
 async function renderTimelineAudio(
-  source: Blob,
   clips: AudioSourceClip[],
   totalDuration: number,
 ): Promise<AudioBuffer | null> {
   if (clips.length === 0 || totalDuration <= 0) return null;
   try {
+    // cada arquivo é decodificado uma vez só, mesmo cortado em vários clipes
+    const decoded = new Map<Blob, AudioBuffer | null>();
     const ctx = new AudioContext();
-    const decoded = await ctx.decodeAudioData(await source.arrayBuffer());
-    await ctx.close();
-    if (decoded.length === 0) return null;
+    try {
+      for (const c of clips) {
+        if (decoded.has(c.blob)) continue;
+        try {
+          const buf = await ctx.decodeAudioData(await c.blob.arrayBuffer());
+          decoded.set(c.blob, buf.length > 0 ? buf : null);
+        } catch {
+          decoded.set(c.blob, null); // arquivo sem trilha de áudio
+        }
+      }
+    } finally {
+      void ctx.close();
+    }
+    const clean = new Map<Blob, AudioBuffer | null>();
+    for (const c of clips) {
+      const buf = decoded.get(c.blob);
+      if (!c.denoise || !buf || clean.has(c.blob)) continue;
+      clean.set(c.blob, await denoiseBuffer(buf));
+    }
 
     const rate = 48000;
     const offline = new OfflineAudioContext(2, Math.ceil(totalDuration * rate) + rate, rate);
-    for (const c of clips) {
-      const src = offline.createBufferSource();
-      src.buffer = decoded;
-      src.playbackRate.value = Math.max(0.25, c.speed);
-      const gain = offline.createGain();
-      const vol = Math.max(0, c.volume);
-      gain.gain.setValueAtTime(vol, 0);
+    // limitador na saída: voz + música acima de 100% não estouram (sem distorção)
+    const limiter = offline.createDynamicsCompressor();
+    limiter.threshold.value = -1.5;
+    limiter.knee.value = 0;
+    limiter.ratio.value = 20;
+    limiter.attack.value = 0.003;
+    limiter.release.value = 0.12;
+    limiter.connect(offline.destination);
+    let any = false;
+    for (const { clip: c, blob, denoise } of clips) {
+      const buf = (denoise ? clean.get(blob) : null) ?? decoded.get(blob);
+      if (!buf) continue;
+      const speed = Math.max(0.25, c.speed ?? 1);
       const t0 = Math.max(0, c.startTime);
       const dur = Math.max(0.01, c.duration);
-      if (c.fadeIn > 0.01) {
-        const d = Math.min(c.fadeIn, dur);
-        gain.gain.setValueAtTime(0, t0);
-        gain.gain.linearRampToValueAtTime(vol, t0 + d);
-      }
-      if (c.fadeOut > 0.01) {
-        const d = Math.min(c.fadeOut, dur);
-        gain.gain.setValueAtTime(vol, t0 + dur - d);
-        gain.gain.linearRampToValueAtTime(0, t0 + dur);
-      }
-      src.connect(gain).connect(offline.destination);
-      const srcDur = Math.max(0.01, c.srcEnd - c.srcStart);
-      src.start(t0, Math.max(0, c.srcStart), srcDur);
+      const offset = Math.max(0, Math.min(c.sourceInStart, buf.duration));
+      const span = Math.min(c.sourceInEnd, buf.duration) - offset;
+      if (span <= 0.01) continue;
+      const src = offline.createBufferSource();
+      src.buffer = buf;
+      src.playbackRate.value = speed;
+      // volume (com keyframes) e fades numa curva só, igual ao que o player toca
+      const gain = offline.createGain();
+      const n = Math.max(2, Math.min(20000, Math.ceil(dur * 100)));
+      const curve = new Float32Array(n);
+      for (let i = 0; i < n; i++) curve[i] = clipGain(c, c.startTime + (i / (n - 1)) * dur);
+      gain.gain.setValueAtTime(curve[0]!, 0);
+      gain.gain.setValueCurveAtTime(curve, t0, dur);
+      src.connect(gain).connect(limiter);
+      src.start(t0, offset, span);
       src.stop(t0 + dur);
+      any = true;
     }
+    if (!any) return null;
     return await offline.startRendering();
   } catch (err) {
     console.warn("[export] áudio não pôde ser processado, exportando sem som", err);
@@ -217,7 +277,7 @@ export async function exportWithWebCodecs(input: WebCodecsExportInput): Promise<
 
 
   const preset = QUALITY_PRESETS[quality];
-  const videoClips = [...(tracks.find((t) => t.type === "video")?.clips ?? [])].sort(
+  const videoClips = [...(mainTrack(tracks, "video")?.clips ?? [])].sort(
     (a, b) => a.startTime - b.startTime,
   );
   if (videoClips.length === 0) throw new Error("Nenhum clipe de vídeo na timeline.");
@@ -247,7 +307,10 @@ export async function exportWithWebCodecs(input: WebCodecsExportInput): Promise<
   video.preload = "auto";
   await whenReady(video);
 
-  const audioBuffer = await renderTimelineAudio(source, collectAudioClips(tracks), totalDuration);
+  const audioBuffer = await renderTimelineAudio(
+    collectAudioClips(tracks, source, mediaLibrary),
+    totalDuration,
+  );
   const audioCodec = audioBuffer ? await pickAudioCodec() : null;
 
   const target = new ArrayBufferTarget();

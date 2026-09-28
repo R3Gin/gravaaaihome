@@ -24,7 +24,19 @@ async function probe(file: File, kind: MediaKind, url: string) {
     el.preload = "metadata";
     el.src = url;
     const finish = (duration: number, thumbnail?: string) => resolve({ duration, thumbnail });
+    let fixing = false;
     el.onloadedmetadata = () => {
+      // webm gravado no navegador vem sem duração: um seek ao fim força o cálculo
+      if (el.duration === Infinity && !fixing) {
+        fixing = true;
+        el.ontimeupdate = () => {
+          if (!Number.isFinite(el.duration)) return;
+          el.ontimeupdate = null;
+          el.onloadedmetadata?.(new Event("loadedmetadata"));
+        };
+        el.currentTime = 1e101;
+        return;
+      }
       const duration = Number.isFinite(el.duration) && el.duration > 0 ? el.duration : 0;
       if (kind !== "video") return finish(duration);
       el.currentTime = Math.min(0.2, duration / 2);

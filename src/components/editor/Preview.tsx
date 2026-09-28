@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef } from "react";
-import { clipAt, useEditor } from "@/state/editor-store";
+import { clipAt, mainTrack, useEditor } from "@/state/editor-store";
 import { buildFrame, drawFrame, type HitRegion } from "@/lib/preview-compose";
 import { mediaSourceFor, syncMediaClips } from "@/lib/media-elements";
+import { clipGain, resumePreviewAudio, setElementGain } from "@/lib/preview-audio";
 import {
   drawAnnotation,
   translateAnnotation,
@@ -172,9 +173,13 @@ export function Preview({ videoRef }: Props) {
       const v = videoRef.current;
       const s = useEditor.getState();
       const videoClip = clipAt(s.tracks, "video", s.currentTime);
-      if (v) v.muted = Boolean(videoClip?.muted);
+      if (v) {
+        v.muted = Boolean(videoClip?.muted);
+        if (videoClip && !videoClip.muted) setElementGain(v, clipGain(videoClip, s.currentTime));
+      }
+      if (s.playing) resumePreviewAudio();
       if (!a) return;
-      const audioClips = [...(s.tracks.find((t) => t.type === "audio")?.clips ?? [])].sort(
+      const audioClips = [...(mainTrack(s.tracks, "audio")?.clips ?? [])].sort(
         (x, y) => x.startTime - y.startTime,
       );
       const audioClip = clipAt(s.tracks, "audio", s.currentTime);
@@ -200,7 +205,7 @@ export function Preview({ videoRef }: Props) {
       const act = audioActiveRef.current!;
       const other = act === audioARef.current ? audioBRef.current : audioARef.current;
       if (other && !other.paused) other.pause();
-      act.volume = Math.max(0, Math.min(1, audioClip.volume ?? 1));
+      setElementGain(act, clipGain(audioClip, s.currentTime));
       act.playbackRate = audioClip.speed ?? 1;
       const target =
         audioClip.sourceInStart + (s.currentTime - audioClip.startTime) * (audioClip.speed ?? 1);
@@ -220,7 +225,7 @@ export function Preview({ videoRef }: Props) {
 
       audioPrepRef.current = { clipId: next.id, ready: false };
       other.pause();
-      other.volume = Math.max(0, Math.min(1, next.volume ?? 1));
+      setElementGain(other, clipGain(next, next.startTime));
       other.playbackRate = next.speed ?? 1;
       const onSeeked = () => {
         other.removeEventListener("seeked", onSeeked);
@@ -420,6 +425,7 @@ export function Preview({ videoRef }: Props) {
       const speed = clip.speed ?? 1;
       if (cur.playbackRate !== speed) cur.playbackRate = speed;
       cur.muted = Boolean(clip.muted);
+      if (!clip.muted) setElementGain(cur, clipGain(clip, s.currentTime));
       // o navegador pode pausar por buffering/seek: retomamos sempre
       if (cur.paused && !cur.seeking) {
         void cur.play().catch(() => undefined);

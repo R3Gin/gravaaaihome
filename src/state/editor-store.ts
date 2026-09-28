@@ -361,6 +361,8 @@ export interface EditorActions {
   /** Reordena as faixas da timeline (arraste vertical). */
   reorderTracks: (from: number, to: number) => void;
 
+  /** muda a velocidade do clipe (e do áudio vinculado), empurrando os clipes seguintes */
+  setClipSpeed: (id: string, speed: number) => void;
   updateClip: (id: string, patch: Partial<Clip>) => void;
   /** Atualiza sem criar ponto de histórico (uso durante arraste contínuo). */
   updateClipLive: (id: string, patch: Partial<Clip>) => void;
@@ -491,12 +493,17 @@ const VIDEO_TRACK = "track-video";
 const OVERLAY_TRACK = "track-overlay";
 const TEXT_TRACK = "track-text";
 const AUDIO_TRACK = "track-audio";
+/** faixa das músicas e áudios importados: toca por baixo da voz */
+const MUSIC_TRACK = "track-music";
+/** faixa do áudio do vídeo principal */
+export const MAIN_AUDIO_TRACK = AUDIO_TRACK;
 
 function emptyTracks(): Track[] {
   /* Ordem padrão: o áudio (waveform) fica logo abaixo do vídeo. */
   return [
     { id: VIDEO_TRACK, type: "video", label: "Vídeo", clips: [] },
     { id: AUDIO_TRACK, type: "audio", label: "Áudio", clips: [] },
+    { id: MUSIC_TRACK, type: "audio", label: "Música", clips: [] },
     { id: OVERLAY_TRACK, type: "overlay", label: "Sobreposições", clips: [] },
     { id: TEXT_TRACK, type: "text", label: "Texto", clips: [] },
   ];
@@ -605,9 +612,25 @@ function mapTracks(tracks: Track[], fn: (clips: Clip[], track: Track) => Clip[])
 const EPS = 1e-6;
 
 /** Posições finais de cada clipe quando a faixa é compactada a partir de 0. */
+/** faixas "em sequência" (vídeo e áudio principal): Ajustar fecha os buracos delas */
+const isSpine = (t: Track) => t.type === "video" || t.id === AUDIO_TRACK;
+
+/** buracos da faixa de vídeo: o tempo que o Ajustar vai remover */
+function spineGaps(tracks: Track[]): { start: number; end: number }[] {
+  const gaps: { start: number; end: number }[] = [];
+  let end = 0;
+  const video = tracks.find((t) => t.type === "video")?.clips ?? [];
+  for (const c of [...video].sort((a, b) => a.startTime - b.startTime)) {
+    if (c.startTime - end > EPS) gaps.push({ start: end, end: c.startTime });
+    end = Math.max(end, c.startTime + c.duration);
+  }
+  return gaps;
+}
+
 function packedStarts(tracks: Track[]): Map<string, number> {
   const out = new Map<string, number>();
   for (const t of tracks) {
+    if (!isSpine(t)) continue;
     let cursor = 0;
     for (const c of [...t.clips].sort((a, b) => a.startTime - b.startTime)) {
       out.set(c.id, cursor);
@@ -628,13 +651,18 @@ function alignTracks(tracks: Track[]): Track[] {
     const cur = groupStart.get(c.linkGroupId);
     groupStart.set(c.linkGroupId, cur == null ? v : Math.min(cur, v));
   }
-  return mapTracks(tracks, (clips) =>
+  // texto, sobreposições e música não são empilhados: só acompanham o vídeo,
+  // perdendo o tempo dos buracos que ficavam antes deles
+  const gaps = spineGaps(tracks);
+  const follow = (t: number) =>
+    t - gaps.reduce((sum, g) => sum + Math.max(0, Math.min(g.end, t) - g.start), 0);
+  return mapTracks(tracks, (clips, track) =>
     clips
       .map((c) => {
         const start =
           (c.linkGroupId ? groupStart.get(c.linkGroupId) : undefined) ??
           packed.get(c.id) ??
-          c.startTime;
+          (isSpine(track) ? c.startTime : follow(c.startTime));
         return start === c.startTime ? c : { ...c, startTime: Math.max(0, start) };
       })
       .sort((a, b) => a.startTime - b.startTime),
@@ -1114,8 +1142,15 @@ export const useEditor = create<EditorState & EditorActions>((set, get) => {
     duplicateSelected: () => {
       const ids = [...get().selectedClipIds];
       if (ids.length === 0) return;
+      // o par vídeo+áudio selecionado junto é duplicado uma vez só
+      const seen = new Set<string>();
       batch(() => {
-        for (const id of ids) get().duplicateClip(id);
+        for (const id of ids) {
+          const group = findClip(get().tracks, id)?.linkGroupId;
+          if (group && seen.has(group)) continue;
+          if (group) seen.add(group);
+          get().duplicateClip(id);
+        }
       });
     },
 
@@ -1228,6 +1263,43 @@ export const useEditor = create<EditorState & EditorActions>((set, get) => {
       ),
 
 
+    setClipSpeed: (id, speed) => {
+      const clip = findClip(get().tracks, id);
+      if (!clip || !(speed > 0)) return;
+      const group = new Set(
+        clip.linkGroupId
+          ? allClips(get().tracks)
+              .filter((c) => c.linkGroupId === clip.linkGroupId)
+              .map((c) => c.id)
+          : [id],
+      );
+      write(
+        (tracks) =>
+          mapTracks(tracks, (clips) => {
+            const changed = clips.filter((c) => group.has(c.id));
+            if (changed.length === 0) return clips;
+            // o que vem depois do clipe anda junto: nada se sobrepõe nem sobra buraco
+            const shifts = changed.map((c) => {
+              const duration = Math.max(MIN_CLIP, (c.duration * (c.speed ?? 1)) / speed);
+              return { end: c.startTime + c.duration, delta: duration - c.duration };
+            });
+            return clips.map((c) => {
+              if (group.has(c.id))
+                return {
+                  ...c,
+                  speed,
+                  duration: Math.max(MIN_CLIP, (c.duration * (c.speed ?? 1)) / speed),
+                };
+              const delta = shifts
+                .filter((sh) => c.startTime >= sh.end - 1e-3)
+                .reduce((sum, sh) => sum + sh.delta, 0);
+              return delta ? { ...c, startTime: Math.max(0, c.startTime + delta) } : c;
+            });
+          }),
+        `speed:${id}`,
+      );
+    },
+
     updateClipLive: (id, patch) => {
       beginLive();
       set((s) => ({
@@ -1315,16 +1387,42 @@ export const useEditor = create<EditorState & EditorActions>((set, get) => {
     duplicateClip: (id) => {
       const clip = findClip(get().tracks, id);
       if (!clip) return;
-      const copy: Clip = { ...clip, id: uid(), startTime: clip.startTime + clip.duration };
+      // vídeo com áudio vinculado: duplica o par, com um vínculo novo só entre as cópias
+      const group = clip.linkGroupId
+        ? allClips(get().tracks).filter((c) => c.linkGroupId === clip.linkGroupId)
+        : [clip];
+      const base = Math.min(...group.map((c) => c.startTime));
+      const end = Math.max(...group.map((c) => c.startTime + c.duration));
+      const tracks0 = get().tracks;
+      // primeiro horário livre para o grupo inteiro (cada faixa tem seus clipes)
+      let start = end;
+      for (let i = 0; i < 20; i++) {
+        let next = start;
+        for (const c of group) {
+          const track = tracks0.find((t) => t.id === c.trackId);
+          if (!track || isLayeredTrack(track.type)) continue;
+          const offset = c.startTime - base;
+          next = Math.max(next, freeStart(track.clips, start + offset, c.duration) - offset);
+        }
+        if (Math.abs(next - start) < EPS) break;
+        start = next;
+      }
+      const linkGroupId = clip.linkGroupId ? uid() : undefined;
+      const copies = group.map((c) => ({
+        ...c,
+        id: uid(),
+        startTime: start + (c.startTime - base),
+        linkGroupId,
+      }));
       write((tracks) =>
         mapTracks(tracks, (clips, track) => {
-          if (track.id !== clip.trackId) return clips;
-          if (!isLayeredTrack(track.type))
-            copy.startTime = freeStart(clips, copy.startTime, copy.duration);
-          return [...clips, copy].sort((a, b) => a.startTime - b.startTime);
+          const mine = copies.filter((c) => c.trackId === track.id);
+          if (mine.length === 0) return clips;
+          return [...clips, ...mine].sort((a, b) => a.startTime - b.startTime);
         }),
       );
-      set({ selectedClipId: copy.id, selectedClipIds: [copy.id] });
+      const copyOfClicked = copies[group.indexOf(clip)] ?? copies[0]!;
+      set({ selectedClipId: copyOfClicked.id, selectedClipIds: [copyOfClicked.id] });
     },
 
     moveClip: (id, newStart) => {
@@ -1491,8 +1589,16 @@ export const useEditor = create<EditorState & EditorActions>((set, get) => {
 
     addMediaItem: (item) => set((s) => ({ mediaLibrary: [...s.mediaLibrary, item] })),
 
-    removeMediaItem: (id) =>
-      set((s) => ({ mediaLibrary: s.mediaLibrary.filter((m) => m.id !== id) })),
+    removeMediaItem: (id) => {
+      // os clipes que usavam o arquivo saem junto: sem ele não há o que tocar
+      if (allClips(get().tracks).some((c) => c.mediaId === id))
+        write((tracks) => mapTracks(tracks, (clips) => clips.filter((c) => c.mediaId !== id)));
+      set((s) => ({
+        mediaLibrary: s.mediaLibrary.filter((m) => m.id !== id),
+        selectedClipIds: s.selectedClipIds.filter((cid) => findClip(get().tracks, cid)),
+        selectedClipId: findClip(get().tracks, s.selectedClipId) ? s.selectedClipId : null,
+      }));
+    },
 
     addMediaClip: (mediaId, startTime) => {
       const item = get().mediaLibrary.find((m) => m.id === mediaId);
@@ -1501,7 +1607,7 @@ export const useEditor = create<EditorState & EditorActions>((set, get) => {
       const isAudio = item.kind === "audio";
       const clip: Clip = {
         id: uid(),
-        trackId: isAudio ? AUDIO_TRACK : OVERLAY_TRACK,
+        trackId: isAudio ? MUSIC_TRACK : OVERLAY_TRACK,
         type: isAudio ? "audio" : "overlay",
         sourceUrl: item.url,
         mediaId: item.id,
@@ -1603,6 +1709,19 @@ export const useEditor = create<EditorState & EditorActions>((set, get) => {
               sourceInEnd: Math.max(0.2, end - start),
             }));
             return [...clips.filter((c) => !c.isCaption), ...remapped];
+          }
+          if (track.id === MUSIC_TRACK) {
+            // música de fundo não é picotada: só acompanha o tempo removido antes dela
+            const removedBefore = (t: number) =>
+              merged.reduce((sum, r) => sum + Math.max(0, Math.min(r.end, t) - r.start), 0);
+            let end = 0;
+            return [...clips]
+              .sort((a, b) => a.startTime - b.startTime)
+              .map((c) => {
+                const startTime = Math.max(end, c.startTime - removedBefore(c.startTime));
+                end = startTime + c.duration;
+                return { ...c, startTime };
+              });
           }
           if (track.type !== "video" && track.type !== "audio") return clips;
           /* Varredura linear: para cada clipe, percorre só os intervalos que o
@@ -2151,9 +2270,15 @@ export const useEditor = create<EditorState & EditorActions>((set, get) => {
   };
 });
 
-/** Clipe de vídeo sob o playhead. */
+/** Faixa principal de um tipo (para áudio, a do vídeo; a de música fica de fora). */
+export function mainTrack(tracks: Track[], type: TrackType): Track | undefined {
+  if (type === "audio") return tracks.find((t) => t.id === AUDIO_TRACK);
+  return tracks.find((t) => t.type === type);
+}
+
+/** Clipe da faixa principal daquele tipo sob o playhead. */
 export function clipAt(tracks: Track[], type: TrackType, time: number): Clip | null {
-  const track = tracks.find((t) => t.type === type);
+  const track = mainTrack(tracks, type);
   if (!track) return null;
   return (
     track.clips.find((c) => time >= c.startTime && time < c.startTime + c.duration) ?? null
@@ -2161,7 +2286,7 @@ export function clipAt(tracks: Track[], type: TrackType, time: number): Clip | n
 }
 
 export function clipsAt(tracks: Track[], type: TrackType, time: number): Clip[] {
-  const track = tracks.find((t) => t.type === type);
+  const track = mainTrack(tracks, type);
   if (!track) return [];
   return track.clips.filter((c) => time >= c.startTime && time < c.startTime + c.duration);
 }

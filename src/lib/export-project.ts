@@ -7,6 +7,7 @@ import {
 } from "@/lib/ffmpeg-convert";
 import {
   DEFAULT_CAPTION_STYLE,
+  mainTrack,
   type AspectRatio,
   type CaptionStyle,
   type Clip,
@@ -100,21 +101,36 @@ function isUntouched(tracks: Track[], aspect: AspectRatio, source: Blob, sourceD
   if (aspect !== "16:9") return false;
   if (!source.type.includes("mp4")) return false;
   const withClips = tracks.filter((t) => t.clips.length > 0);
-  const video = tracks.find((t) => t.type === "video");
+  const video = mainTrack(tracks, "video");
   const videoClips = video?.clips ?? [];
   if (videoClips.length !== 1) return false;
   // só vídeo (e, no máximo, o áudio vinculado sem alterações)
+  const c = videoClips[0];
+  const mainAudio = mainTrack(tracks, "audio");
   for (const t of withClips) {
-    if (t.type === "video") continue;
-    if (t.type === "audio") {
+    if (t === video) continue;
+    if (t === mainAudio) {
       if (t.clips.length !== 1) return false;
       const a = t.clips[0];
-      if ((a.volume ?? 1) !== 1 || (a.fadeIn ?? 0) > 0 || (a.fadeOut ?? 0) > 0) return false;
+      const same =
+        Math.abs(a.startTime - c.startTime) < 0.02 &&
+        Math.abs(a.sourceInStart - c.sourceInStart) < 0.02 &&
+        Math.abs(a.sourceInEnd - c.sourceInEnd) < 0.02 &&
+        (a.speed ?? 1) === 1;
+      if (
+        !same ||
+        (a.volume ?? 1) !== 1 ||
+        (a.fadeIn ?? 0) > 0 ||
+        (a.fadeOut ?? 0) > 0 ||
+        a.denoise ||
+        Object.keys(a.keyframes ?? {}).length > 0
+      )
+        return false;
       continue;
     }
+    // música, texto, sobreposições…: precisa renderizar
     return false;
   }
-  const c = videoClips[0];
   const untouchedTransform =
     (c.speed ?? 1) === 1 &&
     (c.brightness ?? 0) === 0 &&
@@ -151,7 +167,7 @@ export async function exportProject(
     (a, b) => a.startTime - b.startTime,
   );
   if (videoClips.length === 0) throw new Error("Nenhum clipe de vídeo na timeline.");
-  const audioClips = tracks.find((t) => t.type === "audio")?.clips ?? [];
+  const audioClips = mainTrack(tracks, "audio")?.clips ?? [];
 
   const sourceDuration = videoClips.reduce((m, c) => Math.max(m, c.sourceInEnd), 0);
   if (!opts.forceFfmpeg && isUntouched(tracks, aspect, source, sourceDuration)) {

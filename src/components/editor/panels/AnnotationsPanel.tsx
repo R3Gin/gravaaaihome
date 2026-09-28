@@ -36,7 +36,7 @@ export function AnnotationsPanel() {
     <div className="space-y-4">
       <p className="text-[11px] leading-relaxed text-[var(--muted-foreground)]">
         Pause o vídeo no momento certo, escolha a ferramenta e desenhe sobre o
-        preview. Cada anotação vira um clipe na faixa <b>Efeitos</b> — arraste as
+        preview. Cada anotação vira um clipe na faixa <b>Sobreposições</b>: arraste as
         bordas na timeline para definir quando ela aparece e some.
       </p>
 

@@ -1,4 +1,5 @@
 import type { Clip, MediaItem, Track } from "@/state/editor-store";
+import { clipGain, resumePreviewAudio, setElementGain } from "@/lib/preview-audio";
 
 type El = HTMLVideoElement | HTMLImageElement | HTMLAudioElement;
 
@@ -48,7 +49,8 @@ export function mediaSourceFor(clip: Clip, library: MediaItem[]): CanvasImageSou
 
 /**
  * Mantém vídeos/áudios importados em sincronia com a agulha da timeline.
- * Chamado a cada quadro do preview.
+ * Chamado a cada quadro do preview. Respeita velocidade, volume (até 200%,
+ * com keyframes), fades e o "mudo" de cada clipe.
  */
 export function syncMediaClips(
   tracks: Track[],
@@ -64,19 +66,28 @@ export function syncMediaClips(
       if (!clip.mediaId) continue;
       const item = library.find((m) => m.id === clip.mediaId);
       if (!item || item.kind === "image") continue;
+      const inside = time >= clip.startTime && time < clip.startTime + clip.duration;
+      // o mesmo arquivo pode estar em dois clipes: só o que está sob a agulha manda
+      if (!inside || active.has(item.id)) continue;
       const el = getMediaEl(item) as HTMLVideoElement | HTMLAudioElement;
-      const inside = time >= clip.startTime && time <= clip.startTime + clip.duration;
-      if (!inside) continue;
       active.add(item.id);
-      const target = clip.sourceInStart + (time - clip.startTime);
-      if (Math.abs(el.currentTime - target) > 0.25) {
+      const speed = clip.speed && clip.speed > 0 ? clip.speed : 1;
+      const target = clip.sourceInStart + (time - clip.startTime) * speed;
+      if (target >= clip.sourceInEnd - 0.01) {
+        if (!el.paused) el.pause();
+        continue;
+      }
+      if (el.playbackRate !== speed) el.playbackRate = speed;
+      // tocando, o elemento anda sozinho: só corrige quando escapa demais
+      if (Math.abs(el.currentTime - target) > (playing ? 0.25 : 0.05)) {
         try {
           el.currentTime = target;
         } catch {
           /* ainda carregando */
         }
       }
-      el.volume = Math.max(0, Math.min(1, clip.volume ?? 1));
+      setElementGain(el, clipGain(clip, time));
+      if (playing) resumePreviewAudio();
       if (playing && el.paused) void el.play().catch(() => undefined);
       if (!playing && !el.paused) el.pause();
     }

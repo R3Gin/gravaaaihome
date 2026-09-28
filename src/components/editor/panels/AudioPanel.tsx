@@ -46,7 +46,8 @@ function Slider({
 export function AudioPanel() {
   const tracks = useEditor((s) => s.tracks);
   const selectedClipId = useEditor((s) => s.selectedClipId);
-  const sourceBlob = useEditor((s) => s.sourceBlob);
+  const mainBlob = useEditor((s) => s.sourceBlob);
+  const mediaLibrary = useEditor((s) => s.mediaLibrary);
   const updateClip = useEditor((s) => s.updateClip);
   const selected = findClip(tracks, selectedClipId);
   // vídeo com áudio em faixa própria fica mudo: os ajustes vão para o áudio vinculado
@@ -57,6 +58,10 @@ export function AudioPanel() {
         ) ?? null)
       : null;
   const clip = linkedAudio ?? selected;
+  // música importada toca o próprio arquivo, não o vídeo principal
+  const sourceBlob = clip?.mediaId
+    ? (mediaLibrary.find((m) => m.id === clip.mediaId)?.blob ?? null)
+    : mainBlob;
   const [playingMode, setPlayingMode] = useState<"raw" | "clean" | null>(null);
   const [progress, setProgress] = useState<number | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -175,8 +180,8 @@ export function AudioPanel() {
         )}
         {notice && <p className="text-[10px] text-[var(--brand)]">{notice}</p>}
         <p className="text-[10px] leading-relaxed text-[var(--muted-foreground)]">
-          Prévia dos primeiros 6 segundos com RNNoise (IA local, roda no seu navegador). Na
-          exportação é aplicada redução de ruído e normalização.
+          Compare os primeiros 6 segundos do clipe (RNNoise, IA local no seu navegador). O
+          player toca o som original; a redução de ruído é aplicada no arquivo exportado.
         </p>
       </div>
 
