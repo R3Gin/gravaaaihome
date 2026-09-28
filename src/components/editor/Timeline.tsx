@@ -10,6 +10,7 @@ import {
   ZoomOut,
   Play,
   Pause,
+  Scissors,
 } from "lucide-react";
 
 import { applySnap, freeStart, snapReleaseTolerance, snapTargets, snapTolerance } from "@/lib/snap";
@@ -1250,6 +1251,9 @@ export function Timeline() {
 
 
   const snapGuide = useEditor((s) => s.snapGuide);
+  const bladeOn = useEditor((s) => s.tool === "blade");
+  /** lâmina: tempo sob o mouse, onde o clique vai cortar */
+  const [bladeAt, setBladeAt] = useState<number | null>(null);
   const addMediaClip = useEditor((s) => s.addMediaClip);
 
   /* --- reordenar faixas (arraste vertical nos rótulos) --- */
@@ -1479,7 +1483,17 @@ export function Timeline() {
 
 
         <div id="tl-scroll" ref={scrollRef} className="relative min-w-0 flex-1 overflow-auto">
-          <div style={{ width }} className="relative">
+          <div
+            style={{ width }}
+            className="relative"
+            onPointerMove={(e) => {
+              if (!bladeOn) return;
+              const box = e.currentTarget.getBoundingClientRect();
+              const y = e.clientY - box.top;
+              setBladeAt(y > 28 ? Math.max(0, (e.clientX - box.left) / zoom) : null);
+            }}
+            onPointerLeave={() => setBladeAt(null)}
+          >
             {/* régua */}
             <div
               onPointerDown={startScrub}
@@ -1612,6 +1626,19 @@ export function Timeline() {
                 className="pointer-events-none absolute top-0 z-40 w-px bg-amber-300"
                 style={{ left: snapGuide * zoom, height: 28 + lanesHeight }}
               />
+            ) : null}
+
+            {/* lâmina: prévia do ponto de corte sob o mouse */}
+            {bladeOn && bladeAt != null ? (
+              <div
+                className="pointer-events-none absolute z-40 border-l border-dashed border-white"
+                style={{ left: bladeAt * zoom, top: 28, height: lanesHeight }}
+              >
+                <span className="absolute -top-[26px] left-1 flex items-center gap-1 whitespace-nowrap rounded bg-white px-1 text-[10px] font-semibold tabular-nums text-black">
+                  <Scissors className="h-3 w-3" />
+                  {fmt(bladeAt)}.{String(Math.floor((bladeAt % 1) * 100)).padStart(2, "0")}
+                </span>
+              </div>
             ) : null}
 
             {/* playhead — arrastável */}
