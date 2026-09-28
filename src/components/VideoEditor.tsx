@@ -19,6 +19,7 @@ import { Timeline } from "@/components/editor/Timeline";
 import { Inspector } from "@/components/editor/Inspector";
 import { SilencePanel } from "@/components/editor/panels/SilencePanel";
 import { CaptionsPanel } from "@/components/editor/panels/CaptionsPanel";
+import { useCaptionJob } from "@/state/caption-job";
 import { AudioPanel } from "@/components/editor/panels/AudioPanel";
 import { TransitionsPanel } from "@/components/editor/panels/TransitionsPanel";
 import { EffectsLibraryPanel } from "@/components/editor/panels/EffectsLibraryPanel";
@@ -118,6 +119,7 @@ function ShortcutGroup({ items }: { items: { keys: string[]; action: string }[] 
 export function VideoEditor() {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [panel, setPanel] = useState<PanelId>("media");
+  const captionJobBusy = useCaptionJob((s) => s.busy);
   const sourceBlob = useEditor((s) => s.sourceBlob);
   const [exportOpen, setExportOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -357,13 +359,17 @@ export function VideoEditor() {
                   aria-label={t.label}
                   aria-pressed={panel === t.id}
                   className={cn(
-                    "grid h-8 w-8 place-items-center rounded-md transition-colors",
+                    "relative grid h-8 w-8 place-items-center rounded-md transition-colors",
                     panel === t.id
                       ? "bg-[var(--brand)]/15 text-[var(--brand)]"
                       : "text-[var(--muted-foreground)] hover:bg-white/5 hover:text-[var(--foreground)]",
                   )}
                 >
                   <t.icon className="h-4 w-4" />
+                  {t.id === "captions" && captionJobBusy ? (
+                    // legenda sendo gerada em segundo plano
+                    <span className="absolute right-0.5 top-0.5 h-2 w-2 animate-pulse rounded-full bg-[var(--brand)]" />
+                  ) : null}
                 </button>
               ))}
             </nav>
