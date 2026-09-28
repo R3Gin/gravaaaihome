@@ -85,13 +85,13 @@ export function ToolDock({ onOpenPanel }: { onOpenPanel: (id: "text") => void })
           <MousePointer2 className="h-4 w-4" />
         </DockButton>
         <DockButton
-          title="Lâmina: clique no clipe para dividir (B)"
+          title="Lâmina (B): corta cada clipe exatamente onde você clicar"
           active={tool === "blade"}
           onClick={() => setTool(tool === "blade" ? "select" : "blade")}
         >
           <Scissors className="h-4 w-4" />
         </DockButton>
-        <DockButton title="Dividir na agulha (S)" disabled={none} onClick={splitPlayhead}>
+        <DockButton title="Dividir (S): corta no ponto da agulha vermelha" disabled={none} onClick={splitPlayhead}>
           <SplitSquareHorizontal className="h-4 w-4" />
         </DockButton>
         <Sep />
