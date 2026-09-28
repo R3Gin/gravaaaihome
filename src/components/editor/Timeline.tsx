@@ -35,6 +35,7 @@ import {
 } from "@/lib/keyframes";
 import { KeyframeSpeedModal } from "@/components/editor/KeyframeSpeedModal";
 import { getPeaks, type Peaks } from "@/lib/waveform";
+import { clipGain } from "@/lib/preview-audio";
 import { subscribeFilmstrip, type Filmstrip } from "@/lib/filmstrip";
 import { cn } from "@/lib/utils";
 import { SIDE_W } from "@/components/editor/layout";
@@ -474,7 +475,9 @@ function AudioWaveform({
         if (x < 0 || x > winWidth) continue;
         const t = clip.sourceInStart + (i / cols) * clip.duration * speed;
         const idx = Math.min(peaks.data.length - 1, Math.max(0, Math.round((t / peaks.duration) * peaks.data.length)));
-        const amp = (peaks.data[idx] ?? 0) * (mid - 2);
+        // a onda cresce e encolhe com o volume, os fades e os keyframes (100% = 2/3 da altura)
+        const gain = clipGain(clip, clip.startTime + (i / cols) * clip.duration);
+        const amp = Math.min(1, ((peaks.data[idx] ?? 0) * gain) / 1.5) * (mid - 2);
         ctx.fillRect(x, mid - amp, 1, Math.max(1, amp * 2));
       }
     }
@@ -744,7 +747,7 @@ const ClipBox = memo(function ClipBox({
       ) : null}
       <span
         className={cn(
-          "pointer-events-none relative truncate",
+          "pointer-events-none relative z-[2] truncate",
           strip && "self-start mt-0.5 rounded-sm bg-black/55 px-1 text-[10px] leading-4",
         )}
       >
@@ -759,6 +762,7 @@ const ClipBox = memo(function ClipBox({
               : track.label}
       </span>
 
+      <AudioMarks clip={clip} width={dur * zoom} />
       {selected && tool !== "blade" ? (
         <>
           <span
@@ -774,6 +778,95 @@ const ClipBox = memo(function ClipBox({
     </div>
   );
 });
+
+/** o clipe tem som alterado (volume, fades, keyframes ou redução de ruído)? */
+function audioEdited(clip: Clip) {
+  return (
+    (clip.volume ?? 1) !== 1 ||
+    (clip.fadeIn ?? 0) > 0.01 ||
+    (clip.fadeOut ?? 0) > 0.01 ||
+    (clip.keyframes?.volume?.length ?? 0) > 0
+  );
+}
+
+/**
+ * Marca na timeline o que foi feito no som do clipe: linha amarela de volume
+ * (0 a 300%, com fades e keyframes), cantos escurecidos nos fades e selos com
+ * o volume, a redução de ruído e a velocidade. Clipe sem alteração fica limpo.
+ */
+function AudioMarks({ clip, width }: { clip: Clip; width: number }) {
+  const hasSound = clip.type === "audio" || (clip.type === "video" && !clip.muted);
+  const edited = hasSound && audioEdited(clip);
+  const speed = clip.speed ?? 1;
+  const animated = (clip.keyframes?.volume?.length ?? 0) > 0;
+  const badges: { key: string; text: string; title: string }[] = [];
+  if (hasSound && ((clip.volume ?? 1) !== 1 || animated))
+    badges.push({
+      key: "vol",
+      text: animated ? "Vol anim." : `${Math.round((clip.volume ?? 1) * 100)}%`,
+      title: animated ? "Volume animado com keyframes" : "Volume do clipe",
+    });
+  if (hasSound && ((clip.fadeIn ?? 0) > 0.01 || (clip.fadeOut ?? 0) > 0.01))
+    badges.push({ key: "fade", text: "Fade", title: "Fade de entrada/saída" });
+  if (hasSound && clip.denoise)
+    badges.push({ key: "nr", text: "Sem ruído", title: "Redução de ruído (aplicada ao exportar)" });
+  if (speed !== 1 && (clip.type === "video" || clip.type === "audio"))
+    badges.push({ key: "spd", text: `${Number(speed.toFixed(2))}x`, title: "Velocidade" });
+
+  const line = useMemo(() => {
+    if (!edited || width < 8) return null;
+    const n = Math.max(2, Math.min(240, Math.ceil(width / 3)));
+    const pts: string[] = [];
+    for (let i = 0; i < n; i++) {
+      const f = i / (n - 1);
+      const g = Math.min(3, clipGain(clip, clip.startTime + f * clip.duration));
+      pts.push(`${(f * 100).toFixed(2)},${(100 - (g / 3) * 100).toFixed(2)}`);
+    }
+    return pts.join(" ");
+  }, [clip, edited, width]);
+
+  if (!line && badges.length === 0) return null;
+  const fin = Math.min(clip.fadeIn ?? 0, clip.duration) / clip.duration;
+  const fout = Math.min(clip.fadeOut ?? 0, clip.duration) / clip.duration;
+  return (
+    <>
+      {line ? (
+        <svg
+          className="pointer-events-none absolute inset-0 h-full w-full"
+          viewBox="0 0 100 100"
+          preserveAspectRatio="none"
+          aria-hidden
+        >
+          {fin > 0.001 ? <polygon points={`0,0 ${fin * 100},0 0,100`} fill="rgba(0,0,0,0.45)" /> : null}
+          {fout > 0.001 ? (
+            <polygon points={`${100 - fout * 100},0 100,0 100,100`} fill="rgba(0,0,0,0.45)" />
+          ) : null}
+          <polyline
+            points={line}
+            fill="none"
+            stroke="#facc15"
+            strokeWidth={1.5}
+            vectorEffect="non-scaling-stroke"
+            strokeLinejoin="round"
+          />
+        </svg>
+      ) : null}
+      {badges.length > 0 && width >= 56 ? (
+        <span className="pointer-events-none absolute right-1 top-0.5 z-[5] flex gap-0.5">
+          {badges.map((b) => (
+            <span
+              key={b.key}
+              title={b.title}
+              className="rounded-sm bg-black/70 px-1 text-[9px] font-semibold leading-[14px] text-amber-300"
+            >
+              {b.text}
+            </span>
+          ))}
+        </span>
+      ) : null}
+    </>
+  );
+}
 
 /** Miniaturas de um vídeo (null enquanto não é vídeo ou não há duração conhecida). */
 function useFilmstrip(url: string | null | undefined): Filmstrip | null {

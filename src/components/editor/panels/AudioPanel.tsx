@@ -130,7 +130,7 @@ export function AudioPanel() {
         <Slider
           value={volume}
           min={0}
-          max={2}
+          max={3}
           step={0.01}
           suffix={`${Math.round(volume * 100)}%`}
           onChange={(v) => updateClip(clip.id, { volume: v })}

@@ -49,7 +49,7 @@ export function mediaSourceFor(clip: Clip, library: MediaItem[]): CanvasImageSou
 
 /**
  * Mantém vídeos/áudios importados em sincronia com a agulha da timeline.
- * Chamado a cada quadro do preview. Respeita velocidade, volume (até 200%,
+ * Chamado a cada quadro do preview. Respeita velocidade, volume (até 300%,
  * com keyframes), fades e o "mudo" de cada clipe.
  */
 export function syncMediaClips(
