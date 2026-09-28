@@ -1,11 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Loader2, Sparkles, Trash2, X } from "lucide-react";
-import { speechPlaceholders, transcribe, transcribeSamples } from "@/lib/captions";
-import {
-  composeTimelineAudio,
-  timelineAudioSignature,
-  type AudioClipRef,
-} from "@/lib/timeline-audio";
+import { timelineAudioSignature, type AudioClipRef } from "@/lib/timeline-audio";
+import { runCaptionJob, runSpeechBlocksJob, useCaptionJob } from "@/state/caption-job";
 
 
 import { CAPTION_ANIMS } from "@/lib/caption-styles";
@@ -56,7 +52,6 @@ function StylePreview({ id }: { id: string }) {
 export function CaptionsPanel() {
   const sourceBlob = useEditor((s) => s.sourceBlob);
   const tracks = useEditor((s) => s.tracks);
-  const addCaptionClips = useEditor((s) => s.addCaptionClips);
   const clearCaptions = useEditor((s) => s.clearCaptions);
   const style = useEditor((s) => s.captionStyle);
   const setCaptionStyle = useEditor((s) => s.setCaptionStyle);
@@ -70,11 +65,13 @@ export function CaptionsPanel() {
   const currentTime = useEditor((s) => s.currentTime);
   const selectedClipIds = useEditor((s) => s.selectedClipIds);
 
-  const [busy, setBusy] = useState(false);
-  const [stage, setStage] = useState<string>("");
-  const [download, setDownload] = useState(0);
-  const [progress, setProgress] = useState(0);
-  const [error, setError] = useState<string | null>(null);
+  // o andamento vive fora do painel: trocar de aba não interrompe nem esconde a geração
+  const busy = useCaptionJob((s) => s.busy);
+  const stage = useCaptionJob((s) => s.stage);
+  const download = useCaptionJob((s) => s.download);
+  const progress = useCaptionJob((s) => s.progress);
+  const error = useCaptionJob((s) => s.error);
+  const finished = useCaptionJob((s) => s.finished);
   const [lang, setLang] = useState<string>("portuguese");
   const [tab, setTab] = useState<"estilo" | "lista">("estilo");
 
@@ -124,62 +121,17 @@ export function CaptionsPanel() {
     el?.scrollIntoView({ block: "nearest" });
   }, [activeId]);
 
-  const run = async () => {
-    if (!sourceBlob) return;
-    setBusy(true);
-    setError(null);
-    setDownload(0);
-    setProgress(0);
-    const events = {
-      onStage: (s: "audio" | "model" | "transcribe" | "finalize") =>
-        setStage(
-          s === "audio"
-            ? "Montando o áudio já cortado…"
-            : s === "model"
-              ? "Carregando modelo (só na primeira vez)…"
-              : "Transcrevendo…",
-        ),
-      onDownload: setDownload,
-      onProgress: setProgress,
-    };
-    try {
-      setStage("Montando o áudio já cortado…");
-      // sempre transcreve o áudio FINAL da timeline (com os cortes aplicados)
-      const clips = useEditor.getState().tracks.flatMap((t) => t.clips) as AudioClipRef[];
-      const composed = await composeTimelineAudio(clips, sourceBlob);
-      const sig = useEditor.getState().audioSignature();
-      console.info(
-        composed
-          ? `[legendas] áudio composto da timeline: ${composed.duration.toFixed(2)}s · ${composed.covered.length} trecho(s)`
-          : "[legendas] não consegui compor o áudio da timeline — usando o arquivo original",
-      );
-      const res = composed
-        ? await transcribeSamples(composed.audio, lang, events)
-        : await transcribe(sourceBlob, lang, events);
-      addCaptionClips(res.segments, res.words, { timeline: !!composed, sig });
-      setTab("lista");
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Não consegui gerar as legendas.");
-    } finally {
-      setBusy(false);
-      setStage("");
-    }
-  };
+  const run = () => void runCaptionJob(lang);
+  const runBlocks = () => void runSpeechBlocksJob();
 
-
-  const runBlocks = async () => {
-    if (!sourceBlob) return;
-    setBusy(true);
-    setError(null);
-    try {
-      addCaptionClips(await speechPlaceholders(sourceBlob));
+  // ao terminar uma geração (mesmo com o painel fechado), abre a lista
+  const seenFinished = useRef(finished);
+  useEffect(() => {
+    if (finished !== seenFinished.current) {
+      seenFinished.current = finished;
       setTab("lista");
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Não consegui analisar o áudio desse vídeo.");
-    } finally {
-      setBusy(false);
     }
-  };
+  }, [finished]);
 
   return (
     <div className="space-y-4">

@@ -112,10 +112,13 @@ function whenReady(v: HTMLVideoElement): Promise<void> {
 
 function seekTo(v: HTMLVideoElement, t: number): Promise<void> {
   return new Promise((resolve) => {
-    const done = () => {
+    // segurança: se o navegador não avisar o seek (aba de fundo), segue em frente
+    const timer = window.setTimeout(() => done(), 4000);
+    function done() {
+      window.clearTimeout(timer);
       v.removeEventListener("seeked", done);
       resolve();
-    };
+    }
     v.addEventListener("seeked", done);
     v.currentTime = Math.max(0, t);
   });
@@ -368,73 +371,88 @@ export async function exportWithWebCodecs(input: WebCodecsExportInput): Promise<
     if (framesDone % 4 === 0) onProgress?.(Math.min(0.92, (framesDone / expectedFrames) * 0.9));
   };
 
+  /** espera o encoder esvaziar a fila (por evento: timers são lentos em aba de fundo) */
+  const drainTo = async (limit: number) => {
+    while (encoder.encodeQueueSize > limit) {
+      await new Promise<void>((r) => {
+        const t = window.setTimeout(r, 50);
+        encoder.addEventListener(
+          "dequeue",
+          () => {
+            window.clearTimeout(t);
+            r();
+          },
+          { once: true },
+        );
+      });
+    }
+  };
+
   /**
    * Caminho rápido: reproduz o trecho em velocidade acelerada e codifica cada
    * quadro real entregue pelo decoder (sem nenhum seek). Roda tão rápido quanto
    * o decoder + encoder de hardware conseguem — normalmente 4x o tempo real.
+   * Só funciona com a aba visível (o navegador para de entregar quadros em
+   * segundo plano); devolve até onde chegou no arquivo de origem.
    */
-  const captureByPlayback = async (clip: Clip): Promise<boolean> => {
+  const captureByPlayback = async (clip: Clip, from: number): Promise<number> => {
     const speed = clip.speed ?? 1;
     const srcStart = clip.sourceInStart;
     const srcEnd = Math.max(srcStart + 0.02, clip.sourceInEnd);
-    await seekTo(video, srcStart);
+    await seekTo(video, from);
     video.playbackRate = 4;
-    let got = 0;
+    let reached = from;
     let finished = false;
     let fail: Error | null = null;
 
     await new Promise<void>((resolve) => {
-      let watchdog = window.setTimeout(() => {
-        finished = true;
-        video.pause();
-        resolve();
-      }, 3000);
+      let watchdog = window.setTimeout(() => stop(), 3000);
       const bump = () => {
         window.clearTimeout(watchdog);
-        watchdog = window.setTimeout(() => {
-          finished = true;
-          video.pause();
-          resolve();
-        }, 3000);
+        watchdog = window.setTimeout(() => stop(), 3000);
       };
-      const stop = () => {
+      const onHidden = () => {
+        if (document.hidden) stop();
+      };
+      function stop() {
+        if (finished) return;
         finished = true;
         video.pause();
         window.clearTimeout(watchdog);
+        document.removeEventListener("visibilitychange", onHidden);
         resolve();
-      };
+      }
+      document.addEventListener("visibilitychange", onHidden);
       const onFrame = (_now: number, meta: { mediaTime: number }) => {
         if (finished) return;
         const mt = meta.mediaTime;
-        if (mt >= srcEnd - 0.001) return stop();
-        if (mt >= srcStart - 0.02) {
+        if (mt >= srcEnd - 0.001) {
+          reached = srcEnd;
+          return stop();
+        }
+        if (mt >= from - 0.02) {
           try {
             emit(clip.startTime + Math.max(0, mt - srcStart) / speed);
           } catch (e) {
             fail = e instanceof Error ? e : new Error(String(e));
             return stop();
           }
-          got++;
+          reached = Math.max(reached, mt + (speed / preset.fps) * 0.5);
           bump();
           // contrapressão: pausa se o encoder ficar para trás
           if (encoder.encodeQueueSize > 24) {
             video.pause();
-            const resume = () => {
-              if (finished) return;
-              if (encoder.encodeQueueSize > 8) {
-                window.setTimeout(resume, 8);
-                return;
-              }
-              void video.play().catch(() => stop());
-            };
-            window.setTimeout(resume, 8);
+            void drainTo(8).then(() => {
+              if (!finished) void video.play().catch(() => stop());
+            });
           }
         }
         video.requestVideoFrameCallback(onFrame);
       };
       video.requestVideoFrameCallback(onFrame);
       video.onended = () => {
-        if (!finished) stop();
+        reached = srcEnd;
+        stop();
       };
       void video.play().catch(() => stop());
     });
@@ -442,30 +460,51 @@ export async function exportWithWebCodecs(input: WebCodecsExportInput): Promise<
     video.onended = null;
     video.playbackRate = 1;
     if (fail) throw fail;
-    return got > 0;
+    return reached;
   };
 
-  /** Fallback determinístico: seek quadro a quadro (usado se a reprodução falhar). */
-  const captureBySeek = async (clip: Clip) => {
+  /**
+   * Seek quadro a quadro: mais lento, mas funciona com a aba em segundo plano.
+   * Com `untilVisible`, devolve o controle quando a aba volta a ficar visível
+   * (para retomar o caminho rápido). Devolve até onde chegou na origem.
+   */
+  const captureBySeek = async (clip: Clip, from: number, untilVisible: boolean) => {
     const speed = clip.speed ?? 1;
-    const steps = Math.max(1, Math.round(clip.duration * preset.fps));
-    for (let i = 0; i < steps; i++) {
-      const local = i / preset.fps;
-      if (local > clip.duration) break;
-      const src = clip.sourceInStart + local * speed;
-      await seekTo(video, Math.min(src, clip.sourceInEnd - 0.001));
-      emit(clip.startTime + local);
-      if (encoder.encodeQueueSize > 12) {
-        while (encoder.encodeQueueSize > 6) await new Promise((r) => setTimeout(r, 4));
-      }
+    const srcEnd = clip.sourceInEnd;
+    const step = speed / preset.fps;
+    let src = from;
+    let frames = 0;
+    while (src < srcEnd - 0.001) {
+      throwIfAborted();
+      await seekTo(video, Math.min(src, srcEnd - 0.001));
+      emit(clip.startTime + (src - clip.sourceInStart) / speed);
+      frames++;
+      src += step;
+      if (encoder.encodeQueueSize > 12) await drainTo(6);
+      if (untilVisible && !document.hidden && frames >= preset.fps) break;
     }
+    return Math.min(src, srcEnd);
   };
 
   try {
     for (const clip of videoClips) {
       throwIfAborted();
-      const ok = await captureByPlayback(clip);
-      if (!ok) await captureBySeek(clip);
+      const end = clip.sourceInEnd - 0.001;
+      let from = clip.sourceInStart;
+      let playbackWorks = true;
+      // alterna: rápido enquanto a aba está visível, seek quando vai para o fundo
+      while (from < end) {
+        throwIfAborted();
+        if (playbackWorks && !document.hidden) {
+          const reached = await captureByPlayback(clip, from);
+          if (reached > from + 0.001) {
+            from = reached;
+            continue;
+          }
+          if (!document.hidden) playbackWorks = false;
+        }
+        from = await captureBySeek(clip, from, playbackWorks);
+      }
     }
 
     throwIfAborted();
