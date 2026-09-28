@@ -145,8 +145,9 @@ export function EffectsLibraryPanel() {
 
       <p className="text-[10px] leading-relaxed text-[var(--muted-foreground)]">
         Cada efeito vira uma barra na faixa <strong>Efeitos</strong> da timeline, com tempo próprio:
-        arraste para mudar de lugar e puxe as bordas para esticar. Nos efeitos de zoom, clique no
-        ponto do vídeo que deve ficar em destaque.
+        arraste para mudar de lugar e puxe as bordas para esticar (a animação acompanha o tamanho
+        da barra). Nos efeitos de zoom, clique no ponto do vídeo que deve ir para o centro: o zoom
+        entra, fica no ponto durante a barra e volta sozinho no fim.
       </p>
     </div>
   );

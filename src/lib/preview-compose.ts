@@ -150,16 +150,132 @@ function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: numbe
   ctx.closePath();
 }
 
-/** retângulo "object-contain" do vídeo dentro do palco, com pan. */
-function containRect(vw: number, vh: number, W: number, H: number, panX: number, panY: number) {
+/**
+ * Retângulo "object-contain" do vídeo dentro do palco, com pan.
+ * O pan é medido em meia largura/altura do próprio quadro do vídeo (1 = meio
+ * quadro), igual à exportação pelo ffmpeg. Assim o mesmo keyframe leva ao
+ * mesmo enquadramento em qualquer formato de projeto (16:9, 9:16, 1:1…).
+ */
+export function containRect(vw: number, vh: number, W: number, H: number, panX = 0, panY = 0) {
   const s = Math.min(W / vw, H / vh);
   const w = vw * s;
   const h = vh * s;
   return {
-    x: (W - w) / 2 + panX * ((W - w) / 2 || w / 2),
-    y: (H - h) / 2 + panY * ((H - h) / 2 || h / 2),
+    x: (W - w) / 2 + panX * (w / 2),
+    y: (H - h) / 2 + panY * (h / 2),
     w,
     h,
+  };
+}
+
+/**
+ * Converte um ponto do palco (0–1) para o ponto correspondente no quadro do
+ * vídeo (0–1), desfazendo o zoom/pan/rotação que estão na tela naquele
+ * instante: o ponto clicado é exatamente o que a pessoa está vendo.
+ */
+export function stageToVideoPoint(
+  frame: FrameData,
+  vw: number,
+  vh: number,
+  W: number,
+  H: number,
+  nx: number,
+  ny: number,
+): { x: number; y: number } {
+  const fx = frame.video;
+  const base = containRect(vw, vh, W, H);
+  let px = nx * W - W / 2;
+  let py = ny * H - H / 2;
+  if (fx) {
+    const t = fx.transition;
+    px -= (t?.tx ?? 0) * W;
+    py -= (t?.ty ?? 0) * H;
+    if (fx.rotation) {
+      const r = (-fx.rotation * Math.PI) / 180;
+      const c = Math.cos(r);
+      const s = Math.sin(r);
+      [px, py] = [px * c - py * s, px * s + py * c];
+    }
+    const scale = fx.scale * (t?.scale ?? 1) || 1;
+    px = px / scale - fx.panX * (base.w / 2);
+    py = py / scale - fx.panY * (base.h / 2);
+  }
+  const clamp = (v: number) => Math.max(0, Math.min(1, v));
+  return { x: clamp(0.5 + px / base.w), y: clamp(0.5 + py / base.h) };
+}
+
+/** Caminho inverso: onde um ponto do quadro do vídeo (0–1) aparece no palco agora (px). */
+export function videoToStagePoint(
+  frame: FrameData,
+  vw: number,
+  vh: number,
+  W: number,
+  H: number,
+  p: { x: number; y: number },
+): { x: number; y: number } {
+  const base = containRect(vw, vh, W, H);
+  let px = (p.x - 0.5) * base.w;
+  let py = (p.y - 0.5) * base.h;
+  const fx = frame.video;
+  if (!fx) return { x: W / 2 + px, y: H / 2 + py };
+  const t = fx.transition;
+  const scale = fx.scale * (t?.scale ?? 1);
+  px = (px + fx.panX * (base.w / 2)) * scale;
+  py = (py + fx.panY * (base.h / 2)) * scale;
+  if (fx.rotation) {
+    const r = (fx.rotation * Math.PI) / 180;
+    const c = Math.cos(r);
+    const s = Math.sin(r);
+    [px, py] = [px * c - py * s, px * s + py * c];
+  }
+  return { x: W / 2 + (t?.tx ?? 0) * W + px, y: H / 2 + (t?.ty ?? 0) * H + py };
+}
+
+/** aplica no contexto a mesma transformação do vídeo principal (zoom, pan, giro, transição) */
+function applyVideoTransform(ctx: CanvasRenderingContext2D, fx: VideoFx, W: number, H: number) {
+  const t = fx.transition;
+  ctx.translate(W / 2 + (t?.tx ?? 0) * W, H / 2 + (t?.ty ?? 0) * H);
+  if (fx.rotation) ctx.rotate((fx.rotation * Math.PI) / 180);
+  const scale = fx.scale * (t?.scale ?? 1);
+  if (scale !== 1) ctx.scale(scale, scale);
+}
+
+/** posição/escala/giro animados de uma sobreposição, em torno do centro do retângulo */
+function overlayTransform(
+  ctx: CanvasRenderingContext2D,
+  clip: Clip,
+  W: number,
+  H: number,
+  pivot?: { x: number; y: number },
+) {
+  // a posição animada é o centro do retângulo (mesma base de `basePosition`)
+  const r = clip.rect ?? { x: 0.1, y: 0.1, w: 0.3, h: 0.3 };
+  const pos = clip.position;
+  const dx = pos ? (pos.x - (r.x + r.w / 2)) * W : 0;
+  const dy = pos ? (pos.y - (r.y + r.h / 2)) * H : 0;
+  const cx = (pivot?.x ?? r.x + r.w / 2) * W;
+  const cy = (pivot?.y ?? r.y + r.h / 2) * H;
+  const s = clip.scale ?? 1;
+  const rot = clip.rotation ?? 0;
+  if (!dx && !dy && s === 1 && !rot) return { dx: 0, dy: 0, s: 1 };
+  ctx.translate(cx + dx, cy + dy);
+  if (rot) ctx.rotate((rot * Math.PI) / 180);
+  if (s !== 1) ctx.scale(s, s);
+  ctx.translate(-cx, -cy);
+  return { dx, dy, s };
+}
+
+/** caixa depois de mover/escalar em torno do pivô (para a área clicável) */
+function movedBox(
+  b: { x: number; y: number; w: number; h: number },
+  m: { dx: number; dy: number; s: number },
+  pivot: { x: number; y: number },
+) {
+  return {
+    x: pivot.x + (b.x - pivot.x) * m.s + m.dx,
+    y: pivot.y + (b.y - pivot.y) * m.s + m.dy,
+    w: b.w * m.s,
+    h: b.h * m.s,
   };
 }
 
@@ -195,10 +311,7 @@ export function drawFrame(
     }
     ctx.globalAlpha = Math.max(0, Math.min(1, fx.opacity * (t?.opacity ?? 1)));
     ctx.filter = `brightness(${fx.brightness}) contrast(${fx.contrast}) saturate(${fx.saturation})`;
-    ctx.translate(W / 2 + (t?.tx ?? 0) * W, H / 2 + (t?.ty ?? 0) * H);
-    if (fx.rotation) ctx.rotate((fx.rotation * Math.PI) / 180);
-    const scale = fx.scale * (t?.scale ?? 1);
-    if (scale !== 1) ctx.scale(scale, scale);
+    applyVideoTransform(ctx, fx, W, H);
     try {
       ctx.drawImage(video, rect.x - W / 2, rect.y - H / 2, rect.w, rect.h);
     } catch {
@@ -213,12 +326,17 @@ export function drawFrame(
   for (const clip of frame.overlays) {
     if (clip.overlayKind === "annotation") {
       if (!clip.annotation) continue;
+      const b = annotationBounds(clip.annotation);
+      const pivot = { x: b.x + b.w / 2, y: b.y + b.h / 2 };
       ctx.save();
+      const m = overlayTransform(ctx, clip, W, H, pivot);
       ctx.globalAlpha = clip.opacity ?? 1;
       drawAnnotation(ctx, clip.annotation, W, H);
       ctx.restore();
-      const b = annotationBounds(clip.annotation);
-      const bx = { x: b.x * W, y: b.y * H, w: b.w * W, h: b.h * H };
+      const bx = movedBox({ x: b.x * W, y: b.y * H, w: b.w * W, h: b.h * H }, m, {
+        x: pivot.x * W,
+        y: pivot.y * H,
+      });
       hits.push({ id: clip.id, kind: "annotation", ...bx });
       if (clip.id === frame.selectedId) {
         ctx.save();
@@ -231,33 +349,52 @@ export function drawFrame(
       continue;
     }
     const r = clip.rect ?? { x: 0.1, y: 0.1, w: 0.3, h: 0.3 };
-    const px = { x: r.x * W, y: r.y * H, w: r.w * W, h: r.h * H };
-    hits.push({ id: clip.id, kind: "overlay", ...px });
+    const base = { x: r.x * W, y: r.y * H, w: r.w * W, h: r.h * H };
     ctx.save();
+    const m = overlayTransform(ctx, clip, W, H);
+    const px = movedBox(base, m, { x: base.x + base.w / 2, y: base.y + base.h / 2 });
+    hits.push({ id: clip.id, kind: "overlay", ...px });
     ctx.globalAlpha = clip.opacity ?? 1;
     if (clip.overlayKind === "media") {
       const src = getMedia?.(clip) ?? null;
       if (src) {
         try {
-          ctx.drawImage(src, px.x, px.y, px.w, px.h);
+          ctx.drawImage(src, base.x, base.y, base.w, base.h);
         } catch {
           /* mídia ainda carregando */
         }
       }
     } else if (clip.overlayKind === "spotlight") {
+      // escurece a tela toda menos o "furo": um caminho só com regra evenodd,
+      // para o furo mostrar o vídeo (apagar com destination-out furava o vídeo junto)
+      const dpr = ctx.canvas.width / W;
+      const cx = base.x + base.w / 2 + m.dx;
+      const cy = base.y + base.h / 2 + m.dy;
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.beginPath();
+      ctx.rect(0, 0, W, H);
+      ctx.ellipse(
+        cx,
+        cy,
+        (base.w / 2) * m.s,
+        (base.h / 2) * m.s,
+        ((clip.rotation ?? 0) * Math.PI) / 180,
+        0,
+        Math.PI * 2,
+      );
       ctx.fillStyle = `rgba(0,0,0,${clip.strength ?? 0.7})`;
-      ctx.fillRect(0, 0, W, H);
-      ctx.globalCompositeOperation = "destination-out";
+      ctx.fill("evenodd");
+    } else if (fx && video && video.videoWidth > 0) {
       ctx.beginPath();
-      ctx.ellipse(px.x + px.w / 2, px.y + px.h / 2, px.w / 2, px.h / 2, 0, 0, Math.PI * 2);
-      ctx.fill();
-    } else if (video && video.videoWidth > 0) {
-      ctx.beginPath();
-      ctx.rect(px.x, px.y, px.w, px.h);
+      ctx.rect(base.x, base.y, base.w, base.h);
       ctx.clip();
       ctx.filter = `blur(${clip.strength ?? 12}px)`;
+      // o desfoque mostra o mesmo pedaço do vídeo que está na tela (com zoom/pan)
+      const dpr = ctx.canvas.width / W;
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      applyVideoTransform(ctx, fx, W, H);
       try {
-        ctx.drawImage(video, rect.x, rect.y, rect.w, rect.h);
+        ctx.drawImage(video, rect.x - W / 2, rect.y - H / 2, rect.w, rect.h);
       } catch {
         /* ignore */
       }

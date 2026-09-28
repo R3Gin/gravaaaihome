@@ -36,8 +36,10 @@ import {
 import type { WordTiming } from "@/lib/captions";
 import type { Annotation, AnnotationTool } from "@/lib/annotations";
 import {
+  basePosition,
   buildForWindow,
   naturalWindow,
+  paramsChangeWindow,
   presetById,
   type EffectCategory,
   type PresetParams,
@@ -104,6 +106,15 @@ export interface TimelineEffect {
   /** tipo de clipe alvo (o mesmo do clipe onde foi aplicado) */
   targetType: TrackType;
   label: string;
+  /**
+   * Texto e sobreposições: o efeito pertence a um clipe só (outros títulos no
+   * mesmo trecho não são afetados) e acompanha o clipe quando ele é movido.
+   * No vídeo fica vazio: a janela atravessa os cortes.
+   */
+  clipId?: string;
+  /** início/fim do clipe dono quando a janela foi posicionada */
+  clipStart?: number;
+  clipEnd?: number;
 }
 
 
@@ -532,6 +543,93 @@ export function canDetachAudio(tracks: Track[], clip: Clip): boolean {
 
 
 
+/* ---- combinação de efeitos que animam a mesma propriedade ----
+ * Os presets devolvem valores "neutros": escala/zoom/opacidade relativas a 1,
+ * rotação relativa a 0 e posição a partir de `basePosition`. Aqui cada efeito
+ * vira um fator (multiplica) ou um deslocamento (soma) sobre o valor próprio
+ * do clipe, então um "Tremer" no meio de um zoom mantém o zoom no ponto, e um
+ * "Pulsar" num título com escala 1,5 pulsa em torno de 1,5.
+ */
+const MULTIPLY_PROPS = new Set(["zoom", "scale", "opacity"]);
+const ADD_PROPS = new Set(["rotation", "position"]);
+const FX_SAMPLE_STEP = 1 / 30;
+
+function staticValue(clip: Clip, prop: string): KeyValue {
+  switch (prop) {
+    case "zoom":
+      return clip.zoom ?? 1;
+    case "scale":
+      return clip.scale ?? 1;
+    case "opacity":
+      return clip.opacity ?? 1;
+    case "rotation":
+      return clip.rotation ?? 0;
+    case "position":
+      return basePosition(clip);
+    default:
+      return 0;
+  }
+}
+
+/** valor final da propriedade a partir dos valores de cada efeito */
+function combine(clip: Clip, prop: string, values: KeyValue[]): KeyValue {
+  const base = staticValue(clip, prop);
+  if (prop === "position") {
+    const b = base as { x: number; y: number };
+    let x = b.x;
+    let y = b.y;
+    for (const v of values) {
+      if (typeof v === "number") continue;
+      x += v.x - b.x;
+      y += v.y - b.y;
+    }
+    return { x, y };
+  }
+  if (typeof base !== "number") return values[values.length - 1];
+  let out = base;
+  for (const v of values) {
+    if (typeof v !== "number") continue;
+    if (MULTIPLY_PROPS.has(prop)) out *= v;
+    else if (ADD_PROPS.has(prop)) out += v;
+    else out = v;
+  }
+  return out;
+}
+
+function composeFxKeys(clip: Clip, prop: string, sources: Keyframe[][], origin: string): Keyframe[] {
+  if (sources.length === 1) {
+    // um efeito só: mantém os keyframes (e as curvas) originais
+    return sources[0].map((kf) => ({ ...kf, value: combine(clip, prop, [kf.value]) }));
+  }
+  const times = new Set<number>();
+  let from = Infinity;
+  let to = -Infinity;
+  for (const keys of sources) {
+    for (const kf of keys) {
+      from = Math.min(from, kf.time);
+      to = Math.max(to, kf.time);
+    }
+  }
+  from = Math.max(from, Math.min(0, to));
+  to = Math.min(to, Math.max(clip.duration, from));
+  for (const keys of sources)
+    for (const kf of keys) if (kf.time >= from && kf.time <= to) times.add(kf.time);
+  for (let t = from; t < to; t += FX_SAMPLE_STEP) times.add(t);
+  times.add(to);
+  return [...times]
+    .sort((a, b) => a - b)
+    .map((t) => {
+      const values = sources.map((keys) => valueAt(keys, t)).filter((v): v is KeyValue => v !== null);
+      return { ...newKeyframe(t, combine(clip, prop, values), "linear"), time: t, origin };
+    });
+}
+
+/** o efeito vale para este clipe? */
+function effectHits(fx: TimelineEffect, clip: Clip) {
+  if (fx.targetType !== clip.type || clip.isCaption) return false;
+  return fx.clipId ? fx.clipId === clip.id : true;
+}
+
 /**
  * Regera os keyframes de todos os efeitos com janela própria.
  * Keyframes marcados com `origin` começando por "fx-" pertencem a efeitos
@@ -541,33 +639,99 @@ export function applyEffectsToTracks(tracks: Track[], effects: TimelineEffect[])
   return tracks.map((track) => ({
     ...track,
     clips: track.clips.map((clip) => {
+      const hadFx = Object.values(clip.keyframes ?? {}).some((keys) =>
+        keys.some((k) => k.origin?.startsWith("fx-")),
+      );
+      const clipEnd = clip.startTime + clip.duration;
+      const hits = effects.filter(
+        (fx) =>
+          effectHits(fx, clip) &&
+          Math.min(fx.end, clipEnd) - Math.max(fx.start, clip.startTime) > 0.02 &&
+          presetById(fx.presetId),
+      );
+      if (!hadFx && hits.length === 0) return clip;
+
       const map: KeyframeMap = {};
       for (const [prop, keys] of Object.entries(clip.keyframes ?? {})) {
         const rest = keys.filter((k) => !k.origin?.startsWith("fx-"));
         if (rest.length) map[prop] = rest;
       }
-      const clipEnd = clip.startTime + clip.duration;
-      for (const fx of effects) {
-        if (fx.targetType !== clip.type) continue;
-        const from = Math.max(fx.start, clip.startTime);
-        const to = Math.min(fx.end, clipEnd);
-        if (to - from <= 0.02) continue;
-        const def = presetById(fx.presetId);
-        if (!def) continue;
-        const generated = buildForWindow(clip, def, fx.params, fx.start, fx.end);
+      const sources: Record<string, { keys: Keyframe[]; origin: string }[]> = {};
+      for (const fx of hits) {
+        const generated = buildForWindow(clip, presetById(fx.presetId)!, fx.params, fx.start, fx.end);
         for (const [prop, keys] of Object.entries(generated)) {
-          const tagged = keys.map((k) => ({ ...k, origin: fx.id }));
-          const existing = (map[prop] ?? []).filter(
-            (k) => !tagged.some((t) => Math.abs(t.time - k.time) < 0.005),
-          );
-          map[prop] = sortKeys([...existing, ...tagged]);
+          (sources[prop] ??= []).push({ keys, origin: fx.id });
         }
+      }
+      for (const [prop, list] of Object.entries(sources)) {
+        const origin = list.length === 1 ? list[0].origin : "fx-mix";
+        const tagged = composeFxKeys(
+          clip,
+          prop,
+          list.map((s) => s.keys),
+          origin,
+        ).map((k) => ({ ...k, origin }));
+        const existing = (map[prop] ?? []).filter(
+          (k) => !tagged.some((t) => Math.abs(t.time - k.time) < 0.005),
+        );
+        map[prop] = sortKeys([...existing, ...tagged]);
       }
       return { ...clip, keyframes: map };
     }),
   }));
 }
 
+/**
+ * Efeitos presos a um clipe (texto/sobreposição) acompanham o clipe: se ele
+ * andou, a janela anda junto (saídas seguem o fim do clipe); se sumiu, o
+ * efeito sai também. Devolve a mesma lista quando nada mudou.
+ */
+export function followEffectOwners(tracks: Track[], effects: TimelineEffect[]): TimelineEffect[] {
+  let changed = false;
+  const out: TimelineEffect[] = [];
+  for (const fx of effects) {
+    if (!fx.clipId) {
+      out.push(fx);
+      continue;
+    }
+    const clip = findClip(tracks, fx.clipId);
+    if (!clip) {
+      changed = true;
+      continue;
+    }
+    const clipEnd = clip.startTime + clip.duration;
+    if (fx.clipStart === clip.startTime && fx.clipEnd === clipEnd) {
+      out.push(fx);
+      continue;
+    }
+    changed = true;
+    const len = Math.min(fx.end - fx.start, Math.max(0.2, clip.duration));
+    let start =
+      fx.category === "out"
+        ? clipEnd - len
+        : fx.start + (clip.startTime - (fx.clipStart ?? clip.startTime));
+    start = Math.max(clip.startTime, Math.min(clipEnd - len, start));
+    out.push({ ...fx, start, end: start + len, clipStart: clip.startTime, clipEnd });
+  }
+  return changed ? out : effects;
+}
+
+/** efeito preso a um clipe não sai de dentro dele */
+function keepInOwner(tracks: Track[], fx: TimelineEffect, mode: "move" | "resize"): TimelineEffect {
+  if (!fx.clipId) return fx;
+  const clip = findClip(tracks, fx.clipId);
+  if (!clip) return fx;
+  const clipEnd = clip.startTime + clip.duration;
+  const own = { clipStart: clip.startTime, clipEnd };
+  if (mode === "resize") {
+    const start = Math.max(clip.startTime, fx.start);
+    const end = Math.min(clipEnd, Math.max(start + 0.2, fx.end));
+    return { ...fx, ...own, start: Math.min(start, end - 0.2), end };
+  }
+  const len = Math.min(fx.end - fx.start, Math.max(0.2, clip.duration));
+  const start = Math.max(clip.startTime, Math.min(clipEnd - len, fx.start));
+  return { ...fx, ...own, start, end: start + len };
+}
 
 export function findClip(tracks: Track[], id: string | null): Clip | null {
   if (!id) return null;
@@ -2032,15 +2196,21 @@ export const useEditor = create<EditorState & EditorActions>((set, get) => {
       const clip = findClip(get().tracks, clipId);
       const def = presetById(presetId);
       if (!clip || !def) return;
+      if (def.types && !def.types.includes(clip.type)) return;
       const merged: PresetParams = { ...params };
       const id = `fx-${uid()}`;
       const playhead = get().currentTime;
       const clipEnd = clip.startTime + clip.duration;
-      const win = naturalWindow(def, merged);
-      const start =
+      // texto/sobreposição: o efeito fica preso ao clipe e cabe dentro dele
+      const bound = clip.type !== "video";
+      const win = bound
+        ? Math.min(naturalWindow(def, merged), Math.max(0.2, clip.duration))
+        : naturalWindow(def, merged);
+      let start =
         def.category === "out"
           ? Math.max(0, clipEnd - win)
           : Math.max(clip.startTime, Math.min(clipEnd - 0.05, playhead));
+      if (bound) start = Math.max(clip.startTime, Math.min(clipEnd - win, start));
       const end = def.category === "out" ? clipEnd : start + win;
 
       const fx: TimelineEffect = {
@@ -2052,6 +2222,7 @@ export const useEditor = create<EditorState & EditorActions>((set, get) => {
         end,
         targetType: clip.type,
         label: def.label,
+        ...(bound ? { clipId: clip.id, clipStart: clip.startTime, clipEnd } : {}),
       };
       const effects = [...get().effects, fx];
       record();
@@ -2065,9 +2236,18 @@ export const useEditor = create<EditorState & EditorActions>((set, get) => {
     },
 
     updateEffectPresetParams: (_clipId, effectId, params) => {
-      const effects = get().effects.map((e) =>
-        e.id === effectId ? { ...e, params: { ...e.params, ...params } } : e,
-      );
+      const effects = get().effects.map((e) => {
+        if (e.id !== effectId) return e;
+        const next = { ...e, params: { ...e.params, ...params } };
+        const def = presetById(e.presetId);
+        // velocidade/duração definem o tamanho da barra (a animação ocupa a barra toda)
+        if (def && paramsChangeWindow(params)) {
+          const len = naturalWindow(def, next.params);
+          if (e.category === "out") next.start = Math.max(0, e.end - len);
+          else next.end = e.start + len;
+        }
+        return next;
+      });
       record(`fx:${effectId}:${Object.keys(params).sort().join(",")}`);
       set({ effects, tracks: applyEffectsToTracks(get().tracks, effects) });
     },
@@ -2089,7 +2269,7 @@ export const useEditor = create<EditorState & EditorActions>((set, get) => {
         if (e.id !== effectId) return e;
         const len = e.end - e.start;
         const s = Math.max(0, start);
-        return { ...e, start: s, end: s + len };
+        return keepInOwner(get().tracks, { ...e, start: s, end: s + len }, "move");
       });
       set({ effects, tracks: applyEffectsToTracks(get().tracks, effects) });
     },
@@ -2099,7 +2279,7 @@ export const useEditor = create<EditorState & EditorActions>((set, get) => {
       const effects = get().effects.map((e) => {
         if (e.id !== effectId) return e;
         const s = Math.max(0, Math.min(start, end - 0.2));
-        return { ...e, start: s, end: Math.max(s + 0.2, end) };
+        return keepInOwner(get().tracks, { ...e, start: s, end: Math.max(s + 0.2, end) }, "resize");
       });
       set({ effects, tracks: applyEffectsToTracks(get().tracks, effects) });
     },
@@ -2324,6 +2504,23 @@ export function zoomAt(clip: Clip, localTime: number) {
   }
   return last;
 }
+
+/* Clipes mudaram (corte, arraste, aparar, apagar, remover silêncios)? Os
+ * efeitos são regerados para continuar batendo com as barras da faixa
+ * Efeitos, e os efeitos presos a um título acompanham o título. */
+let syncingEffects = false;
+useEditor.subscribe((state, prev) => {
+  if (syncingEffects || state.tracks === prev.tracks) return;
+  // as ações de efeito já regeram as faixas junto com a lista
+  if (state.effects !== prev.effects || state.effects.length === 0) return;
+  syncingEffects = true;
+  try {
+    const effects = followEffectOwners(state.tracks, state.effects);
+    useEditor.setState({ effects, tracks: applyEffectsToTracks(state.tracks, effects) });
+  } finally {
+    syncingEffects = false;
+  }
+});
 
 /* Exposto apenas em desenvolvimento para depuração/testes automatizados. */
 if (import.meta.env.DEV && typeof window !== "undefined") {
