@@ -73,7 +73,6 @@ const mosaicos: MosaicoDef[] = [
     href: "/reunioes/entrar",
     Icon: Video,
     active: true,
-    badge: "Em breve",
     popup: false,
     cta: "Entrar",
   },

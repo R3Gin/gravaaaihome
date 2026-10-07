@@ -6,10 +6,11 @@ import { Wordmark } from "@/components/Brand";
 /**
  * Tela de login da Gravação de Reuniões.
  *
- * Por enquanto é só a tela: os formulários validam os campos, mas nada é
- * enviado a nenhum servidor. Ao enviar (ou ao clicar em "Continuar com
- * Google") aparece o aviso de que o acesso ainda não foi liberado. Quando a
- * autenticação existir, basta trocar `showNotYetAvailable` pelas chamadas reais.
+ * Ainda não há autenticação: os formulários validam os campos, mas nada é
+ * enviado a nenhum servidor. Ao entrar, criar conta ou clicar em "Continuar
+ * com Google", a pessoa segue para o bot de reuniões (`BOT_URL`). A
+ * redefinição de senha só mostra um aviso. Quando a autenticação existir,
+ * basta trocar `goToBot` e `showNotYetAvailable` pelas chamadas reais.
  */
 
 type Mode = "entrar" | "criar" | "recuperar";
@@ -37,8 +38,10 @@ const COPY: Record<Mode, { title: string; subtitle: string; submit: string }> = 
   },
 };
 
-const NOT_YET_AVAILABLE =
-  "O acesso à Gravação de Reuniões ainda não foi liberado. Assim que estiver disponível, você poderá entrar por aqui.";
+/** Endereço do bot de reuniões, para onde a pessoa vai depois de entrar. */
+const BOT_URL = "https://reunioes.gravaai.online";
+
+const NOT_YET_AVAILABLE = "A redefinição de senha por e-mail ainda não está disponível.";
 
 function validate(mode: Mode, values: Record<Field, string>): Errors {
   const errors: Errors = {};
@@ -125,6 +128,10 @@ export function MeetingLogin() {
     setNotice(NOT_YET_AVAILABLE);
   }
 
+  function goToBot() {
+    window.location.assign(BOT_URL);
+  }
+
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setSubmitted(true);
@@ -139,7 +146,8 @@ export function MeetingLogin() {
       return;
     }
 
-    showNotYetAvailable();
+    if (mode === "recuperar") showNotYetAvailable();
+    else goToBot();
   }
 
   const describedBy = (field: Field, extra?: string) =>
@@ -189,7 +197,7 @@ export function MeetingLogin() {
               <>
                 <button
                   type="button"
-                  onClick={showNotYetAvailable}
+                  onClick={goToBot}
                   className="mt-6 inline-flex h-11 w-full cursor-pointer items-center justify-center rounded-lg border border-[var(--input)] bg-[var(--surface-2)] text-sm font-medium text-[var(--foreground)] transition-colors hover:border-white/25 hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--brand)]/60"
                 >
                   Continuar com Google
