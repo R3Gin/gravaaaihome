@@ -17,6 +17,7 @@ import { Route as MosaicosGdocsPresentationRouteImport } from './routes/mosaicos
 import { Route as MosaicosTeleprompterRouteImport } from './routes/mosaicos.teleprompter'
 import { Route as MosaicosTranscricaoRouteImport } from './routes/mosaicos.transcricao'
 import { Route as MosaicosVideoParaGifRouteImport } from './routes/mosaicos.video-para-gif'
+import { Route as ReunioesEntrarRouteImport } from './routes/reunioes.entrar'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -59,6 +60,11 @@ const MosaicosVideoParaGifRoute = MosaicosVideoParaGifRouteImport.update({
   path: '/mosaicos/video-para-gif',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ReunioesEntrarRoute = ReunioesEntrarRouteImport.update({
+  id: '/reunioes/entrar',
+  path: '/reunioes/entrar',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -69,6 +75,7 @@ export interface FileRoutesByFullPath {
   '/mosaicos/teleprompter': typeof MosaicosTeleprompterRoute
   '/mosaicos/transcricao': typeof MosaicosTranscricaoRoute
   '/mosaicos/video-para-gif': typeof MosaicosVideoParaGifRoute
+  '/reunioes/entrar': typeof ReunioesEntrarRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -79,6 +86,7 @@ export interface FileRoutesByTo {
   '/mosaicos/teleprompter': typeof MosaicosTeleprompterRoute
   '/mosaicos/transcricao': typeof MosaicosTranscricaoRoute
   '/mosaicos/video-para-gif': typeof MosaicosVideoParaGifRoute
+  '/reunioes/entrar': typeof ReunioesEntrarRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -90,6 +98,7 @@ export interface FileRoutesById {
   '/mosaicos/teleprompter': typeof MosaicosTeleprompterRoute
   '/mosaicos/transcricao': typeof MosaicosTranscricaoRoute
   '/mosaicos/video-para-gif': typeof MosaicosVideoParaGifRoute
+  '/reunioes/entrar': typeof ReunioesEntrarRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -102,6 +111,7 @@ export interface FileRouteTypes {
     | '/mosaicos/teleprompter'
     | '/mosaicos/transcricao'
     | '/mosaicos/video-para-gif'
+    | '/reunioes/entrar'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -112,6 +122,7 @@ export interface FileRouteTypes {
     | '/mosaicos/teleprompter'
     | '/mosaicos/transcricao'
     | '/mosaicos/video-para-gif'
+    | '/reunioes/entrar'
   id:
     | '__root__'
     | '/'
@@ -122,6 +133,7 @@ export interface FileRouteTypes {
     | '/mosaicos/teleprompter'
     | '/mosaicos/transcricao'
     | '/mosaicos/video-para-gif'
+    | '/reunioes/entrar'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -133,6 +145,7 @@ export interface RootRouteChildren {
   MosaicosTeleprompterRoute: typeof MosaicosTeleprompterRoute
   MosaicosTranscricaoRoute: typeof MosaicosTranscricaoRoute
   MosaicosVideoParaGifRoute: typeof MosaicosVideoParaGifRoute
+  ReunioesEntrarRoute: typeof ReunioesEntrarRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -193,6 +206,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof MosaicosVideoParaGifRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/reunioes/entrar': {
+      id: '/reunioes/entrar'
+      path: '/reunioes/entrar'
+      fullPath: '/reunioes/entrar'
+      preLoaderRoute: typeof ReunioesEntrarRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -205,6 +225,7 @@ const rootRouteChildren: RootRouteChildren = {
   MosaicosTeleprompterRoute: MosaicosTeleprompterRoute,
   MosaicosTranscricaoRoute: MosaicosTranscricaoRoute,
   MosaicosVideoParaGifRoute: MosaicosVideoParaGifRoute,
+  ReunioesEntrarRoute: ReunioesEntrarRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

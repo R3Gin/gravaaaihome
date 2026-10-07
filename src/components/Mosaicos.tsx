@@ -8,7 +8,8 @@ type MosaicoHref =
   | "/mosaicos/editor"
   | "/mosaicos/teleprompter"
   | "/mosaicos/video-para-gif"
-  | "/mosaicos/transcricao";
+  | "/mosaicos/transcricao"
+  | "/reunioes/entrar";
 
 interface MosaicoDef {
   title: string;
@@ -16,8 +17,11 @@ interface MosaicoDef {
   href: MosaicoHref | "";
   Icon: ComponentType<SVGProps<SVGSVGElement>>;
   active: boolean;
-  redirectUrl?: string;
   badge?: string;
+  /** false = abre na mesma aba, em vez da janela popup das ferramentas. */
+  popup?: boolean;
+  /** Texto do canto inferior do card (padrão: "Abrir"). */
+  cta?: string;
 }
 
 
@@ -66,11 +70,12 @@ const mosaicos: MosaicoDef[] = [
     title: "Gravação de Reuniões",
     description:
       "Um bot entra na sua chamada, grava e gera um resumo automático. Compatível com Google Meet, Zoom e Microsoft Teams.",
-    href: "",
+    href: "/reunioes/entrar",
     Icon: Video,
-    active: false,
-    redirectUrl: "https://reunioes.gravaai.online",
+    active: true,
     badge: "Em breve",
+    popup: false,
+    cta: "Entrar",
   },
 ];
 
@@ -121,7 +126,7 @@ export function Mosaicos() {
               <span className="text-xs text-[var(--muted-foreground)]">{m.description}</span>
               {!isDisabled ? (
                 <span className="absolute bottom-3 right-3 inline-flex items-center gap-1 text-xs font-medium text-[var(--muted-foreground)] transition-colors group-hover:text-[var(--brand)]">
-                  Abrir
+                  {m.cta ?? "Abrir"}
                   <ArrowRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5" />
                 </span>
               ) : (
@@ -146,6 +151,7 @@ export function Mosaicos() {
               key={m.href}
               to={m.href as MosaicoHref}
               onClick={(event) => {
+                if (m.popup === false) return;
                 event.preventDefault();
                 openPopup(m.href as MosaicoHref);
               }}
